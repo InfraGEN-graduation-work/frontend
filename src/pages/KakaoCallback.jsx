@@ -2,6 +2,13 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
+const BASE_URL = "https://infragen.kro.kr/api/v1";
+const USE_MOCK = true; // 백엔드 서버 완성되면 false로 변경
+
+const mockLogin = () => ({
+  accessToken: "mock-access-token-12345",
+});
+
 export default function KakaoCallback() {
   const navigate = useNavigate();
 
@@ -22,8 +29,32 @@ export default function KakaoCallback() {
   }, []);
 
   const exchangeCode = async (code) => {
-    console.log("받은 인가 코드:", code);
-    navigate("/dashboard"); // 대시보드로 이동
+    try {
+      let data;
+
+      if (USE_MOCK) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        data = mockLogin();
+      } else {
+        const res = await fetch(`${BASE_URL}/auth/login/kakao`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ authorizationCode: code }),
+        });
+
+        if (!res.ok) throw new Error(`로그인 실패: ${res.status}`);
+
+        const json = await res.json();
+        data = { accessToken: json.result.accessToken };
+        
+      }
+
+      localStorage.setItem("accessToken", data.accessToken);
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("카카오 로그인 처리 오류:", err);
+      navigate("/login");
+    }
   };
 
   return (
