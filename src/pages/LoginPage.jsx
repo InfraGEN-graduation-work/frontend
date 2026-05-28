@@ -1,8 +1,12 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/infragen_icon.png";
 
 const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
 const REDIRECT_URI = "http://localhost:3000/oauth/kakao/callback";
+const BASE_URL = "https://infragen.kro.kr/api/v1";
+const USE_MOCK = true; // 백엔드 완성되면 false로 변경
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
@@ -11,8 +15,45 @@ const KAKAO_AUTH_URL =
   `&response_type=code`;
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
   const handleKakaoLogin = () => {
     window.location.href = KAKAO_AUTH_URL;
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError("이메일과 비밀번호를 입력해주세요.");
+      return;
+    }
+    setError("");
+
+    try {
+      if (USE_MOCK) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        localStorage.setItem("accessToken", "mock-access-token-12345");
+        navigate("/dashboard");
+        return;
+      }
+
+      const res = await fetch(`${BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) throw new Error();
+
+      const data = await res.json();
+      localStorage.setItem("accessToken", data.result.accessToken);
+      navigate("/dashboard");
+    } catch {
+      setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
   };
 
   return (
@@ -24,10 +65,30 @@ export default function LoginPage() {
 
         <BrandName>InfraGen</BrandName>
 
-        <KakaoButton onClick={handleKakaoLogin}>
-          <KakaoIcon />
-          카카오계정으로 로그인
-        </KakaoButton>
+        <LoginForm onSubmit={handleLogin}>
+          <InputField
+            type="email"
+            placeholder="이메일"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+          <InputField
+            type="password"
+            placeholder="비밀번호"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          {error && <ErrorMsg>{error}</ErrorMsg>}
+          <LoginButton type="submit">로그인</LoginButton>
+        </LoginForm>
+
+        <TextRow>
+          <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
+          <Dot />
+          <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
+        </TextRow>
 
         <Divider>
           <Line />
@@ -35,9 +96,10 @@ export default function LoginPage() {
           <Line />
         </Divider>
 
-        <FindAccountButton onClick={() => {}}>
-          계정찾기 →
-        </FindAccountButton>
+        <KakaoButton type="button" onClick={handleKakaoLogin}>
+          <KakaoIcon />
+          카카오계정으로 로그인
+        </KakaoButton>
       </Card>
     </Page>
   );
@@ -54,7 +116,6 @@ function KakaoIcon() {
   );
 }
 
-// css
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -91,30 +152,105 @@ const BrandName = styled.h1`
   font-size: 24px;
   font-weight: 600;
   color: #1a1a1a;
-  margin: 0 0 36px;
+  margin: 0 0 28px;
   letter-spacing: -0.4px;
 `;
 
-const KakaoButton = styled.button`
+const LoginForm = styled.form`
   width: 100%;
-  height: 54px;
-  background: #fee500;
-  border: none;
-  border-radius: 12px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   gap: 10px;
-  cursor: pointer;
+  margin-bottom: 14px;
+`;
+
+const InputField = styled.input`
+  width: 100%;
+  height: 50px;
+  padding: 0 16px;
+  border: 1.5px solid #e8e8e8;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: #fafafa;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit;
+
+  &::placeholder { color: #b0b0b0; }
+  &:focus {
+    border-color: #7b6cf6;
+    background: #fff;
+  }
+`;
+
+const ErrorMsg = styled.p`
+  font-size: 12px;
+  color: #e05858;
+  margin: 0;
+  padding-left: 2px;
+`;
+
+const LoginButton = styled.button`
+  width: 100%;
+  height: 50px;
+  background: #1a1a1a;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
   font-size: 15px;
   font-weight: 600;
-  color: #191919;
+  cursor: pointer;
   letter-spacing: -0.2px;
   transition: opacity 0.15s, transform 0.1s;
-  margin-bottom: 28px;
+  font-family: inherit;
+  margin-top: 2px;
 
-  &:hover  { opacity: 0.9; }
+  &:hover  { opacity: 0.82; }
   &:active { transform: scale(0.98); }
+`;
+
+const TextRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+`;
+
+const Dot = styled.span`
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #d0d0d0;
+  display: inline-block;
+`;
+
+const FindAccountButton = styled.button`
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #888;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s;
+
+  &:hover { color: #333; }
+`;
+
+const SignupLink = styled.button`
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #7b6cf6;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s;
+
+  &:hover { color: #5a4fd4; }
 `;
 
 const Divider = styled.div`
@@ -122,7 +258,7 @@ const Divider = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 `;
 
 const Line = styled.div`
@@ -136,18 +272,24 @@ const DividerText = styled.span`
   color: #aaaaaa;
 `;
 
-const FindAccountButton = styled.button`
-  background: none;
+const KakaoButton = styled.button`
+  width: 100%;
+  height: 50px;
+  background: #fee500;
   border: none;
-  font-size: 14px;
-  color: #555;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s;
+  font-size: 15px;
+  font-weight: 600;
+  color: #191919;
+  letter-spacing: -0.2px;
+  transition: opacity 0.15s, transform 0.1s;
+  font-family: inherit;
 
-  &:hover {
-    background: #f5f5f5;
-    color: #111;
-  }
+  &:hover  { opacity: 0.9; }
+  &:active { transform: scale(0.98); }
 `;
