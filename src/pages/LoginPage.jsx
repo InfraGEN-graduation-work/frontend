@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-import logo from "../assets/infragen_icon.png";
+import logo from "../assets/mainlogo.png";
 
 const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
 const REDIRECT_URI = "http://localhost:3000/oauth/kakao/callback";

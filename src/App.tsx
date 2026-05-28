@@ -1,9 +1,11 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import KakaoCallback from "./pages/KakaoCallback";
 import SignupPage from "./pages/SignupPage";
+import MainPage from "./MainPage";
 
-export default function App() {
+const App: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
@@ -11,8 +13,10 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/oauth/kakao/callback" element={<KakaoCallback />} />
-        <Route path="/dashboard" element={<div>메인화면</div>} />
+        <Route path="/dashboard" element={<MainPage />} />
       </Routes>
     </BrowserRouter>
   );
-}
+};
+
+export default App;

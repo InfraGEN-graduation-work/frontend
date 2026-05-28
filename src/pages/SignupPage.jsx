@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-import logo from "../assets/infragen_icon.png";
+import logo from "../assets/mainlogo.png";
 
 const BASE_URL = "https://infragen.kro.kr/api/v1";
 const USE_MOCK = true; // 백엔드 완성되면 false로 변경
