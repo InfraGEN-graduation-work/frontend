@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // 네비게이트 추가
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -26,6 +27,11 @@ export interface ViewportState {
 }
 
 const App: React.FC = () => {
+  const navigate = useNavigate();
+
+  //로그인 정보 여기로 이건 임시
+  const [userInfo] = useState({ nickname: '개발자', email: 'dev@infragen.com' });
+
   const [projectName, setProjectName] = useState('Project');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
@@ -38,8 +44,7 @@ const App: React.FC = () => {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selection, setSelection] = useState<SelectionArea>({ x: 0, y: 0, width: 0, height: 0, active: false });
 
-  const [files, setFiles] = useState<FileGroup[]>([
-  ]);
+  const [files, setFiles] = useState<FileGroup[]>([]);
   const [targetFileIds, setTargetFileIds] = useState<string[]>([]);
   const [leftActiveTab, setLeftActiveTab] = useState<'Project' | 'Settings' | 'Validation'>('Project');
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -60,7 +65,6 @@ const App: React.FC = () => {
 
   const [uiResetTrigger, setUiResetTrigger] = useState(0);
 
-  //에러는 임의로 지정해둠
   const validationErrors: { name: string; desc: string }[] = [];
   if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '노드를 배치하지 않았습니다.' });
@@ -68,6 +72,12 @@ const App: React.FC = () => {
   if (targetFileIds.length === 0) {
     validationErrors.push({ name: '생성할 코드 미배치', desc: '생성할 코드 파일에 노드 파일이 존재하지 않습니다.' });
   }
+
+  // 로그아웃 핸들러
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    navigate('/');
+  };
 
   const handleResetUI = () => {
     setZoomLevel(1);
@@ -224,6 +234,8 @@ const App: React.FC = () => {
             canUndo={history.length > 0} canRedo={redoStack.length > 0}
             isSelectMode={isSelectMode}
             resetTrigger={uiResetTrigger}
+            userInfo={userInfo}
+            onLogout={handleLogout}
           />
           <Canvas 
             nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges}

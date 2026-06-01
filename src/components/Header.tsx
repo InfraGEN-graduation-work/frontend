@@ -1,5 +1,4 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import mainlogo from '../assets/mainlogo.png';
 
 interface HeaderProps {
@@ -9,8 +8,6 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI }) => {
-  const navigate = useNavigate();
-
   return (
     <header className="header">
       <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -34,7 +31,6 @@ const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI }
             <span className="header-icon" style={{ cursor: 'pointer', marginLeft: 0 }}>💾</span>
           </>
         )}
-        <button className="action-btn" onClick={() => navigate('/')}>로그아웃</button>
       </div>
     </header>
   );

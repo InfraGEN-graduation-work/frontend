@@ -22,13 +22,15 @@ interface LeftPanelProps {
   canRedo: boolean;
   isSelectMode: boolean;
   resetTrigger: number;
+  userInfo: { nickname: string; email: string };
+  onLogout: () => void;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({ 
   projectName, setProjectName, nodes, activeTab, setActiveTab, onSelectCategory, onToggleRightSidebar, 
   showRightSidebar, setShowRightSidebar,
   onZoomIn, onZoomOut, onSelectMode, onCancelSelection, onDelete, onUndo, onRedo, 
-  canUndo, canRedo, isSelectMode, resetTrigger
+  canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onLogout
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
@@ -60,9 +62,12 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   const handleEditClick = () => { setIsEditing(true); setTempName(projectName); };
   const handleSaveClick = () => { if (tempName.trim()) setProjectName(tempName); setIsEditing(false); };
 
+  // 클릭한 탭이 현재 탭이면서 우측 패널이 열려있으면 닫기, 아니면 열기
   const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
-    setActiveTab(tab);
-    if (!showRightSidebar) {
+    if (activeTab === tab && showRightSidebar) {
+      setShowRightSidebar(false);
+    } else {
+      setActiveTab(tab);
       setShowRightSidebar(true);
     }
   };
@@ -89,12 +94,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
     const dragGhost = document.createElement('div');
     dragGhost.className = 'deployed-node'; 
-    
     dragGhost.style.position = 'absolute';
     dragGhost.style.top = '-9999px';
     dragGhost.style.left = '-9999px';
     dragGhost.style.pointerEvents = 'none';
-
     dragGhost.innerHTML = `
       <div class="node-header">
         <div class="node-type-icon"></div>
@@ -106,9 +109,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     `;
 
     document.body.appendChild(dragGhost);
-
     e.dataTransfer.setDragImage(dragGhost, 90, 40);
-    
+
     setTimeout(() => {
       if (document.body.contains(dragGhost)) {
         document.body.removeChild(dragGhost);
@@ -129,27 +131,15 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveClick(); }}
               onBlur={handleSaveClick}
               style={{
-                flex: 1,
-                padding: 0,
-                margin: 0,
-                border: 'none',
-                background: 'transparent',
-                outline: 'none',
-                fontWeight: 700,
-                fontSize: '16px',
-                color: '#2c3e50',
-                lineHeight: 1,
-                width: '100%',
-                fontFamily: 'inherit'
+                flex: 1, padding: 0, margin: 0, border: 'none', background: 'transparent', outline: 'none',
+                fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, width: '100%', fontFamily: 'inherit'
               }}
             />
             <button 
               onMouseDown={(e) => e.preventDefault()}
               onClick={handleSaveClick} 
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad' }}
-            >
-              ✔
-            </button>
+            >✔</button>
           </>
         ) : (
           <>
@@ -175,18 +165,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div className="tabs">
-        <div 
-          className={`tab ${showRightSidebar && activeTab === 'Project' ? 'active' : ''}`} 
-          onClick={() => handleTabClick('Project')}
-        >Project</div>
-        <div 
-          className={`tab ${showRightSidebar && activeTab === 'Settings' ? 'active' : ''}`} 
-          onClick={() => handleTabClick('Settings')}
-        >Settings</div>
-        <div 
-          className={`tab ${showRightSidebar && activeTab === 'Validation' ? 'active' : ''}`} 
-          onClick={() => handleTabClick('Validation')}
-        >Validation</div>
+        <div className={`tab ${showRightSidebar && activeTab === 'Project' ? 'active' : ''}`} onClick={() => handleTabClick('Project')}>Project</div>
+        <div className={`tab ${showRightSidebar && activeTab === 'Settings' ? 'active' : ''}`} onClick={() => handleTabClick('Settings')}>Settings</div>
+        <div className={`tab ${showRightSidebar && activeTab === 'Validation' ? 'active' : ''}`} onClick={() => handleTabClick('Validation')}>Validation</div>
       </div>
 
       <div className="search-bar" style={{ position: 'relative' }}>
@@ -201,47 +182,25 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           <button
             onClick={() => setSearchTerm('')}
             style={{
-              position: 'absolute',
-              right: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: '#a0aec0',
-              fontSize: '12px',
-              padding: '4px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginTop: '-7px' 
+              position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0',
+              fontSize: '12px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-7px' 
             }}
             title="검색어 지우기"
-          >
-            ✕
-          </button>
+          >✕</button>
         )}
       </div>
 
       <div className="category-list">
         {activeCategory ? (
           <div className="node-detail-view">
-            <div 
-              className="detail-back" 
-              onClick={() => { setActiveCategory(null); onSelectCategory(null); setSearchTerm(''); }} 
-              style={{ cursor: 'pointer', marginBottom: '0px', fontWeight: 'bold', fontSize: '14px', color: '#333' }}
-            >
+            <div className="detail-back" onClick={() => { setActiveCategory(null); onSelectCategory(null); setSearchTerm(''); }} style={{ cursor: 'pointer', marginBottom: '0px', fontWeight: 'bold', fontSize: '14px', color: '#333' }}>
               ← {activeCategory}
             </div>
             {filteredItems.map((node) => {
               const count = getNodeCount(node);
               return (
-                <div 
-                  key={node} 
-                  className="draggable-node-item" 
-                  draggable 
-                  onDragStart={(e) => handleDragStart(e, node)} // 변경된 드래그 핸들러 적용
-                >
+                <div key={node} className="draggable-node-item" draggable onDragStart={(e) => handleDragStart(e, node)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                     <div className="node-icon-small"></div>
                     <span>{node}</span>
@@ -268,6 +227,23 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             })}
           </div>
         )}
+      </div>
+
+      <div className="user-profile-section">
+        <div className="user-info-wrapper">
+          <div className="user-avatar">{userInfo.nickname.charAt(0)}</div>
+          <div className="user-details">
+            <span className="user-nickname">{userInfo.nickname}</span>
+            <span className="user-email">{userInfo.email}</span>
+          </div>
+        </div>
+        <button className="logout-icon-btn" onClick={onLogout} title="로그아웃">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
       </div>
     </aside>
   );

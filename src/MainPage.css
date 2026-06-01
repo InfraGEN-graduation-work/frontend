@@ -1029,3 +1029,74 @@ body {
 @keyframes spin { 
   to { transform: rotate(360deg); } 
 }
+
+
+/* LeftPanel 내부 스크롤 최적화 */
+.category-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.category-list::-webkit-scrollbar {
+  width: 4px;
+}
+.category-list::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+/* 유저 프로필 영역 스타일 */
+.user-profile-section {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.user-info-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #edf2f7;
+  color: #4a5568;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.user-details {
+  display: flex;
+  flex-direction: column;
+}
+.user-nickname {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2d3748;
+}
+.user-email {
+  font-size: 11px;
+  color: #a0aec0;
+}
+.logout-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #a0aec0;
+  padding: 6px;
+  border-radius: 6px;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.logout-icon-btn:hover {
+  background: #fff5f5;
+  color: #e53e3e;
+}
