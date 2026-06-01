@@ -73,20 +73,37 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const handleNodeDragStart = (e: React.DragEvent, nodeId: string) => {
     e.stopPropagation();
-    e.dataTransfer.setData('rightBarNodeId', nodeId);
+    let dragIds = [nodeId];
+    if (isMultiSelectMode && checkedItems.has(nodeId)) {
+      dragIds = Array.from(checkedItems).filter(id => id.startsWith('node-'));
+    }
+    e.dataTransfer.setData('rightBarNodeIds', JSON.stringify(dragIds));
   };
 
   const handleFileDragStart = (e: React.DragEvent, fileId: string) => {
     if (editingFileId === fileId) return; 
     e.stopPropagation();
-    e.dataTransfer.setData('rightBarFileId', fileId);
+    let dragIds = [fileId];
+    if (isMultiSelectMode && checkedItems.has(fileId)) {
+      dragIds = Array.from(checkedItems).filter(id => id.startsWith('file-'));
+    }
+    e.dataTransfer.setData('rightBarFileIds', JSON.stringify(dragIds));
     wasDroppedInTarget.current = false;
   };
 
   const handleFileDragEnd = (e: React.DragEvent, fileId: string) => {
     if (!wasDroppedInTarget.current) {
       saveHistory();
-      setTargetFileIds((prev) => prev.filter(id => id !== fileId));
+      let dragIds = [fileId];
+      if (isMultiSelectMode && checkedItems.has(fileId)) {
+        dragIds = Array.from(checkedItems).filter(id => id.startsWith('file-'));
+      }
+      setTargetFileIds((prev) => prev.filter(id => !dragIds.includes(id)));
+      
+      // 타겟 박스에서 빼낸 이후 다중 선택된 항목들의 체크만 해제 (모드는 유지)
+      if (isMultiSelectMode) {
+        setCheckedItems(new Set());
+      }
     }
     wasDroppedInTarget.current = false;
   };
@@ -94,45 +111,71 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const handleDropNodeToFile = (e: React.DragEvent, fileId: string) => {
     e.preventDefault();
     setDragOverFileId(null);
-    const nodeId = e.dataTransfer.getData('rightBarNodeId');
-    if (!nodeId) return;
+    const data = e.dataTransfer.getData('rightBarNodeIds');
+    if (!data) return;
+    const nodeIds: string[] = JSON.parse(data);
 
     saveHistory();
     markFilesAsModified();
     setFiles((prev) => prev.map((f) => {
-      const filteredNodeIds = f.nodeIds.filter(id => id !== nodeId);
-      if (f.id === fileId) filteredNodeIds.push(nodeId);
+      let filteredNodeIds = f.nodeIds.filter(id => !nodeIds.includes(id));
+      if (f.id === fileId) {
+        filteredNodeIds = [...filteredNodeIds, ...nodeIds.filter(id => !filteredNodeIds.includes(id))];
+      }
       return { ...f, nodeIds: filteredNodeIds };
     }));
+
+    // 파일로 노드 이동 후 체크 해제 (모드는 유지)
+    if (isMultiSelectMode) {
+      setCheckedItems(new Set());
+    }
   };
 
   const handleDropToUnassigned = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOverUnassigned(false);
-    const nodeId = e.dataTransfer.getData('rightBarNodeId');
-    if (!nodeId) return;
+    const data = e.dataTransfer.getData('rightBarNodeIds');
+    if (!data) return;
+    const nodeIds: string[] = JSON.parse(data);
 
     saveHistory();
     markFilesAsModified();
-    setFiles((prev) => prev.map((f) => ({ ...f, nodeIds: f.nodeIds.filter(id => id !== nodeId) })));
+    setFiles((prev) => prev.map((f) => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) })));
+    
+    // 미지정으로 노드 이동 후 체크 해제 (모드는 유지)
+    if (isMultiSelectMode) {
+      setCheckedItems(new Set());
+    }
   };
 
   const handleDropFileToTarget = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOverTarget(false);
-    const fileId = e.dataTransfer.getData('rightBarFileId');
-    if (!fileId) return;
+    const data = e.dataTransfer.getData('rightBarFileIds');
+    if (!data) return;
+    const fileIds: string[] = JSON.parse(data);
 
     wasDroppedInTarget.current = true;
+    let hasConflict = false;
+    
+    fileIds.forEach(id => {
+      if (targetFileIds.includes(id)) hasConflict = true;
+    });
 
-    if (targetFileIds.includes(fileId)) {
-      if (window.confirm('이미 존재하는 파일입니다. 최신 상태로 덮어쓰시겠습니까?')) {
+    if (hasConflict) {
+      if (window.confirm('이미 존재하는 파일이 포함되어 있습니다. 최신 상태로 덮어쓰시겠습니까?')) {
         saveHistory();
+        setTargetFileIds(prev => Array.from(new Set([...prev, ...fileIds])));
       }
     } else {
       saveHistory();
-      setTargetFileIds((prev) => [...prev, fileId]);
+      setTargetFileIds(prev => Array.from(new Set([...prev, ...fileIds])));
+    }
+
+    // 타겟 박스로 파일 이동 후 체크 해제 (모드는 유지)
+    if (isMultiSelectMode) {
+      setCheckedItems(new Set());
     }
   };
 
@@ -196,24 +239,21 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     const fileIdsToDelete = files.map(f => f.id).filter(id => checkedItems.has(id));
     const nodeIdsToDelete = nodes.map(n => n.id).filter(id => checkedItems.has(id));
     deleteRightPanelItems(fileIdsToDelete, nodeIdsToDelete);
-    setCheckedItems(new Set());
-    setIsMultiSelectMode(false);
+    setCheckedItems(new Set()); 
   };
 
-  // txt
   const handleDownloadItems = () => {
     const selectedFiles = files.filter(f => checkedItems.has(f.id));
     const generatedFiles = selectedFiles.filter(f => f.isGenerated);
 
     if (generatedFiles.length > 0) {
       generatedFiles.forEach(file => {
-        const codeContent = `# ${file.name}
-생성된 코드를 서버에서 불러와서 저장해야 함`;
+        const codeContent = `# ${file.name}\n생성된 코드를 서버에서 불러와서 저장해야 함`;
         const blob = new Blob([codeContent], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${file.name || 'generated_code'}.txt`; // 파일명.txt 로 지정
+        link.download = `${file.name || 'generated_code'}.txt`;
         
         document.body.appendChild(link);
         link.click();
@@ -240,7 +280,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const handleNodeClick = (e: React.MouseEvent, nodeId: string) => {
       e.stopPropagation();
-      if (isMultiSelectMode) return;
+      if (isMultiSelectMode) {
+        toggleNodeCheck(nodeId);
+        return;
+      }
       clearCanvasSelectionArea();
       
       if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length === 1) {
@@ -255,7 +298,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const handleFileClick = (e: React.MouseEvent, fileId: string, nodeIds: string[]) => {
     e.stopPropagation();
-    if (isMultiSelectMode) return;
+    if (isMultiSelectMode) {
+      toggleFileCheck(fileId, nodeIds);
+      return;
+    }
     clearCanvasSelectionArea();
     
     if (selectedFileId === fileId) {
@@ -308,7 +354,18 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         <div className="project-tree">
           <div className="tree-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
             Project
-            <button className="select-mode-btn" onClick={(e) => { e.stopPropagation(); setIsMultiSelectMode(!isMultiSelectMode); }}>
+            <button className="select-mode-btn" onClick={(e) => { 
+              e.stopPropagation(); 
+              const nextMode = !isMultiSelectMode;
+              setIsMultiSelectMode(nextMode); 
+              setCheckedItems(new Set()); 
+              
+              if (nextMode) {
+                setSelectedNodeIds([]);
+                setSelectedFileId(null);
+                clearCanvasSelectionArea();
+              }
+            }}>
               ✔
             </button>
           </div>
@@ -381,8 +438,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
               {files.map(file => (
                 <div 
                   key={file.id}
-                  className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${selectedFileId === file.id ? 'selected' : ''}`}
-                  draggable={editingFileId !== file.id && !isMultiSelectMode}
+                  className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${
+                    isMultiSelectMode ? (checkedItems.has(file.id) ? 'selected' : '') : (selectedFileId === file.id ? 'selected' : '')
+                  }`}
+                  draggable={editingFileId !== file.id}
                   onDragStart={(e) => handleFileDragStart(e, file.id)}
                   onDragOver={handleDragOver}
                   onDragEnter={() => setDragOverFileId(file.id)}
@@ -393,15 +452,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     className="file-header" 
                     onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}
                   >
-                    {isMultiSelectMode && (
-                      <input 
-                        type="checkbox" 
-                        className="multi-select-checkbox" 
-                        checked={checkedItems.has(file.id)} 
-                        onChange={() => toggleFileCheck(file.id, file.nodeIds)} 
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    )}
                     <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>
                       {file.isExpanded ? '▼' : '▶'}
                     </span>
@@ -442,20 +492,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         if (!node) return null;
                         return (
                           <div key={node.id} 
-                               className={`tree-node-item assigned ${selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : ''}`}
-                               draggable={!isMultiSelectMode} 
+                               className={`tree-node-item assigned ${
+                                 isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')
+                               }`}
+                               draggable={true} 
                                onDragStart={(e) => handleNodeDragStart(e, node.id)}
                                onClick={(e) => handleNodeClick(e, node.id)}
                                style={{ display: 'flex', alignItems: 'center' }}>
-                            {isMultiSelectMode && (
-                              <input 
-                                type="checkbox" 
-                                className="multi-select-checkbox" 
-                                checked={checkedItems.has(node.id)} 
-                                onChange={() => toggleNodeCheck(node.id)} 
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            )}
                             ● {node.name}
                           </div>
                         );
@@ -489,19 +532,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 <div className="unassigned-children">
                   {unassignedNodes.map((node) => (
                     <div key={node.id} 
-                         className={`tree-node-item unassigned ${selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : ''}`} 
-                         draggable={!isMultiSelectMode} 
+                         className={`tree-node-item unassigned ${
+                           isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')
+                         }`} 
+                         draggable={true} 
                          onDragStart={(e) => handleNodeDragStart(e, node.id)}
                          onClick={(e) => handleNodeClick(e, node.id)}
                          style={{ display: 'flex', alignItems: 'center' }}>
-                      {isMultiSelectMode && (
-                        <input 
-                          type="checkbox" 
-                          className="multi-select-checkbox" 
-                          checked={checkedItems.has(node.id)} 
-                          onChange={() => toggleNodeCheck(node.id)} 
-                        />
-                      )}
                       ● {node.name}
                     </div>
                   ))}

@@ -84,6 +84,45 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const filteredItems = getFilteredData();
 
+  // 커스텀 드래그 이미지 생성 핸들러
+  const handleDragStart = (e: React.DragEvent, nodeName: string) => {
+    e.dataTransfer.setData('nodeType', nodeName);
+
+    // 1. 가짜 DOM 요소(Ghost) 생성
+    const dragGhost = document.createElement('div');
+    // Canvas의 노드와 동일한 CSS 클래스 적용
+    dragGhost.className = 'deployed-node'; 
+    
+    // 2. 화면 바깥에 숨겨서 렌더링되게 만듦
+    dragGhost.style.position = 'absolute';
+    dragGhost.style.top = '-9999px';
+    dragGhost.style.left = '-9999px';
+    dragGhost.style.pointerEvents = 'none';
+
+    // 3. Canvas에 렌더링되는 노드와 완벽히 동일한 HTML 구조 주입
+    dragGhost.innerHTML = `
+      <div class="node-header">
+        <div class="node-type-icon"></div>
+        <div class="node-info">
+          <div class="node-name">${nodeName}</div>
+          <div class="node-sub">메인 ${nodeName} 서비스</div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dragGhost);
+    
+    // 4. 브라우저 드래그 이미지로 지정 (커서 위치를 중앙 부근인 x:90, y:40으로 설정)
+    e.dataTransfer.setDragImage(dragGhost, 90, 40);
+
+    // 5. 드래그가 시작되어 브라우저가 이미지를 캡처한 직후 잔상 DOM 삭제
+    setTimeout(() => {
+      if (document.body.contains(dragGhost)) {
+        document.body.removeChild(dragGhost);
+      }
+    }, 0);
+  };
+
   return (
     <aside className="left-panel">
       <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: '4px', marginBottom: '12px', borderBottom: '1px solid #e9ecef', minHeight: '32px' }}>
@@ -95,14 +134,34 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               value={tempName}
               onChange={(e) => setTempName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveClick(); }}
-              style={{ flex: 1, padding: '4px 8px', marginRight: '8px', border: '1px solid #28b4ad', borderRadius: '4px', outline: 'none', fontWeight: 'bold', fontSize: '16px', width: '100%' }}
+              onBlur={handleSaveClick}
+              style={{
+                flex: 1,
+                padding: 0,
+                margin: 0,
+                border: 'none',
+                background: 'transparent',
+                outline: 'none',
+                fontWeight: 700,
+                fontSize: '16px',
+                color: '#2c3e50',
+                lineHeight: 1,
+                width: '100%',
+                fontFamily: 'inherit'
+              }}
             />
-            <button onClick={handleSaveClick} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✔</button>
+            <button 
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleSaveClick} 
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad' }}
+            >
+              ✔
+            </button>
           </>
         ) : (
           <>
-            <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1 }}>{projectName}</span>
-            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1 }}>✏️</button>
+            <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, marginBottom: '2px' }}>{projectName}</span>
+            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, marginBottom: '6px' }}>✏️</button>
           </>
         )}
       </div>
@@ -137,13 +196,38 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         >Validation</div>
       </div>
 
-      <div className="search-bar">
+      <div className="search-bar" style={{ position: 'relative' }}>
         <input 
           type="text" 
           placeholder="노드에 대해 검색합니다..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ paddingRight: '28px' }} 
         />
+        {searchTerm && (
+          <button
+            onClick={() => setSearchTerm('')}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#a0aec0',
+              fontSize: '12px',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: '-7px' 
+            }}
+            title="검색어 지우기"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <div className="category-list">
@@ -159,7 +243,12 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             {filteredItems.map((node) => {
               const count = getNodeCount(node);
               return (
-                <div key={node} className="draggable-node-item" draggable onDragStart={(e) => e.dataTransfer.setData('nodeType', node)}>
+                <div 
+                  key={node} 
+                  className="draggable-node-item" 
+                  draggable 
+                  onDragStart={(e) => handleDragStart(e, node)} // 변경된 드래그 핸들러 적용
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                     <div className="node-icon-small"></div>
                     <span>{node}</span>

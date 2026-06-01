@@ -40,6 +40,19 @@ const Canvas: React.FC<CanvasProps> = ({
   const [tempEdgeEnd, setTempEdgeEnd] = useState({ x: 0, y: 0 });
 
   const viewportRef = useRef<HTMLElement>(null);
+  const lastPointerRef = useRef<{ clientX: number, clientY: number } | null>(null);
+
+  const stateRef = useRef({
+    startMousePos, initialPositions, initialSelectionPos, nodes, zoomLevel,
+    isGroupDragging, draggingNodeId, isAreaSelecting, drawingEdgeSource
+  });
+  
+  useEffect(() => {
+    stateRef.current = {
+      startMousePos, initialPositions, initialSelectionPos, nodes, zoomLevel,
+      isGroupDragging, draggingNodeId, isAreaSelecting, drawingEdgeSource
+    };
+  });
 
   const handleScroll = () => {
     if (viewportRef.current) {
@@ -60,7 +73,6 @@ const Canvas: React.FC<CanvasProps> = ({
     return () => window.removeEventListener('resize', handleScroll);
   }, [zoomLevel, nodes]);
 
-  // 우측 패널 노드 클릭 시 이동함
   useEffect(() => {
     if (focusNodeId) {
       const targetNode = nodes.find(n => n.id === focusNodeId);
@@ -69,7 +81,6 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   }, [focusNodeId, nodes, zoomLevel, setFocusNodeId]);
 
-  // 새로고침: 화면 정리
   useEffect(() => {
     if (resetTrigger > 0 && viewportRef.current) {
       viewportRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
@@ -86,17 +97,147 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
-  const getCanvasCoords = (e: React.MouseEvent | React.DragEvent) => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const getCoords = (clientX: number, clientY: number, container: HTMLElement, currentZoom: number) => {
+    const rect = container.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left + (e.currentTarget as HTMLElement).scrollLeft) / zoomLevel,
-      y: (e.clientY - rect.top + (e.currentTarget as HTMLElement).scrollTop) / zoomLevel
+      x: (clientX - rect.left + container.scrollLeft) / currentZoom,
+      y: (clientY - rect.top + container.scrollTop) / currentZoom
     };
   };
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  const checkEdgeScroll = (clientX: number, clientY: number) => {
+    if (!viewportRef.current) return false;
+    const rect = viewportRef.current.getBoundingClientRect();
+    const THRESHOLD = 60; 
+    const maxSpeed = 15;  
+    let scrollX = 0;
+    let scrollY = 0;
+
+    if (clientX < rect.left + THRESHOLD) {
+      const dist = (rect.left + THRESHOLD) - clientX;
+      scrollX = -(Math.min(dist / THRESHOLD, 1.5) * maxSpeed);
+    } else if (clientX > rect.right - THRESHOLD) {
+      const dist = clientX - (rect.right - THRESHOLD);
+      scrollX = (Math.min(dist / THRESHOLD, 1.5) * maxSpeed);
+    }
+
+    if (clientY < rect.top + THRESHOLD) {
+      const dist = (rect.top + THRESHOLD) - clientY;
+      scrollY = -(Math.min(dist / THRESHOLD, 1.5) * maxSpeed);
+    } else if (clientY > rect.bottom - THRESHOLD) {
+      const dist = clientY - (rect.bottom - THRESHOLD);
+      scrollY = (Math.min(dist / THRESHOLD, 1.5) * maxSpeed);
+    }
+
+    if (scrollX !== 0 || scrollY !== 0) {
+      viewportRef.current.scrollBy(scrollX, scrollY);
+      return true;
+    }
+    return false;
+  };
+
+  const handlePointerMoveLogic = (clientX: number, clientY: number) => {
+    if (!viewportRef.current) return;
+    const state = stateRef.current;
+    const coords = getCoords(clientX, clientY, viewportRef.current, state.zoomLevel);
+    
+    const dx = coords.x - state.startMousePos.x;
+    const dy = coords.y - state.startMousePos.y;
+
+    // 무한 증식하는 scrollWidth 대신, 캔버스 배경의 진짜 크기(offsetWidth)를 한계선으로 사용!
+    const contentEl = viewportRef.current.querySelector('.canvas-content') as HTMLElement;
+    const maxW = contentEl ? contentEl.offsetWidth : 5000;
+    const maxH = contentEl ? contentEl.offsetHeight : 5000;
+
+    if (state.isGroupDragging) {
+      let minGroupX = Infinity, minGroupY = Infinity;
+      let maxGroupX = -Infinity, maxGroupY = -Infinity;
+      
+      Object.keys(state.initialPositions).forEach(id => {
+        const pos = state.initialPositions[id];
+        minGroupX = Math.min(minGroupX, pos.x);
+        minGroupY = Math.min(minGroupY, pos.y);
+        maxGroupX = Math.max(maxGroupX, pos.x + 180);
+        maxGroupY = Math.max(maxGroupY, pos.y + 80);
+      });
+
+      const minDx = -minGroupX;
+      const maxDx = maxW - maxGroupX;
+      const minDy = -minGroupY;
+      const maxDy = maxH - maxGroupY;
+
+      const clampedDx = Math.max(minDx, Math.min(dx, maxDx));
+      const clampedDy = Math.max(minDy, Math.min(dy, maxDy));
+
+      setNodes(prev => prev.map(n => 
+        state.initialPositions[n.id] 
+          ? { ...n, x: state.initialPositions[n.id].x + clampedDx, y: state.initialPositions[n.id].y + clampedDy } 
+          : n
+      ));
+      setSelection(prev => ({ ...prev, x: state.initialSelectionPos.x + clampedDx, y: state.initialSelectionPos.y + clampedDy }));
+      
+    } else if (state.draggingNodeId) {
+      const pos = state.initialPositions[state.draggingNodeId];
+      if (pos) {
+        const minDx = -pos.x;
+        const maxDx = maxW - (pos.x + 180);
+        const minDy = -pos.y;
+        const maxDy = maxH - (pos.y + 80);
+
+        const clampedDx = Math.max(minDx, Math.min(dx, maxDx));
+        const clampedDy = Math.max(minDy, Math.min(dy, maxDy));
+
+        setNodes(prev => prev.map(n => 
+          n.id === state.draggingNodeId 
+            ? { ...n, x: pos.x + clampedDx, y: pos.y + clampedDy } 
+            : n
+        ));
+      }
+    } else if (state.isAreaSelecting) {
+      const newX = Math.max(0, Math.min(state.startMousePos.x, coords.x));
+      const newY = Math.max(0, Math.min(state.startMousePos.y, coords.y));
+      // 영역 선택 박스도 벽을 뚫지 못하게 방어
+      const endX = Math.min(maxW, Math.max(state.startMousePos.x, coords.x));
+      const endY = Math.min(maxH, Math.max(state.startMousePos.y, coords.y));
+      
+      const newW = endX - newX;
+      const newH = endY - newY;
+      
+      setSelection({ x: newX, y: newY, width: newW, height: newH, active: true });
+
+      const idsInside = state.nodes.filter(n => n.x >= newX && n.x + 180 <= newX + newW && n.y >= newY && n.y + 80 <= newY + newH).map(n => n.id);
+      setSelectedNodeIds(idsInside);
+    }
+    
+    if (state.drawingEdgeSource) setTempEdgeEnd(coords);
+  };
+
+  useEffect(() => {
+    const isInteracting = isGroupDragging || draggingNodeId !== null || isAreaSelecting || drawingEdgeSource !== null;
+    if (!isInteracting) return;
+
+    let animationFrameId: number;
+
+    const scrollLoop = () => {
+      if (lastPointerRef.current) {
+        const { clientX, clientY } = lastPointerRef.current;
+        if (checkEdgeScroll(clientX, clientY)) {
+          handlePointerMoveLogic(clientX, clientY);
+        }
+      }
+      animationFrameId = requestAnimationFrame(scrollLoop);
+    };
+
+    animationFrameId = requestAnimationFrame(scrollLoop);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isGroupDragging, draggingNodeId, isAreaSelecting, drawingEdgeSource]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button === 2) return; 
-    const coords = getCanvasCoords(e);
+    if (!viewportRef.current) return;
+    
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
 
     const isInsideSelection = selection.active && 
       coords.x >= selection.x && coords.x <= selection.x + selection.width &&
@@ -119,7 +260,6 @@ const Canvas: React.FC<CanvasProps> = ({
 
     if (targetNode) {
       saveHistory();
-      
       const isAlreadySelected = selectedNodeIds.includes(targetNode.id);
       
       if (isAlreadySelected && selectedNodeIds.length === 1) {
@@ -149,32 +289,18 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
-    const coords = getCanvasCoords(e);
-    const dx = coords.x - startMousePos.x;
-    const dy = coords.y - startMousePos.y;
-
-    if (isGroupDragging) {
-      setNodes(prev => prev.map(n => initialPositions[n.id] ? { ...n, x: initialPositions[n.id].x + dx, y: initialPositions[n.id].y + dy } : n));
-      setSelection(prev => ({ ...prev, x: initialSelectionPos.x + dx, y: initialSelectionPos.y + dy }));
-    } else if (draggingNodeId) {
-      setNodes(prev => prev.map(n => n.id === draggingNodeId ? { ...n, x: initialPositions[n.id].x + dx, y: initialPositions[n.id].y + dy } : n));
-    } else if (isAreaSelecting) {
-      const newX = Math.min(startMousePos.x, coords.x);
-      const newY = Math.min(startMousePos.y, coords.y);
-      const newW = Math.abs(coords.x - startMousePos.x);
-      const newH = Math.abs(coords.y - startMousePos.y);
-      setSelection({ x: newX, y: newY, width: newW, height: newH, active: true });
-
-      const idsInside = nodes.filter(n => n.x >= newX && n.x + 180 <= newX + newW && n.y >= newY && n.y + 80 <= newY + newH).map(n => n.id);
-      setSelectedNodeIds(idsInside);
-    }
-    if (drawingEdgeSource) setTempEdgeEnd(coords);
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
+    handlePointerMoveLogic(e.clientX, e.clientY);
   };
 
-  const onMouseUp = (e: React.MouseEvent) => {
-    const coords = getCanvasCoords(e);
-    // 우클릭(e.button === 2)일 때는 onContextMenu에서 처리하도록 넘김
+  const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    lastPointerRef.current = null;
+    
+    if (!viewportRef.current) return;
+    const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
+    
     if (drawingEdgeSource && e.button !== 2) {
       const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
       if (targetNode && targetNode.id !== drawingEdgeSource) {
@@ -198,11 +324,11 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    const coords = getCanvasCoords(e);
+    if (!viewportRef.current) return;
+    const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
     const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
     
     if (drawingEdgeSource) {
-      // 이미 선을 긋고 있던 상태라면 선 긋기를 종료 (타겟이 유효하면 연결)
       if (targetNode && targetNode.id !== drawingEdgeSource) {
         const exists = edges.some(edge => (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id));
         if (!exists) {
@@ -213,21 +339,48 @@ const Canvas: React.FC<CanvasProps> = ({
       }
       setDrawingEdgeSource(null);
     } else if (targetNode) {
-      // 선 긋기 시작
       setDrawingEdgeSource(targetNode.id);
       setTempEdgeEnd(coords);
     }
   };
 
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    checkEdgeScroll(e.clientX, e.clientY);
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    const coords = getCanvasCoords(e);
+    if (!viewportRef.current) return;
+    const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
     const nodeType = e.dataTransfer.getData('nodeType');
-    if (nodeType) addNode(nodeType, nodeType, coords.x - 90, coords.y - 40);
+    
+    if (nodeType) {
+      const contentEl = viewportRef.current.querySelector('.canvas-content') as HTMLElement;
+      const maxW = contentEl ? contentEl.offsetWidth : 5000;
+      const maxH = contentEl ? contentEl.offsetHeight : 5000;
+      
+      const rawX = coords.x - 90;
+      const rawY = coords.y - 40;
+      const clampedX = Math.max(0, Math.min(rawX, maxW - 180));
+      const clampedY = Math.max(0, Math.min(rawY, maxH - 80));
+
+      addNode(nodeType, nodeType, clampedX, clampedY);
+    }
   };
 
   return (
-    <main ref={viewportRef} className="canvas-viewport" onScroll={handleScroll} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onContextMenu={onContextMenu} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+    <main 
+      ref={viewportRef} 
+      className="canvas-viewport" 
+      onScroll={handleScroll} 
+      onPointerDown={onPointerDown} 
+      onPointerMove={onPointerMove} 
+      onPointerUp={onPointerUp} 
+      onContextMenu={onContextMenu} 
+      onDragOver={onDragOver} 
+      onDrop={handleDrop}
+    >
       <div className="canvas-content" style={{ transform: `scale(${zoomLevel})`, transformOrigin: '0 0' }}>
         <div className="canvas-inner-elements">
           <svg className="edge-layer">
@@ -246,7 +399,7 @@ const Canvas: React.FC<CanvasProps> = ({
               style={{ 
                 left: node.x, 
                 top: node.y,
-                zIndex: selectedNodeIds.includes(node.id) ? 10 : 5 // 선택된 노드를 맨 위로 띄움
+                zIndex: selectedNodeIds.includes(node.id) ? 10 : 5
               }}
             >
               <div className="node-header">
@@ -258,7 +411,24 @@ const Canvas: React.FC<CanvasProps> = ({
               </div>
             </div>
           ))}
-          {selection.active && <div className="selection-box" style={{ left: selection.x, top: selection.y, width: selection.width, height: selection.height, cursor: isSelectMode ? 'move' : 'default' }} />}
+          
+          {selection.active && (
+            <div 
+              className="selection-box" 
+              style={{ 
+                left: selection.x, 
+                top: selection.y, 
+                width: selection.width, 
+                height: selection.height, 
+                cursor: isSelectMode ? 'move' : 'default' 
+              }}
+            >
+              <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}>
+                <rect x="0" y="0" width="100%" height="100%" className="marching-ants-rect" />
+              </svg>
+            </div>
+          )}
+
         </div>
       </div>
     </main>
