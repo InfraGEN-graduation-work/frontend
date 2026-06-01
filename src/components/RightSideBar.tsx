@@ -100,7 +100,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       }
       setTargetFileIds((prev) => prev.filter(id => !dragIds.includes(id)));
       
-      // 타겟 박스에서 빼낸 이후 다중 선택된 항목들의 체크만 해제 (모드는 유지)
       if (isMultiSelectMode) {
         setCheckedItems(new Set());
       }
@@ -125,7 +124,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       return { ...f, nodeIds: filteredNodeIds };
     }));
 
-    // 파일로 노드 이동 후 체크 해제 (모드는 유지)
     if (isMultiSelectMode) {
       setCheckedItems(new Set());
     }
@@ -142,7 +140,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     markFilesAsModified();
     setFiles((prev) => prev.map((f) => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) })));
     
-    // 미지정으로 노드 이동 후 체크 해제 (모드는 유지)
     if (isMultiSelectMode) {
       setCheckedItems(new Set());
     }
@@ -173,7 +170,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       setTargetFileIds(prev => Array.from(new Set([...prev, ...fileIds])));
     }
 
-    // 타겟 박스로 파일 이동 후 체크 해제 (모드는 유지)
     if (isMultiSelectMode) {
       setCheckedItems(new Set());
     }

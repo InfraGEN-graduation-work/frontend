@@ -84,22 +84,17 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const filteredItems = getFilteredData();
 
-  // 커스텀 드래그 이미지 생성 핸들러
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
     e.dataTransfer.setData('nodeType', nodeName);
 
-    // 1. 가짜 DOM 요소(Ghost) 생성
     const dragGhost = document.createElement('div');
-    // Canvas의 노드와 동일한 CSS 클래스 적용
     dragGhost.className = 'deployed-node'; 
     
-    // 2. 화면 바깥에 숨겨서 렌더링되게 만듦
     dragGhost.style.position = 'absolute';
     dragGhost.style.top = '-9999px';
     dragGhost.style.left = '-9999px';
     dragGhost.style.pointerEvents = 'none';
 
-    // 3. Canvas에 렌더링되는 노드와 완벽히 동일한 HTML 구조 주입
     dragGhost.innerHTML = `
       <div class="node-header">
         <div class="node-type-icon"></div>
@@ -111,11 +106,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     `;
 
     document.body.appendChild(dragGhost);
-    
-    // 4. 브라우저 드래그 이미지로 지정 (커서 위치를 중앙 부근인 x:90, y:40으로 설정)
-    e.dataTransfer.setDragImage(dragGhost, 90, 40);
 
-    // 5. 드래그가 시작되어 브라우저가 이미지를 캡처한 직후 잔상 DOM 삭제
+    e.dataTransfer.setDragImage(dragGhost, 90, 40);
+    
     setTimeout(() => {
       if (document.body.contains(dragGhost)) {
         document.body.removeChild(dragGhost);

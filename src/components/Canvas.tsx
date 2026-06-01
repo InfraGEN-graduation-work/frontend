@@ -144,7 +144,6 @@ const Canvas: React.FC<CanvasProps> = ({
     const dx = coords.x - state.startMousePos.x;
     const dy = coords.y - state.startMousePos.y;
 
-    // 무한 증식하는 scrollWidth 대신, 캔버스 배경의 진짜 크기(offsetWidth)를 한계선으로 사용!
     const contentEl = viewportRef.current.querySelector('.canvas-content') as HTMLElement;
     const maxW = contentEl ? contentEl.offsetWidth : 5000;
     const maxH = contentEl ? contentEl.offsetHeight : 5000;

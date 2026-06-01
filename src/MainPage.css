@@ -223,11 +223,11 @@ body {
   transition: 0.2s;
   cursor: pointer;
 }
-/* ======= 탭 호버 효과 추가 ======= */
+
 .tab:hover:not(.active) {
-  border-color: rgba(40, 180, 173, 0.4); /* 연한 민트 테두리 */
-  background-color: rgba(40, 180, 173, 0.04); /* 아주 옅은 민트 배경 */
-  color: rgba(40, 180, 173, 0.9); /* 살짝 밝은 민트 글씨 */
+  border-color: rgba(40, 180, 173, 0.4);
+  background-color: rgba(40, 180, 173, 0.04);
+  color: rgba(40, 180, 173, 0.9);
 }
 .tab.active {
   border-color: var(--mint);
@@ -235,7 +235,6 @@ body {
   background: #f0fdfc;
   font-weight: bold;
 }
-/* ================================ */
 
 .search-bar input {
   width: 100%;
@@ -295,7 +294,6 @@ body {
   background: #cbd5e0;
 }
 
-/* ======= 선택 영역 스타일 (투명 박스 & 점선 효과) ======= */
 .selection-box {
   position: absolute;
   /*background-color: rgba(40, 180, 173, 0.15);*/
@@ -316,7 +314,6 @@ body {
     stroke-dashoffset: -16;
   }
 }
-/* ================================================= */
 
 .node-detail-view {
   display: flex;
