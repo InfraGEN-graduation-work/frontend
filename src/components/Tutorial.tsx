@@ -32,7 +32,7 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '1',
     title: '튜토리얼 1단계',
-    description: 'NodeBox에서 사용할 노드를 클릭하시오',
+    description: 'NodeBox에서 사용할 노드를 클릭하세요',
     targetSelector: '.category-list',
     tooltipPlacement: 'right',
     arrowText: '노드를 클릭하세요',
@@ -42,8 +42,8 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '2',
     title: '튜토리얼 2단계',
-    description: '선택한 노드를 보드에 드래그 앤 드롭하시오',
-    subText: '여러 개의 노드를 배치할 수 있어요. 완료되면 다음을 누르세요.',
+    description: '노드를 2개 이상 보드에 드래그 앤 드롭하세요',
+    subText: '배치가 끝나면 다음을 누르세요.',
     targetSelector: '.category-list',
     tooltipPlacement: 'right',
     noDim: true,
@@ -52,18 +52,17 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '3',
     title: '튜토리얼 3단계',
-    description: '보드에 놓인 노드들을 연결하시오',
+    description: '보드에 놓인 노드들을 연결하세요',
     subText: '연결할 노드에 우클릭하여 연결을 시작하세요\n다 연결했으면 다음 버튼을 눌러주세요',
-    // 왼쪽 패널 기준으로 오른쪽에 툴팁 → 항상 화면 안에 보임
-    targetSelector: '.left-panel',
-    tooltipPlacement: 'right',
+    targetSelector: '.deployed-nodes-group',
+    tooltipPlacement: 'left',
     noDim: true,
     // advanceOn 없음 → 다음 버튼으로 수동 진행
   },
   {
     step: '4',
     title: '튜토리얼 4단계',
-    description: 'Settings 버튼을 클릭하시오',
+    description: 'Settings 버튼을 클릭하세요',
     targetSelector: '.tabs .tab:nth-child(2)',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.tabs .tab:nth-child(2)', event: 'click' },
@@ -71,7 +70,7 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '5',
     title: '튜토리얼 5단계',
-    description: '노드 설정하시오',
+    description: '노드를 설정하세요',
     subText: "설정을 입력한 후 '다음' 버튼을 누르세요",
     // settings-panel: RightSideBar Settings 탭 콘텐츠 클래스
     targetSelector: '.settings-panel',
@@ -83,7 +82,7 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '6',
     title: '튜토리얼 6단계',
-    description: '노드를 완성하였으면\nGenerate 버튼을 클릭하시오',
+    description: '노드를 완성하셨으면\nGenerate 버튼을 클릭하세요',
     targetSelector: '.generate-btn',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.generate-btn', event: 'click' },
@@ -217,12 +216,20 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     };
   }, [idx, step.showDropTarget]);
 
-  // MutationObserver
+  // MutationObserver — 노드 배치/이동·스크롤 시 툴팁 위치 재계산
   useEffect(() => {
     const obs = new MutationObserver(() => setTimeout(measure, 60));
     const panel = document.querySelector('.left-panel, aside');
+    const canvas = document.querySelector('.canvas-viewport');
     if (panel) obs.observe(panel, { childList: true, subtree: true });
-    return () => obs.disconnect();
+    if (canvas) {
+      obs.observe(canvas, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+      canvas.addEventListener('scroll', measure);
+    }
+    return () => {
+      obs.disconnect();
+      canvas?.removeEventListener('scroll', measure);
+    };
   }, [idx, measure]);
 
   useEffect(() => {
@@ -337,11 +344,28 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
           <div className="tutorial-step-badge">튜토리얼 {step.step}단계</div>
           <div className="tutorial-description">{step.description}</div>
           {step.subText && <div className="tutorial-subtext">{step.subText}</div>}
-          <div className="tutorial-dots">
-            {Array.from({ length: TOTAL_VISIBLE }).map((_, i) => (
-              <span key={i} className={`tutorial-dot ${i === idx ? 'active' : ''}`} />
-            ))}
+          <div className="tutorial-tooltip-footer">
+            <div className="tutorial-dots">
+              {Array.from({ length: TOTAL_VISIBLE }).map((_, i) => (
+                <span key={i} className={`tutorial-dot ${i === idx ? 'active' : ''}`} />
+              ))}
+            </div>
+            <div className="tutorial-tooltip-actions">
+              <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={handleSkip}>
+                건너뛰기
+              </button>
+              {step.step !== '6' && step.step !== '4' && (
+                <button type="button" className="tutorial-next-btn tutorial-next-inline" onClick={goNext}>
+                  {isLast ? '완료' : '다음'}
+                </button>
+              )}
+            </div>
           </div>
+          {showNodeWarning && (
+            <div className="tutorial-inline-warning">
+              2개 이상의 노드를 보드에 놓아주세요!
+            </div>
+          )}
         </div>
 
         {/* 화살표 텍스트 */}
@@ -355,20 +379,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
         )}
       </div>
 
-      {/* 2단계 노드 부족 경고 */}
-      {showNodeWarning && (
-        <div className="tutorial-node-warning">
-          2개 이상의 노드를 보드에 놓아주세요!
-        </div>
-      )}
-
-      {/* 하단 버튼 */}
-      <div className={`tutorial-controls ${visible ? 'visible' : ''}`}>
-        <button className="tutorial-skip-btn" onClick={handleSkip}>건너뛰기</button>
-        {step.step !== '6' && step.step !== '4' && (
-          <button className="tutorial-next-btn" onClick={goNext}>{isLast ? '완료' : '다음'}</button>
-        )}
-      </div>
     </div>
   );
 };
