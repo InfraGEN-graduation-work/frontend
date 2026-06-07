@@ -83,7 +83,7 @@
   flex-direction: column;
   gap: 6px;
   pointer-events: none;
-  max-width: 260px;
+  max-width: 300px;
   opacity: 0;
   transform: scale(0.9) translateY(6px);
   transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -100,6 +100,7 @@
   padding: 14px 18px 12px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.28);
   position: relative;
+  pointer-events: all;
 }
 
 /* 말풍선 꼬리 */
@@ -157,11 +158,25 @@
   line-height: 1.4;
 }
 
+/* 푸터: 진행 점 + 버튼 */
+.tutorial-tooltip-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.tutorial-tooltip-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* 점 인디케이터 */
 .tutorial-dots {
   display: flex;
   gap: 5px;
-  margin-top: 10px;
 }
 .tutorial-dot {
   width: 7px; height: 7px;
@@ -183,20 +198,7 @@
 }
 .arrow-icon { font-size: 14px; }
 
-/* ===== 하단 버튼 ===== */
-.tutorial-controls {
-  position: fixed;
-  bottom: 28px; right: 32px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  pointer-events: all;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: 9996;
-}
-.tutorial-controls.visible { opacity: 1; }
-
+/* ===== 튜토리얼 버튼 ===== */
 .tutorial-skip-btn {
   background: transparent;
   border: 1px solid rgba(255,255,255,0.38);
@@ -220,9 +222,35 @@
   cursor: pointer;
   transition: all 0.18s;
   box-shadow: 0 2px 10px rgba(95,207,173,0.4);
-  pointer-events: all;
 }
 .tutorial-next-btn:hover { background: #4dbf9d; transform: translateY(-1px); }
+
+/* 메시지 박스 내부 버튼 */
+.tutorial-skip-inline {
+  border: none;
+  color: rgba(20,60,40,0.65);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+.tutorial-skip-inline:hover {
+  color: #1a3d30;
+  background: rgba(0,60,40,0.08);
+}
+
+.tutorial-next-inline {
+  background: #1a3d30;
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,40,30,0.25);
+}
+.tutorial-next-inline:hover {
+  background: #0f3028;
+  transform: translateY(-1px);
+}
 
 /* ===== 7단계 완료 모달 ===== */
 .tutorial-finale-modal {
@@ -267,24 +295,22 @@
   border-radius: 8px;
 }
 
-/* ===== 노드 부족 경고 말풍선 ===== */
-.tutorial-node-warning {
-  position: fixed;
-  bottom: 80px;
-  right: 32px;
-  background: #ff6b6b;
-  color: #fff;
-  font-size: 13px;
+/* ===== 노드 부족 경고 (메시지 박스 하단) ===== */
+.tutorial-inline-warning {
+  margin: 10px -18px -12px;
+  padding: 9px 18px;
+  background: #fff5f5;
+  border-top: 1px solid #fca5a5;
+  border-radius: 0 0 10px 10px;
+  color: #dc2626;
+  font-size: 12px;
   font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.4);
-  z-index: 9997;
-  pointer-events: none;
+  line-height: 1.4;
+  text-align: center;
   animation: warning-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
 @keyframes warning-pop {
-  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
