@@ -7,6 +7,8 @@ import Canvas from './components/Canvas';
 import RightSideBar from './components/RightSideBar';
 import Generate from './components/Generate'; 
 import type { NodeData, SelectionArea, Edge, FileGroup } from './types';
+import Tutorial from './components/Tutorial';
+
 
 interface HistoryState {
   nodes: NodeData[];
@@ -27,6 +29,8 @@ export interface ViewportState {
 }
 
 const App: React.FC = () => {
+
+const [showTutorial, setShowTutorial] = useState(true);
   const navigate = useNavigate();
 
   //로그인 정보 여기로 이건 임시
@@ -326,6 +330,17 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {showTutorial && (
+        <Tutorial
+          nodes={nodes}  
+          onFinish={() => setShowTutorial(false)}
+          onSkip={() => setShowTutorial(false)}
+        />
+      )}
+
+
+      
     </div>
   );
 };
