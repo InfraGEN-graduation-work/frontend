@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
 import type { ViewportState } from '../MainPage';
 
+// 아이콘 이미지 import
+import mysqlIcon from '../assets/mysql.png';
+import springbootIcon from '../assets/springboot.png';
+
 interface CanvasProps {
   nodes: NodeData[];
   setNodes: React.Dispatch<React.SetStateAction<NodeData[]>>;
@@ -368,6 +372,13 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
+  // 노드 타입별 아이콘 반환
+  const getNodeIcon = (type: string) => {
+    if (type === 'MySQL') return mysqlIcon;
+    if (type === 'Spring Boot') return springbootIcon;
+    return null;
+  };
+
   return (
     <main 
       ref={viewportRef} 
@@ -402,7 +413,11 @@ const Canvas: React.FC<CanvasProps> = ({
               }}
             >
               <div className="node-header">
-                <div className="node-type-icon"></div>
+                <div className="node-type-icon" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                  {getNodeIcon(node.type) && (
+                    <img src={getNodeIcon(node.type)!} alt={node.type} style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+                  )}
+                </div>
                 <div className="node-info">
                   <div className="node-name">{node.name}</div>
                   <div className="node-sub">메인 {node.type} 서비스</div>

@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData } from '../types';
+import mysqlIcon from '../assets/mysql.png';
+import springbootIcon from '../assets/springboot.png';
 
 interface LeftPanelProps {
   projectName: string;
@@ -47,8 +49,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   }, [resetTrigger]);
 
   const nodeTemplates: Record<string, string[]> = {
-    Server: ['Spring Boot', 'Node.js', 'Go Server', 'Python Fast API'],
-    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'],
+    Server: ['Spring Boot'],
+    Database: ['MySQL'],
     Storage: ['S3 Bucket', 'EFS', 'Block Storage'],
     Network: ['VPC', 'Subnet', 'Load Balancer']
   };
@@ -62,7 +64,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   const handleEditClick = () => { setIsEditing(true); setTempName(projectName); };
   const handleSaveClick = () => { if (tempName.trim()) setProjectName(tempName); setIsEditing(false); };
 
-  // 클릭한 탭이 현재 탭이면서 우측 패널이 열려있으면 닫기, 아니면 열기
   const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
     if (activeTab === tab && showRightSidebar) {
       setShowRightSidebar(false);
@@ -89,6 +90,12 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const filteredItems = getFilteredData();
 
+  const getNodeIconSrc = (type: string) => {
+    if (type === 'MySQL') return mysqlIcon;
+    if (type === 'Spring Boot') return springbootIcon;
+    return '';
+  };
+
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
     e.dataTransfer.setData('nodeType', nodeName);
 
@@ -98,9 +105,16 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     dragGhost.style.top = '-9999px';
     dragGhost.style.left = '-9999px';
     dragGhost.style.pointerEvents = 'none';
+
+    // 고스트 이미지에 아이콘 적용
+    const iconSrc = getNodeIconSrc(nodeName);
+    const imgTag = iconSrc ? `<img src="${iconSrc}" alt="${nodeName}" style="width: 80%; height: 80%; object-fit: contain;" />` : '';
+
     dragGhost.innerHTML = `
       <div class="node-header">
-        <div class="node-type-icon"></div>
+        <div class="node-type-icon" style="display: flex; justify-content: center; align-items: center; overflow: hidden;">
+          ${imgTag}
+        </div>
         <div class="node-info">
           <div class="node-name">${nodeName}</div>
           <div class="node-sub">메인 ${nodeName} 서비스</div>
@@ -199,10 +213,13 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             </div>
             {filteredItems.map((node) => {
               const count = getNodeCount(node);
+              const iconSrc = getNodeIconSrc(node);
               return (
                 <div key={node} className="draggable-node-item" draggable onDragStart={(e) => handleDragStart(e, node)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-                    <div className="node-icon-small"></div>
+                    <div className="node-icon-small" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                      {iconSrc && <img src={iconSrc} alt={node} style={{ width: '80%', height: '80%', objectFit: 'contain' }} />}
+                    </div>
                     <span>{node}</span>
                   </div>
                   {count > 0 && <span className="badge">{count}</span>}
@@ -231,10 +248,15 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
       <div className="user-profile-section">
         <div className="user-info-wrapper">
-          <div className="user-avatar">{userInfo.nickname.charAt(0)}</div>
+          {/*<div className="user-avatar">{userInfo.nickname.charAt(0)}</div>
           <div className="user-details">
             <span className="user-nickname">{userInfo.nickname}</span>
             <span className="user-email">{userInfo.email}</span>
+          </div>*/}
+          <div className="user-avatar">test</div>
+          <div className="user-details">
+            <span className="user-nickname">test</span>
+            <span className="user-email">1234@1234.com</span>
           </div>
         </div>
         <button className="logout-icon-btn" onClick={onLogout} title="로그아웃">

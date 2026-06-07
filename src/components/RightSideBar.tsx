@@ -569,6 +569,17 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 const selectedNode = nodes.find(n => n.id === selectedNodeIds[0]);
                 if (!selectedNode) return null;
                 
+                const settings = (selectedNode as any).settings || {};
+                
+                const updateSetting = (key: string, value: string) => {
+                  setNodes(prev => prev.map(n => 
+                    n.id === selectedNode.id 
+                      ? { ...n, settings: { ...((n as any).settings || {}), [key]: value } } 
+                      : n
+                  ));
+                  markFilesAsModified();
+                };
+
                 return (
                   <div className="node-settings-section">
                     <div className="setting-section-title">
@@ -588,21 +599,97 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         onFocus={saveHistory}
                       />
                     </div>
-                    
-                    <div className="setting-row">
-                      <label>설명 (임시로)</label>
-                      <input type="text" placeholder="이 노드에 대한 설명을 입력하세요" onChange={markFilesAsModified} />
-                    </div>
 
-                    <div className="setting-row">
-                      <label>포트 매핑 (배치한)</label>
-                      <input type="text" placeholder="e.g. 8080:8080" onChange={markFilesAsModified} />
-                    </div>
+                    {selectedNode.type === 'MySQL' ? (
+                      <>
+                        <div className="setting-row">
+                          <label>도커 이미지 버전</label>
+                          <select 
+                            value={settings.imageVersion || ''} 
+                            onChange={(e) => updateSetting('imageVersion', e.target.value)} 
+                            onFocus={saveHistory}
+                          >
+                            <option value="" disabled>버전을 선택하세요</option>
+                            <option value="mysql:latest">mysql : latest</option>
+                            <option value="mysql:8.4">mysql : 8.4</option>
+                            <option value="mysql:8.0">mysql : 8.0</option>
+                            <option value="mysql:5.7">mysql : 5.7</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <label>컨테이너 이름</label>
+                          <input type="text" value={settings.containerName || ''} placeholder="container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>포트 번호</label>
+                          <input type="text" value={settings.port !== undefined ? settings.port : '3306'} placeholder="3306" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>볼륨 이름</label>
+                          <input type="text" value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={saveHistory} />
+                        </div>
 
-                    <div className="setting-row">
-                      <label>환경 변수 (수정툴)</label>
-                      <textarea rows={3} placeholder="NODE_ENV=production&#10;PORT=8080" onChange={markFilesAsModified} />
-                    </div>
+                        <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
+                          <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}>🔒</span> 
+                          환경 변수
+                        </div>
+                        <div className="setting-row">
+                          <label>데이터베이스 이름</label>
+                          <input type="text" value={settings.dbName || ''} placeholder="database" onChange={(e) => updateSetting('dbName', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>사용자 이름</label>
+                          <input type="text" value={settings.dbUser || ''} placeholder="user" onChange={(e) => updateSetting('dbUser', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>일반 사용자 패스워드</label>
+                          <input type="password" value={settings.dbPassword || ''} placeholder="user password" onChange={(e) => updateSetting('dbPassword', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>루트 패스워드</label>
+                          <input type="password" value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateSetting('rootPassword', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                      </>
+                    ) : selectedNode.type === 'Spring Boot' ? (
+                      <>
+                        <div className="setting-row">
+                          <label>Java 버전</label>
+                          <select 
+                            value={settings.javaVersion || ''} 
+                            onChange={(e) => updateSetting('javaVersion', e.target.value)} 
+                            onFocus={saveHistory}
+                          >
+                            <option value="" disabled>버전 선택</option>
+                            <option value="11">Java 11</option>
+                            <option value="17">Java 17</option>
+                            <option value="21">Java 21</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <label>컨테이너 이름</label>
+                          <input type="text" value={settings.containerName || ''} placeholder="container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>포트 번호</label>
+                          <input type="text" value={settings.port !== undefined ? settings.port : '8080'} placeholder="8080" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="setting-row">
+                          <label>설명 (임시로)</label>
+                          <input type="text" value={settings.description || ''} placeholder="이 노드에 대한 설명을 입력하세요" onChange={(e) => updateSetting('description', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>포트 매핑 (배치한)</label>
+                          <input type="text" value={settings.portMapping || ''} placeholder="e.g. 8080:8080" onChange={(e) => updateSetting('portMapping', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>환경 변수 (수정툴)</label>
+                          <textarea rows={3} value={settings.envVars || ''} placeholder="NODE_ENV=production&#10;PORT=8080" onChange={(e) => updateSetting('envVars', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })()
