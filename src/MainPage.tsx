@@ -8,6 +8,8 @@ import RightSideBar from './components/RightSideBar';
 import Generate from './components/Generate'; 
 import type { NodeData, SelectionArea, Edge, FileGroup } from './types';
 import Tutorial from './components/Tutorial';
+import LoginModal from './pages/LoginModal';
+import SignupModal from './pages/SignupModal';
 
 
 interface HistoryState {
@@ -30,8 +32,61 @@ export interface ViewportState {
 
 const App: React.FC = () => {
 
-const [showTutorial, setShowTutorial] = useState(true);
   const navigate = useNavigate();
+
+  // 로그인 여부 (accessToken 존재 여부로 판단)
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!localStorage.getItem('accessToken'));
+
+  // 로그인 팝업 모달 표시 여부
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  // 회원가입 팝업 모달 표시 여부
+  const [showSignupModal, setShowSignupModal] = useState(false);
+
+  const switchToSignup = () => {
+    setShowLoginModal(false);
+    setShowSignupModal(true);
+  };
+
+  const switchToLogin = () => {
+    setShowSignupModal(false);
+    setShowLoginModal(true);
+  };
+
+  // 튜토리얼: '방금 로그인한 시점'에만 노출, 재방문/새로고침 시엔 노출 안 함
+  // (justLoggedIn은 카카오 로그인처럼 페이지가 실제로 전환되는 경우에만 사용,
+  //  이메일 로그인 모달은 페이지 전환 없이 handleLoginSuccess에서 바로 처리)
+  const [showTutorial, setShowTutorial] = useState<boolean>(() => {
+    const loggedIn = !!localStorage.getItem('accessToken');
+    const tutorialSeen = localStorage.getItem('tutorialSeen') === 'true';
+    const justLoggedIn = sessionStorage.getItem('justLoggedIn') === 'true';
+    sessionStorage.removeItem('justLoggedIn');
+    return loggedIn && justLoggedIn && !tutorialSeen;
+  });
+
+  const finishTutorial = () => {
+    localStorage.setItem('tutorialSeen', 'true');
+    setShowTutorial(false);
+  };
+
+  // 로그인 모달에서 로그인 성공 시 (페이지 이동 없이 바로 상태 갱신)
+  const handleLoginSuccess = () => {
+    setIsLoggedIn(true);
+    setShowLoginModal(false);
+    if (localStorage.getItem('tutorialSeen') !== 'true') {
+      setShowTutorial(true);
+    }
+  };
+
+  // 비로그인 상태에서 기능을 시도했을 때 안내 토스트
+  const [authNotice, setAuthNotice] = useState(false);
+  const requireLogin = (): boolean => {
+    if (!isLoggedIn) {
+      setAuthNotice(true);
+      setTimeout(() => setAuthNotice(false), 2200);
+      return false;
+    }
+    return true;
+  };
 
   //로그인 정보 여기로 이건 임시
   const [userInfo] = useState({ nickname: '개발자', email: 'dev@infragen.com' });
@@ -109,6 +164,7 @@ const [showTutorial, setShowTutorial] = useState(true);
   };
 
   const handleGenerateClick = () => {
+    if (!requireLogin()) return;
     if (validationErrors.length > 0) {
       setIsErrorModalOpen(true);
     } else {
@@ -172,6 +228,7 @@ const [showTutorial, setShowTutorial] = useState(true);
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
 
   const addNode = (type: string, name: string, x: number, y: number) => {
+    if (!requireLogin()) return;
     saveHistory(); 
     markFilesAsModified();
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name, x, y };
@@ -222,6 +279,8 @@ const [showTutorial, setShowTutorial] = useState(true);
         onGenerate={handleGenerateClick} 
         isGenerateMode={appMode === 'generating'} 
         onResetUI={handleResetUI} 
+        isLoggedIn={isLoggedIn}
+        onLoginClick={() => setShowLoginModal(true)}
       />
       
       {appMode === 'editor' ? (
@@ -334,13 +393,53 @@ const [showTutorial, setShowTutorial] = useState(true);
       {showTutorial && (
         <Tutorial
           nodes={nodes}  
-          onFinish={() => setShowTutorial(false)}
-          onSkip={() => setShowTutorial(false)}
+          onFinish={finishTutorial}
+          onSkip={finishTutorial}
         />
       )}
 
+      {authNotice && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '76px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#1a1a1a',
+            color: '#fff',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: 600,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
+            zIndex: 10000,
+          }}
+        >
+          <span
+            onClick={() => { setAuthNotice(false); setShowLoginModal(true); }}
+            style={{ color: '#5fcfad', textDecoration: 'underline', cursor: 'pointer' }}
+          >
+            로그인
+          </span>
+          {' '}해주세요
+        </div>
+      )}
 
-      
+      {showLoginModal && (
+        <LoginModal
+          onClose={() => setShowLoginModal(false)}
+          onLoginSuccess={handleLoginSuccess}
+          onSwitchToSignup={switchToSignup}
+        />
+      )}
+
+      {showSignupModal && (
+        <SignupModal
+          onClose={() => setShowSignupModal(false)}
+          onSwitchToLogin={switchToLogin}
+        />
+      )}
+
     </div>
   );
 };

@@ -5,9 +5,11 @@ interface HeaderProps {
   onGenerate: () => void;
   isGenerateMode: boolean;
   onResetUI: () => void;
+  isLoggedIn: boolean;
+  onLoginClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI }) => {
+const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, isLoggedIn, onLoginClick }) => {
   return (
     <header className="header">
       <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -25,11 +27,15 @@ const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI }
       
       <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
         {!isGenerateMode && (
-          <>
-            <button className="generate-btn" onClick={onGenerate}>Generate</button>
-            <span className="header-icon" onClick={onResetUI} title="화면 뷰 초기화" style={{ cursor: 'pointer', marginLeft: 0 }}>↺</span>
-            <span className="header-icon" style={{ cursor: 'pointer', marginLeft: 0 }}>💾</span>
-          </>
+          isLoggedIn ? (
+            <>
+              <button className="generate-btn" onClick={onGenerate}>Generate</button>
+              <span className="header-icon" onClick={onResetUI} title="화면 뷰 초기화" style={{ cursor: 'pointer', marginLeft: 0 }}>↺</span>
+              <span className="header-icon" style={{ cursor: 'pointer', marginLeft: 0 }}>💾</span>
+            </>
+          ) : (
+            <button className="generate-btn" onClick={onLoginClick}>로그인</button>
+          )
         )}
       </div>
     </header>

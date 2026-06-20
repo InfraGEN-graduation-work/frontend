@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
 const BASE_URL = "http://infragen.kro.kr/api/v1";
 const USE_MOCK = false; // 백엔드 연결됨 (HTTP, 인증서 없음)
 
-export default function SignupPage() {
-  const navigate = useNavigate();
+/**
+ * 회원가입 팝업 모달
+ * - onClose: 닫기 (배경 클릭 / X 버튼)
+ * - onSwitchToLogin: 로그인 모달로 전환 (가입 완료 후 / 하단 링크 클릭)
+ */
+export default function SignupModal({ onClose, onSwitchToLogin }) {
   const [form, setForm] = useState({ email: "", password: "", passwordConfirm: "", nickname: "" });
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
@@ -62,20 +65,20 @@ export default function SignupPage() {
 
       if (!res.ok) {
         let serverMessage = "";
+        let serverCode = "";
         try {
           const errData = await res.json();
           serverMessage = errData?.message || "";
+          serverCode = errData?.code || "";
         } catch {
           // 응답이 JSON이 아닌 경우 무시
         }
 
-        if (res.status === 409) {
-          // 이메일/닉네임 중복 등 충돌
-          if (serverMessage.includes("닉네임")) {
-            setErrors({ nickname: serverMessage });
-          } else {
-            setErrors({ email: serverMessage || "이미 가입된 이메일입니다." });
-          }
+        if (serverCode === "MEMBER409_1") {
+          // 이메일 중복 (백엔드 응답으로 확인된 코드)
+          setErrors({ email: serverMessage || "이미 가입된 이메일입니다." });
+        } else if (res.status === 409) {
+          setErrors({ general: serverMessage || "이미 사용 중인 정보가 있습니다." });
         } else {
           setErrors({ general: serverMessage || "회원가입에 실패했습니다. 다시 시도해주세요." });
         }
@@ -90,28 +93,27 @@ export default function SignupPage() {
 
   if (submitted) {
     return (
-      <Page>
-        <Card>
+      <Overlay onClick={onClose}>
+        <Card onClick={(e) => e.stopPropagation()}>
+          <CloseBtn type="button" onClick={onClose} aria-label="닫기">✕</CloseBtn>
           <SuccessIcon>✓</SuccessIcon>
           <SuccessTitle>가입 완료!</SuccessTitle>
           <SuccessDesc>InfraGen에 오신 것을 환영합니다.<br />로그인 후 시작하세요.</SuccessDesc>
-          <SubmitButton type="button" onClick={() => navigate("/login")}>
+          <SubmitButton type="button" onClick={onSwitchToLogin}>
             로그인하러 가기
           </SubmitButton>
         </Card>
-      </Page>
+      </Overlay>
     );
   }
 
   return (
-    <Page>
-      <Card>
-        <BackButton type="button" onClick={() => navigate("/login")}>
-          ← 로그인으로
-        </BackButton>
+    <Overlay onClick={onClose}>
+      <Card onClick={(e) => e.stopPropagation()}>
+        <CloseBtn type="button" onClick={onClose} aria-label="닫기">✕</CloseBtn>
 
         <LogoWrap>
-          <img src={logo} alt="InfraGen" width="52" height="52" style={{ borderRadius: 13 }} />
+          <img src={logo} alt="InfraGen" width="50" height="50" style={{ borderRadius: 12 }} />
         </LogoWrap>
 
         <Title>회원가입</Title>
@@ -128,6 +130,7 @@ export default function SignupPage() {
               onChange={handleChange}
               hasError={!!errors.email}
               autoComplete="email"
+              autoFocus
             />
             {errors.email && <FieldError>{errors.email}</FieldError>}
           </FieldGroup>
@@ -181,70 +184,94 @@ export default function SignupPage() {
 
         <LoginPrompt>
           이미 계정이 있으신가요?{" "}
-          <LoginLink type="button" onClick={() => navigate("/login")}>로그인</LoginLink>
+          <LoginLink type="button" onClick={onSwitchToLogin}>로그인</LoginLink>
         </LoginPrompt>
       </Card>
-    </Page>
+    </Overlay>
   );
 }
 
 const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 `;
 
 const popIn = keyframes`
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+`;
+
+const popInIcon = keyframes`
   0%   { transform: scale(0.6); opacity: 0; }
   70%  { transform: scale(1.1); }
   100% { transform: scale(1); opacity: 1; }
 `;
 
-const Page = styled.div`
-  min-height: 100vh;
+const Overlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
-  font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  z-index: 10050;
+  animation: ${fadeIn} 0.18s ease both;
+  padding: 20px;
+  box-sizing: border-box;
 `;
 
 const Card = styled.div`
+  position: relative;
   width: 380px;
+  max-width: 100%;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 36px 44px;
-  animation: ${fadeIn} 0.4s ease both;
-  position: relative;
+  padding: 44px 32px 36px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  animation: ${popIn} 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  box-sizing: border-box;
 `;
 
-const BackButton = styled.button`
+const CloseBtn = styled.button`
   position: absolute;
-  top: 40px;
-  left: 36px;
-  background: none;
-  border: none;
-  font-size: 13px;
-  color: #888;
-  cursor: pointer;
-  padding: 0;
-  font-family: inherit;
-  transition: color 0.15s;
-
-  &:hover { color: #333; }
-`;
-
-const LogoWrap = styled.div`
-  width: 68px;
-  height: 68px;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 14px;
+  color: #aaaaaa;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: #f2f2f2;
+    color: #333;
+  }
+`;
+
+const LogoWrap = styled.div`
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
 `;
 
 const Title = styled.h1`
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #1a1a1a;
   margin: 0 0 6px;
@@ -252,17 +279,17 @@ const Title = styled.h1`
 `;
 
 const Subtitle = styled.p`
-  font-size: 14px;
+  font-size: 13px;
   color: #999;
-  margin: 0 0 28px;
+  margin: 0 0 24px;
 `;
 
 const SignupForm = styled.form`
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-bottom: 20px;
+  gap: 13px;
+  margin-bottom: 18px;
 `;
 
 const FieldGroup = styled.div`
@@ -272,14 +299,14 @@ const FieldGroup = styled.div`
 `;
 
 const Label = styled.label`
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   color: #555;
 `;
 
 const InputField = styled.input`
   width: 100%;
-  height: 48px;
+  height: 46px;
   padding: 0 14px;
   border: 1.5px solid ${({ hasError }) => (hasError ? "#e05858" : "#e8e8e8")};
   border-radius: 10px;
@@ -307,7 +334,7 @@ const FieldError = styled.p`
 
 const SubmitButton = styled.button`
   width: 100%;
-  height: 50px;
+  height: 48px;
   background: #1a1a1a;
   border: none;
   border-radius: 10px;
@@ -318,7 +345,7 @@ const SubmitButton = styled.button`
   letter-spacing: -0.2px;
   transition: opacity 0.15s, transform 0.1s;
   font-family: inherit;
-  margin-top: 6px;
+  margin-top: 4px;
 
   &:hover  { opacity: 0.82; }
   &:active { transform: scale(0.98); }
@@ -345,21 +372,21 @@ const LoginLink = styled.button`
 `;
 
 const SuccessIcon = styled.div`
-  width: 64px;
-  height: 64px;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   background: linear-gradient(135deg, #7b6cf6, #a78bfa);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  font-size: 24px;
   color: #fff;
-  margin-bottom: 20px;
-  animation: ${popIn} 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  margin-bottom: 18px;
+  animation: ${popInIcon} 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 `;
 
 const SuccessTitle = styled.h2`
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #1a1a1a;
   margin: 0 0 10px;
@@ -367,9 +394,9 @@ const SuccessTitle = styled.h2`
 `;
 
 const SuccessDesc = styled.p`
-  font-size: 14px;
+  font-size: 13.5px;
   color: #888;
   text-align: center;
   line-height: 1.6;
-  margin: 0 0 32px;
+  margin: 0 0 28px;
 `;
