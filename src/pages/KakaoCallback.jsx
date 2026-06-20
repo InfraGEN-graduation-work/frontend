@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
-const BASE_URL = "http://infragen.kro.kr/api/v1";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = false; // 백엔드 연결됨 (HTTP, 인증서 없음)
 
 const mockLogin = () => ({
@@ -13,8 +13,14 @@ export default function KakaoCallback() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("loading"); // loading | error
   const [errorDetail, setErrorDetail] = useState("");
+  // StrictMode(개발 모드)에서 useEffect가 두 번 실행되는 것을 방지.
+  // 카카오 인가 코드는 1회용이라, 두 번 보내면 두 번째 요청이 무조건 실패함.
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
+    if (hasRunRef.current) return;
+    hasRunRef.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     const error = params.get("error");

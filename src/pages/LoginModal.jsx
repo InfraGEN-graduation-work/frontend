@@ -2,9 +2,9 @@ import { useState } from "react";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
-const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
-const REDIRECT_URI = "http://localhost:5173/";
-const BASE_URL = "http://infragen.kro.kr/api/v1";
+const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
+const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI;
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = false; // 백엔드 연결됨 (HTTP, 인증서 없음)
 
 const KAKAO_AUTH_URL =
