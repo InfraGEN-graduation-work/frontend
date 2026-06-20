@@ -3,7 +3,12 @@ import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
+<<<<<<< HEAD
 const BASE_URL = "http://infragen.kro.kr/api/v1";
+=======
+const BASE_URL = "https://infragen.kro.kr/api/v1";
+const USE_MOCK = true; // 백엔드 완성되면 false로 변경
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -43,10 +48,22 @@ export default function SignupPage() {
     }
 
     try {
+<<<<<<< HEAD
       const res = await fetch(`${BASE_URL}/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include", 
+=======
+      if (USE_MOCK) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        setSubmitted(true);
+        return;
+      }
+
+      const res = await fetch(`${BASE_URL}/auth/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
         body: JSON.stringify({
           email: form.email,
           password: form.password,
@@ -54,6 +71,7 @@ export default function SignupPage() {
         }),
       });
 
+<<<<<<< HEAD
       const data = await res.json();
       const isSuccess = data.isSuccess ?? data.is_success;
 
@@ -65,6 +83,12 @@ export default function SignupPage() {
       }
     } catch (error) {
       setErrors({ general: "서버와 통신할 수 없습니다. 다시 시도해주세요." });
+=======
+      if (!res.ok) throw new Error();
+      setSubmitted(true);
+    } catch {
+      setErrors({ general: "회원가입에 실패했습니다. 다시 시도해주세요." });
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     }
   };
 

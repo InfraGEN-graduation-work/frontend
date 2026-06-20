@@ -1056,6 +1056,10 @@ body {
   border-radius: 4px;
 }
 
+<<<<<<< HEAD
+=======
+/* 유저 프로필 영역 스타일 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .user-profile-section {
   margin-top: auto;
   display: flex;

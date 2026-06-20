@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 
+=======
+/* ===== 래퍼 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-overlay-wrapper {
   position: fixed;
   inset: 0;
@@ -6,6 +10,10 @@
   pointer-events: none;
 }
 
+<<<<<<< HEAD
+=======
+/* ===== Dim 블로커 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-dim {
   position: fixed;
   background: rgba(0, 0, 0, 0.62);
@@ -17,6 +25,10 @@
 .tutorial-dim.visible { opacity: 1; }
 .tutorial-dim-full { inset: 0; }
 
+<<<<<<< HEAD
+=======
+/* ===== SVG 테두리 + 연결선 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-svg {
   position: fixed;
   inset: 0;
@@ -45,6 +57,10 @@
   to   { stroke-dashoffset: -32; }
 }
 
+<<<<<<< HEAD
+=======
+/* ===== 드롭 타겟 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-drop-target {
   position: fixed;
   transform: translate(-50%, -50%);
@@ -73,6 +89,10 @@
   border-radius: 10px;
 }
 
+<<<<<<< HEAD
+=======
+/* ===== 툴팁 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-tooltip {
   position: fixed;
   display: flex;
@@ -99,7 +119,11 @@
   pointer-events: all;
 }
 
+<<<<<<< HEAD
 
+=======
+/* 말풍선 꼬리 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tooltip-tail { position: absolute; width: 0; height: 0; }
 
 .placement-right .tooltip-tail {
@@ -131,7 +155,11 @@
 }
 .placement-top-right .tooltip-tail { left: auto; right: 24px; }
 
+<<<<<<< HEAD
 
+=======
+/* ===== 텍스트 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-step-badge {
   font-size: 11px;
   font-weight: 700;
@@ -154,6 +182,10 @@
   line-height: 1.4;
 }
 
+<<<<<<< HEAD
+=======
+/* 푸터: 진행 점 + 버튼 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-tooltip-footer {
   display: flex;
   align-items: center;
@@ -168,7 +200,11 @@
   flex-shrink: 0;
 }
 
+<<<<<<< HEAD
 
+=======
+/* 점 인디케이터 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-dots {
   display: flex;
   gap: 5px;
@@ -181,7 +217,11 @@
 }
 .tutorial-dot.active { background: #1a3d30; }
 
+<<<<<<< HEAD
 
+=======
+/* 화살표 텍스트 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-arrow-text {
   display: flex;
   align-items: center;
@@ -193,7 +233,11 @@
 }
 .arrow-icon { font-size: 14px; }
 
+<<<<<<< HEAD
 
+=======
+/* ===== 튜토리얼 버튼 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-skip-btn {
   background: transparent;
   border: 1px solid rgba(255,255,255,0.38);
@@ -220,7 +264,11 @@
 }
 .tutorial-next-btn:hover { background: #4dbf9d; transform: translateY(-1px); }
 
+<<<<<<< HEAD
 
+=======
+/* 메시지 박스 내부 버튼 */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-skip-inline {
   border: none;
   color: rgba(20,60,40,0.65);
@@ -247,6 +295,10 @@
   transform: translateY(-1px);
 }
 
+<<<<<<< HEAD
+=======
+/* ===== 7단계 완료 모달 ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-finale-modal {
   position: fixed;
   top: 50%; left: 50%;
@@ -289,6 +341,10 @@
   border-radius: 8px;
 }
 
+<<<<<<< HEAD
+=======
+/* ===== 노드 부족 경고 (메시지 박스 하단) ===== */
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 .tutorial-inline-warning {
   margin: 10px -18px -12px;
   padding: 9px 18px;

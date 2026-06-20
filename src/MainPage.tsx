@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+=======
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // 네비게이트 추가
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -9,6 +14,10 @@ import Generate from './components/Generate';
 import type { NodeData, SelectionArea, Edge, FileGroup } from './types';
 import Tutorial from './components/Tutorial';
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 interface HistoryState {
   nodes: NodeData[];
   edges: Edge[];
@@ -28,10 +37,19 @@ export interface ViewportState {
 }
 
 const App: React.FC = () => {
+<<<<<<< HEAD
   const [showTutorial, setShowTutorial] = useState(true);
   const navigate = useNavigate();
 
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
+=======
+
+const [showTutorial, setShowTutorial] = useState(true);
+  const navigate = useNavigate();
+
+  //로그인 정보 여기로 이건 임시
+  const [userInfo] = useState({ nickname: '개발자', email: 'dev@infragen.com' });
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 
   const [projectName, setProjectName] = useState('Project');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -74,6 +92,7 @@ const App: React.FC = () => {
     validationErrors.push({ name: '생성할 코드 미배치', desc: '생성할 코드 파일에 노드 파일이 존재하지 않습니다.' });
   }
 
+<<<<<<< HEAD
   useEffect(() => {
     const accessToken = localStorage.getItem('accessToken');
     if (accessToken) {
@@ -95,6 +114,9 @@ const App: React.FC = () => {
     }
   }, []);
 
+=======
+  // 로그아웃 핸들러
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
     navigate('/');
@@ -355,6 +377,11 @@ const App: React.FC = () => {
           onSkip={() => setShowTutorial(false)}
         />
       )}
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
       
     </div>
   );

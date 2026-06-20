@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
 import type { ViewportState } from '../MainPage';
 
+<<<<<<< HEAD
+=======
+// 아이콘 이미지 import
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 
@@ -198,6 +202,10 @@ const Canvas: React.FC<CanvasProps> = ({
     } else if (state.isAreaSelecting) {
       const newX = Math.max(0, Math.min(state.startMousePos.x, coords.x));
       const newY = Math.max(0, Math.min(state.startMousePos.y, coords.y));
+<<<<<<< HEAD
+=======
+      // 영역 선택 박스도 벽을 뚫지 못하게 방어
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
       const endX = Math.min(maxW, Math.max(state.startMousePos.x, coords.x));
       const endY = Math.min(maxH, Math.max(state.startMousePos.y, coords.y));
       
@@ -370,6 +378,10 @@ const Canvas: React.FC<CanvasProps> = ({
     }
   };
 
+<<<<<<< HEAD
+=======
+  // 노드 타입별 아이콘 반환
+>>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   const getNodeIcon = (type: string) => {
     if (type === 'MySQL') return mysqlIcon;
     if (type === 'Spring Boot') return springbootIcon;
