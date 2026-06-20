@@ -5,14 +5,8 @@ import logo from "../assets/mainlogo.png";
 
 const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
 const REDIRECT_URI = "http://localhost:3000/oauth/kakao/callback";
-<<<<<<< HEAD
 
-// 💡 http 주소 + 서버 연동 로직 유지
 const BASE_URL = "http://infragen.kro.kr/api/v1";
-=======
-const BASE_URL = "https://infragen.kro.kr/api/v1";
-const USE_MOCK = true; // 백엔드 완성되면 false로 변경
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
@@ -39,7 +33,6 @@ export default function LoginPage() {
     setError("");
 
     try {
-<<<<<<< HEAD
       const res = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,28 +52,6 @@ export default function LoginPage() {
       }
     } catch (error) {
       setError("서버와 통신할 수 없습니다.");
-=======
-      if (USE_MOCK) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        localStorage.setItem("accessToken", "mock-access-token-12345");
-        navigate("/dashboard");
-        return;
-      }
-
-      const res = await fetch(`${BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!res.ok) throw new Error();
-
-      const data = await res.json();
-      localStorage.setItem("accessToken", data.result.accessToken);
-      navigate("/dashboard");
-    } catch {
-      setError("이메일 또는 비밀번호가 올바르지 않습니다.");
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     }
   };
 

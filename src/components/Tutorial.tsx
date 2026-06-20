@@ -22,13 +22,7 @@ interface TutorialStepConfig {
   showDropTarget?: boolean;
   dropTargetSelector?: string;
   advanceOn?: { selector: string; event: string };
-<<<<<<< HEAD
   noDim?: boolean;
-=======
-  /** dim 오버레이 완전히 숨김 (드래그 앤 드롭 허용) */
-  noDim?: boolean;
-  /** 완료 모달 표시 */
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   isFinale?: boolean;
 }
 
@@ -51,10 +45,6 @@ const STEPS: TutorialStepConfig[] = [
     targetSelector: '.category-list',
     tooltipPlacement: 'right',
     noDim: true,
-<<<<<<< HEAD
-=======
-    // advanceOn 없음 → 사용자가 직접 '다음' 버튼으로 진행
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   },
   {
     step: '3',
@@ -64,10 +54,6 @@ const STEPS: TutorialStepConfig[] = [
     targetSelector: '.deployed-nodes-group',
     tooltipPlacement: 'left',
     noDim: true,
-<<<<<<< HEAD
-=======
-    // advanceOn 없음 → 다음 버튼으로 수동 진행
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   },
   {
     step: '4',
@@ -82,18 +68,10 @@ const STEPS: TutorialStepConfig[] = [
     title: '튜토리얼 5단계',
     description: '노드를 설정하세요',
     subText: "설정을 입력한 후 '다음' 버튼을 누르세요",
-<<<<<<< HEAD
-=======
-    // settings-panel: RightSideBar Settings 탭 콘텐츠 클래스
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     targetSelector: '.settings-panel',
     tooltipPlacement: 'top-right',
     arrowText: '설정을 완료하세요',
     arrowDirection: 'down',
-<<<<<<< HEAD
-=======
-    // advanceOn 없음 → 사용자가 직접 하단 '다음' 버튼 클릭으로 진행
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   },
   {
     step: '6',
@@ -133,10 +111,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
   const measure = useCallback(() => {
     if (!step.targetSelector) { setHl(null); return; }
 
-<<<<<<< HEAD
-=======
-    // 배치된 노드들을 감싸는 bounding box 계산
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     if (step.targetSelector === '.deployed-nodes-group') {
       const nodeEls = document.querySelectorAll('.deployed-node');
       if (nodeEls.length === 0) { setHl(null); return; }
@@ -171,10 +145,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
   }, [step]);
 
   const goNext = useCallback(() => {
-<<<<<<< HEAD
-=======
-    // 2단계: 노드가 2개 미만이면 경고
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     if (STEPS[idx].step === '2' && nodes.length < 2) {
       setShowNodeWarning(true);
       setTimeout(() => setShowNodeWarning(false), 2500);
@@ -186,10 +156,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     setTimeout(() => { setIdx(p => p + 1); setVisible(false); }, 320);
   }, [isLast, onFinish, idx, nodes.length]);
 
-<<<<<<< HEAD
-=======
-  // advanceOn
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   useEffect(() => {
     if (!step.advanceOn) return;
     const { selector, event } = step.advanceOn;
@@ -213,10 +179,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     };
   }, [idx, step.advanceOn, goNext]);
 
-<<<<<<< HEAD
-=======
-  // 2단계: 캔버스에 드롭 시 드롭 타겟 아이콘 + 연결선 숨기기
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   useEffect(() => {
     if (!step.showDropTarget) return;
 
@@ -225,19 +187,11 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
       setCanvasCenter(null);
     };
 
-<<<<<<< HEAD
-=======
-    // drop 이벤트: 캔버스에 실제로 드롭됐을 때
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     const onDrop = (e: Event) => {
       const target = e.target as Element;
       if (target?.closest('.canvas-viewport')) hide();
     };
 
-<<<<<<< HEAD
-=======
-    // dragend 이벤트: dropEffect가 none이 아니면 성공적 드롭
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     const onDragEnd = (e: Event) => {
       if ((e as DragEvent).dataTransfer?.dropEffect !== 'none') hide();
     };
@@ -250,10 +204,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     };
   }, [idx, step.showDropTarget]);
 
-<<<<<<< HEAD
-=======
-  // MutationObserver — 노드 배치/이동·스크롤 시 툴팁 위치 재계산
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   useEffect(() => {
     const obs = new MutationObserver(() => setTimeout(measure, 60));
     const panel = document.querySelector('.left-panel, aside');
@@ -277,10 +227,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     return () => { window.removeEventListener('resize', measure); clearTimeout(t); };
   }, [idx, measure]);
 
-<<<<<<< HEAD
-=======
-  // 툴팁 위치
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   const tooltipStyle = (): React.CSSProperties => {
     if (!hl) return { top: '50%', left: '50%', transform: 'translate(-50%,-50%)' };
     const { top, left, width, height } = hl;
@@ -295,10 +241,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     }
   };
 
-<<<<<<< HEAD
-=======
-  // 연결선 좌표 (2단계)
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   const connPts = (() => {
     if (!step.showDropTarget || !hl || !canvasCenter) return null;
     const tipW = 200;
@@ -312,10 +254,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
 
   const handleSkip = () => { setVisible(false); setTimeout(() => (onSkip ?? onFinish)(), 300); };
 
-<<<<<<< HEAD
-=======
-  // ── 7단계: 완료 모달 ──
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
   if (step.isFinale) {
     return (
       <div className="tutorial-overlay-wrapper">
@@ -339,10 +277,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
 
   return (
     <div className="tutorial-overlay-wrapper">
-<<<<<<< HEAD
-=======
-      {/* 4방향 dim — noDim 단계에서는 렌더링 안 함 */}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
       {!step.noDim && (hl ? (
         <>
           <div className={`tutorial-dim ${visible ? 'visible' : ''}`} style={{ top: 0, left: 0, right: 0, height: hl.top }} />
@@ -354,10 +288,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
         <div className={`tutorial-dim tutorial-dim-full ${visible ? 'visible' : ''}`} />
       ))}
 
-<<<<<<< HEAD
-=======
-      {/* SVG: 테두리 + 연결선 */}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
       <svg className={`tutorial-svg ${visible ? 'visible' : ''}`} xmlns="http://www.w3.org/2000/svg">
         {hl && !step.noDim && (
           <rect x={hl.left} y={hl.top} width={hl.width} height={hl.height}
@@ -372,10 +302,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
         )}
       </svg>
 
-<<<<<<< HEAD
-=======
-      {/* 드롭 타겟 아이콘 (2단계) — 첫 드롭 후 사라짐 */}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
       {canvasCenter && visible && dropTargetVisible && (
         <div className={`tutorial-drop-target ${visible ? 'visible' : ''}`}
           style={{ top: canvasCenter.y, left: canvasCenter.x }}>
@@ -389,16 +315,8 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
         </div>
       )}
 
-<<<<<<< HEAD
-
       <div className={`tutorial-tooltip placement-${step.tooltipPlacement} ${visible ? 'visible' : ''}`}
         style={tooltipStyle()}>
-=======
-      {/* 툴팁 */}
-      <div className={`tutorial-tooltip placement-${step.tooltipPlacement} ${visible ? 'visible' : ''}`}
-        style={tooltipStyle()}>
-        {/* 말풍선 꼬리 */}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
         <div className="tooltip-tail" />
 
         <div className="tutorial-tooltip-inner">
@@ -429,10 +347,6 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
           )}
         </div>
 
-<<<<<<< HEAD
-=======
-        {/* 화살표 텍스트 */}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
         {step.arrowText && (
           <div className={`tutorial-arrow-text dir-${step.arrowDirection ?? 'left'}`}>
             {step.arrowDirection === 'up' && <span className="arrow-icon">↑</span>}
@@ -448,3 +362,4 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
 };
 
 export default Tutorial;
+

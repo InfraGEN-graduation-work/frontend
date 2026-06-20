@@ -106,10 +106,6 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     dragGhost.style.left = '-9999px';
     dragGhost.style.pointerEvents = 'none';
 
-<<<<<<< HEAD
-=======
-    // 고스트 이미지에 아이콘 적용
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
     const iconSrc = getNodeIconSrc(nodeName);
     const imgTag = iconSrc ? `<img src="${iconSrc}" alt="${nodeName}" style="width: 80%; height: 80%; object-fit: contain;" />` : '';
 
@@ -251,22 +247,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
       <div className="user-profile-section">
         <div className="user-info-wrapper">
-<<<<<<< HEAD
           <div className="user-avatar">{userInfo.nickname ? userInfo.nickname.charAt(0).toUpperCase() : '?'}</div>
           <div className="user-details">
             <span className="user-nickname">{userInfo.nickname}</span>
             <span className="user-email">{userInfo.email}</span>
-=======
-          {/*<div className="user-avatar">{userInfo.nickname.charAt(0)}</div>
-          <div className="user-details">
-            <span className="user-nickname">{userInfo.nickname}</span>
-            <span className="user-email">{userInfo.email}</span>
-          </div>*/}
-          <div className="user-avatar">test</div>
-          <div className="user-details">
-            <span className="user-nickname">test</span>
-            <span className="user-email">1234@1234.com</span>
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
           </div>
         </div>
         <button className="logout-icon-btn" onClick={onLogout} title="로그아웃">

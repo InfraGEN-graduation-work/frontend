@@ -10,11 +10,7 @@ interface GenerateProps {
 }
 
 const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, projectName, onBack }) => {
-<<<<<<< HEAD
-=======
-  
-  // 용량 임의 지정
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
+
   const totalNodes = targetFileIds.reduce((sum, fileId) => {
     const file = files.find(f => f.id === fileId);
     return sum + (file ? file.nodeIds.length : 0);
@@ -39,10 +35,6 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
 
         <div className="gen-card">
           <div className="gen-card-title">프로젝트명</div>
-<<<<<<< HEAD
-=======
-          {/*전달받은 프로젝트명*/}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
           <div className="gen-card-value">{projectName}</div> 
         </div>
 
@@ -53,10 +45,6 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
 
         <div className="gen-card">
           <div className="gen-card-title">예상 용량</div>
-<<<<<<< HEAD
-=======
-          {/* 계산된 예상 용량 (임시로 숫자 넣어둠)*/}
->>>>>>> e9d1a50109e7c50d519d53a0e37f636e3da4d0cf
           <div className="gen-card-value">{genProgress === 100 ? `${estimatedSize} MB` : '계산중...'}</div>
         </div>
 
@@ -83,7 +71,6 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
           </div>
         ) : (
           <div className="gen-complete-container">
-            {/*<div className="gen-complete-icon">🎉</div>*/}
             <div className="gen-complete-title">코드 생성이 완료되었습니다!</div>
             <div className="gen-complete-desc">좌측 패널에서 생성한 파일 상세 정보를 확인하거나 다시 프로젝트로 돌아갈 수 있습니다.</div>
             <button className="gen-action-btn" onClick={onBack}>BACK</button>
