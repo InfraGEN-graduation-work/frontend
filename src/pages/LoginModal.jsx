@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
@@ -14,14 +13,59 @@ const KAKAO_AUTH_URL =
   `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
   `&response_type=code`;
 
-export default function LoginPage() {
-  const navigate = useNavigate();
+/**
+ * 로그인 팝업 모달
+ * - onClose: 닫기 (배경 클릭 / X 버튼)
+ * - onLoginSuccess: 로그인 성공 시 (토큰 저장은 내부에서 처리, 부모는 상태만 갱신)
+ * - onSwitchToSignup: 회원가입 모달로 전환
+ */
+export default function LoginModal({ onClose, onLoginSuccess, onSwitchToSignup }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   const handleKakaoLogin = () => {
-    window.location.href = KAKAO_AUTH_URL;
+    // 카카오 인증은 외부 도메인(kakao.com)으로 가야 해서 같은 창에서는 불가능 →
+    // 작은 팝업 창에서 처리하고, 끝나면 postMessage로 결과만 받아서 모달을 유지함
+    const width = 480;
+    const height = 720;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+
+    const popup = window.open(
+      KAKAO_AUTH_URL,
+      "kakaoLogin",
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+
+    if (!popup) {
+      setError("팝업이 차단되었습니다. 브라우저의 팝업 차단을 해제해주세요.");
+      return;
+    }
+
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "KAKAO_LOGIN_SUCCESS") {
+        localStorage.setItem("accessToken", event.data.accessToken);
+        cleanup();
+        onLoginSuccess();
+      } else if (event.data?.type === "KAKAO_LOGIN_ERROR") {
+        cleanup();
+        setError("카카오 로그인에 실패했습니다. 다시 시도해주세요.");
+      }
+    };
+
+    // 사용자가 팝업을 그냥 닫아버린 경우 리스너 정리
+    const watchClosed = setInterval(() => {
+      if (popup.closed) cleanup();
+    }, 500);
+
+    const cleanup = () => {
+      window.removeEventListener("message", handleMessage);
+      clearInterval(watchClosed);
+    };
+
+    window.addEventListener("message", handleMessage);
   };
 
   const handleLogin = async (e) => {
@@ -36,8 +80,7 @@ export default function LoginPage() {
       if (USE_MOCK) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         localStorage.setItem("accessToken", "mock-access-token-12345");
-        sessionStorage.setItem("justLoggedIn", "true");
-        navigate("/dashboard");
+        onLoginSuccess();
         return;
       }
 
@@ -51,18 +94,19 @@ export default function LoginPage() {
 
       const data = await res.json();
       localStorage.setItem("accessToken", data.result.accessToken);
-      sessionStorage.setItem("justLoggedIn", "true");
-      navigate("/dashboard");
+      onLoginSuccess();
     } catch {
       setError("이메일 또는 비밀번호가 올바르지 않습니다.");
     }
   };
 
   return (
-    <Page>
-      <Card>
+    <Overlay onClick={onClose}>
+      <Card onClick={(e) => e.stopPropagation()}>
+        <CloseBtn type="button" onClick={onClose} aria-label="닫기">✕</CloseBtn>
+
         <LogoWrap>
-          <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
+          <img src={logo} alt="InfraGen" width="56" height="56" style={{ borderRadius: 14 }} />
         </LogoWrap>
 
         <BrandName>InfraGen</BrandName>
@@ -74,6 +118,7 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
+            autoFocus
           />
           <InputField
             type="password"
@@ -89,7 +134,7 @@ export default function LoginPage() {
         <TextRow>
           <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
           <Dot />
-          <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
+          <SignupLink type="button" onClick={onSwitchToSignup}>회원가입</SignupLink>
         </TextRow>
 
         <Divider>
@@ -103,7 +148,7 @@ export default function LoginPage() {
           카카오계정으로 로그인
         </KakaoButton>
       </Card>
-    </Page>
+    </Overlay>
   );
 }
 
@@ -119,42 +164,78 @@ function KakaoIcon() {
 }
 
 const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 `;
 
-const Page = styled.div`
-  min-height: 100vh;
+const popIn = keyframes`
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+`;
+
+const Overlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
-  font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  z-index: 10050;
+  animation: ${fadeIn} 0.18s ease both;
 `;
 
 const Card = styled.div`
+  position: relative;
   width: 360px;
+  max-width: calc(100vw - 32px);
+  background: #ffffff;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 56px 32px 48px;
-  animation: ${fadeIn} 0.4s ease both;
+  padding: 48px 32px 36px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  animation: ${popIn} 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 `;
 
-const LogoWrap = styled.div`
-  width: 80px;
-  height: 80px;
+const CloseBtn = styled.button`
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  font-size: 14px;
+  color: #aaaaaa;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+
+  &:hover {
+    background: #f2f2f2;
+    color: #333;
+  }
+`;
+
+const LogoWrap = styled.div`
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
 `;
 
 const BrandName = styled.h1`
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 600;
   color: #1a1a1a;
-  margin: 0 0 28px;
+  margin: 0 0 24px;
   letter-spacing: -0.4px;
 `;
 
@@ -168,7 +249,7 @@ const LoginForm = styled.form`
 
 const InputField = styled.input`
   width: 100%;
-  height: 50px;
+  height: 48px;
   padding: 0 16px;
   border: 1.5px solid #e8e8e8;
   border-radius: 10px;
@@ -196,7 +277,7 @@ const ErrorMsg = styled.p`
 
 const LoginButton = styled.button`
   width: 100%;
-  height: 50px;
+  height: 48px;
   background: #1a1a1a;
   border: none;
   border-radius: 10px;
@@ -217,7 +298,7 @@ const TextRow = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 22px;
 `;
 
 const Dot = styled.span`
@@ -276,7 +357,7 @@ const DividerText = styled.span`
 
 const KakaoButton = styled.button`
   width: 100%;
-  height: 50px;
+  height: 48px;
   background: #fee500;
   border: none;
   border-radius: 10px;

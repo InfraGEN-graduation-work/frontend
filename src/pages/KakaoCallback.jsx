@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
-const BASE_URL = "https://infragen.kro.kr/api/v1";
-const USE_MOCK = true; // 백엔드 서버 완성되면 false로 변경
+const BASE_URL = "http://infragen.kro.kr/api/v1";
+const USE_MOCK = false; // 백엔드 연결됨 (HTTP, 인증서 없음)
 
 const mockLogin = () => ({
   accessToken: "mock-access-token-12345",
@@ -11,22 +11,52 @@ const mockLogin = () => ({
 
 export default function KakaoCallback() {
   const navigate = useNavigate();
+  const [status, setStatus] = useState("loading"); // loading | error
+  const [errorDetail, setErrorDetail] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const code  = params.get("code");
+    const code = params.get("code");
     const error = params.get("error");
 
     if (error) {
-      console.error("카카오 로그인 거부 또는 오류:", error);
-      navigate("/login");
+      fail(`카카오 인증 거부/오류: ${error}`);
       return;
     }
 
     if (code) {
       exchangeCode(code);
+    } else {
+      fail("URL에 인가 코드(code)가 없습니다.");
     }
   }, []);
+
+  // [디버깅용] 실패 시 팝업을 바로 안 닫고 화면에 원인을 띄움
+  const fail = (detail) => {
+    console.error("카카오 로그인 처리 오류:", detail);
+    setErrorDetail(detail);
+    setStatus("error");
+  };
+
+  const reportSuccess = (accessToken) => {
+    if (window.opener) {
+      window.opener.postMessage({ type: "KAKAO_LOGIN_SUCCESS", accessToken }, window.location.origin);
+      window.close();
+    } else {
+      localStorage.setItem("accessToken", accessToken);
+      sessionStorage.setItem("justLoggedIn", "true");
+      navigate("/dashboard");
+    }
+  };
+
+  const closeAndReportError = () => {
+    if (window.opener) {
+      window.opener.postMessage({ type: "KAKAO_LOGIN_ERROR" }, window.location.origin);
+      window.close();
+    } else {
+      navigate("/login");
+    }
+  };
 
   const exchangeCode = async (code) => {
     try {
@@ -42,20 +72,52 @@ export default function KakaoCallback() {
           body: JSON.stringify({ authorizationCode: code }),
         });
 
-        if (!res.ok) throw new Error(`로그인 실패: ${res.status}`);
+        let bodyText = "";
+        try {
+          bodyText = await res.text();
+        } catch {
+          bodyText = "(응답 본문을 읽을 수 없음)";
+        }
 
-        const json = await res.json();
-        data = { accessToken: json.result.accessToken };
-        
+        if (!res.ok) {
+          fail(`HTTP ${res.status} ${res.statusText}\n\n응답 본문:\n${bodyText}`);
+          return;
+        }
+
+        let json;
+        try {
+          json = JSON.parse(bodyText);
+        } catch {
+          fail(`응답이 JSON 형식이 아닙니다.\n\n응답 본문:\n${bodyText}`);
+          return;
+        }
+
+        const accessToken = json?.result?.accessToken;
+        if (!accessToken) {
+          fail(`응답에 result.accessToken이 없습니다.\n\n응답 본문:\n${bodyText}`);
+          return;
+        }
+
+        data = { accessToken };
       }
 
-      localStorage.setItem("accessToken", data.accessToken);
-      navigate("/dashboard");
+      reportSuccess(data.accessToken);
     } catch (err) {
-      console.error("카카오 로그인 처리 오류:", err);
-      navigate("/login");
+      fail(`네트워크/요청 오류: ${err?.message || String(err)}`);
     }
   };
+
+  if (status === "error") {
+    return (
+      <Page>
+        <ErrorBox>
+          <ErrorTitle>카카오 로그인 처리 중 오류 발생</ErrorTitle>
+          <ErrorDetail>{errorDetail}</ErrorDetail>
+          <CloseBtn type="button" onClick={closeAndReportError}>확인 (닫기)</CloseBtn>
+        </ErrorBox>
+      </Page>
+    );
+  }
 
   return (
     <Page>
@@ -71,9 +133,49 @@ const Page = styled.div`
   justify-content: center;
   background: #ffffff;
   font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  padding: 24px;
+  box-sizing: border-box;
 `;
 
 const Message = styled.p`
   font-size: 15px;
   color: #aaaaaa;
+`;
+
+const ErrorBox = styled.div`
+  width: 100%;
+  max-width: 480px;
+  text-align: left;
+`;
+
+const ErrorTitle = styled.h3`
+  color: #e05858;
+  font-size: 16px;
+  margin: 0 0 12px;
+`;
+
+const ErrorDetail = styled.pre`
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f7f7f7;
+  border: 1px solid #eee;
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #333;
+  max-height: 50vh;
+  overflow-y: auto;
+`;
+
+const CloseBtn = styled.button`
+  margin-top: 18px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+
+  &:hover { opacity: 0.85; }
 `;
