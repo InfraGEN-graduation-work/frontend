@@ -30,7 +30,8 @@ export interface ViewportState {
 const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
-  const [showTutorial, setShowTutorial] = useState(true);
+
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
 
@@ -291,6 +292,42 @@ const MainPage: React.FC = () => {
     return { mappedNodes, mappedEdges };
   };
 
+  const getGeneratePayload = () => {
+    const generateNodes = nodes.map(n => {
+      const file = files.find(f => f.nodeIds.includes(n.id));
+      const rawProperties: any = { ...(n as any).settings };
+      if (file) {
+        rawProperties.fileId = file.id;
+        rawProperties.fileName = file.name;
+        rawProperties.fileIsGenerated = file.isGenerated;
+      }
+
+      const stringifiedProperties: Record<string, string> = {};
+      for (const key in rawProperties) {
+        if (rawProperties[key] !== undefined && rawProperties[key] !== null) {
+          stringifiedProperties[key] = String(rawProperties[key]);
+        }
+      }
+
+      return {
+        nodeId: n.id, 
+        componentType: n.type.toUpperCase().replace(/ /g, '_'),
+        positionX: n.x,
+        positionY: n.y,
+        properties: stringifiedProperties
+      };
+    });
+
+    const generateEdges = edges.map(e => ({
+      edgeId: e.id,
+      sourceNodeId: e.sourceId,
+      targetNodeId: e.targetId,
+      connectionType: "DEFAULT"
+    }));
+
+    return { generateNodes, generateEdges };
+  };
+
   const handleSaveCanvas = async () => {
     const accessToken = localStorage.getItem('accessToken');
     if (!accessToken || !projectId) return;
@@ -425,7 +462,6 @@ const MainPage: React.FC = () => {
     saveHistory(); 
     
     const generatedFileNames = targetFileIds.map(id => files.find(f => f.id === id)?.name || '알 수 없는 파일');
-
     const generateLogMsg = generatedFileNames.length > 0 
       ? `[생성] ${generatedFileNames.map(n => `'${n}'`).join(', ')} 파일의 코드가 생성되었습니다.`
       : `[생성] 인프라 코드 Generate가 실행되었습니다.`;
@@ -433,8 +469,11 @@ const MainPage: React.FC = () => {
     const accessToken = localStorage.getItem('accessToken');
     if (accessToken && projectId) {
       try {
+        const progressInterval = setInterval(() => {
+          setGenProgress(prev => (prev >= 90 ? 90 : prev + 5));
+        }, 100);
+
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
-        
         await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
@@ -446,32 +485,57 @@ const MainPage: React.FC = () => {
           })
         });
 
-        const finalLogs = [...activityLog, generateLogMsg];
-        await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/histories`, {
+        const { generateNodes, generateEdges } = getGeneratePayload();
+        const generateRes = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-          body: JSON.stringify({ description: finalLogs.join('\n') })
+          body: JSON.stringify({
+            projectId: Number(projectId),
+            nodes: generateNodes,
+            edges: generateEdges
+          })
         });
+
+        const generateData = await generateRes.json();
         
-        setActivityLog([]);
+        clearInterval(progressInterval);
+        setGenProgress(100); 
+
+        if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
+          const generatedFilesFromApi = generateData.result.files || [];
+
+          setFiles(prev => prev.map(f => {
+            if (targetFileIds.includes(f.id)) {
+              const matchedApiFile = generatedFilesFromApi.find((apiFile: any) => apiFile.fileName === f.name);
+              return {
+                ...f,
+                isGenerated: true,
+                content: matchedApiFile ? matchedApiFile.content : `# ${f.name}\n생성된 코드를 서버에서 찾지 못했습니다.`
+              };
+            }
+            return f;
+          }));
+
+          const finalLogs = [...activityLog, generateLogMsg];
+          await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/histories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+            body: JSON.stringify({ description: finalLogs.join('\n') })
+          });
+          
+          setActivityLog([]); 
+        } else {
+          alert(generateData.message || '코드 생성에 실패했습니다.');
+          setAppMode('editor'); 
+        }
       } catch (err) {
-        console.error("히스토리 자동 저장 통신 실패:", err);
+        console.error("제너레이트 통신 실패:", err);
+        alert('서버 오류가 발생했습니다.');
+        setAppMode('editor');
       }
     } else {
-      setActivityLog(prev => [...prev, generateLogMsg]);
+      setAppMode('editor');
     }
-
-    setFiles((prev) => prev.map(f => targetFileIds.includes(f.id) ? { ...f, isGenerated: true } : f));
-    
-    const interval = setInterval(() => {
-      setGenProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return prev + 2; 
-      });
-    }, 40);
   };
 
   const closeErrorModalAndShowValidation = () => {
@@ -597,6 +661,7 @@ const MainPage: React.FC = () => {
         isGenerateMode={appMode === 'generating'} 
         onResetUI={handleResetUI} 
         onSaveCanvas={handleSaveCanvas}
+        onOpenTutorial={() => setShowTutorial(true)}
       />
       
       {appMode === 'editor' ? (
@@ -635,8 +700,7 @@ const MainPage: React.FC = () => {
               </div>
               <div className="code-viewer-content">
                 {files.find(f => f.id === selectedFileId)?.isGenerated ? (
-`# ${files.find(f => f.id === selectedFileId)?.name}
-생성한 코드를 서버에서 불러와서 띄워야함`
+                  files.find(f => f.id === selectedFileId)?.content || `# ${files.find(f => f.id === selectedFileId)?.name}\n코드를 불러오는 중입니다...`
                 ) : (
                   `// 코드가 생성되지 않았습니다.\n// Generate 버튼을 클릭하여 코드를 생성하세요.`
                 )}

@@ -244,7 +244,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
     if (generatedFiles.length > 0) {
       generatedFiles.forEach(file => {
-        const codeContent = `# ${file.name}\n생성된 코드를 서버에서 불러와서 저장해야 함`;
+        const codeContent = file.content || `# ${file.name}\n생성된 코드가 없습니다.`;
         const blob = new Blob([codeContent], { type: 'text/plain;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -258,7 +258,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         URL.revokeObjectURL(url);
       });
     } else {
-      alert("다운로드 할 수 없습니다.");
+      alert("다운로드 할 수 없습니다. (먼저 코드를 Generate 해주세요)");
     }
   };
 
@@ -386,7 +386,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 <span className="toggle-icon" style={{ marginRight: '6px', fontSize: '10px' }}>
                   {isTargetBoxCollapsed ? '▶' : '▼'}
                 </span>
-                생성할 코드
+                생성할 파일 목록
               </div>
               
               {!isTargetBoxCollapsed && (

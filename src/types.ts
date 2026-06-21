@@ -26,4 +26,5 @@ export interface FileGroup {
   isGenerated: boolean;
   nodeIds: string[];
   isExpanded: boolean;
+  content?: string;
 }

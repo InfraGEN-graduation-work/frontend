@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
@@ -22,7 +22,8 @@ interface ProjectHistory {
 
 export default function Home() {
   const navigate = useNavigate();
-  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
+
+  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', profileImageUrl: '' });
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
@@ -43,6 +44,14 @@ export default function Home() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
+  const [editProfileForm, setEditProfileForm] = useState({ nickname: '', email: '', password: '', passwordConfirm: '' });
+
+  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
+  const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -67,7 +76,11 @@ export default function Home() {
         });
         const userData = await userRes.json();
         if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
-          setUserInfo({ nickname: userData.result.nickname, email: userData.result.email });
+          setUserInfo({ 
+            nickname: userData.result.nickname, 
+            email: userData.result.email,
+            profileImageUrl: userData.result.profileImageUrl || '' 
+          });
         }
 
         const projRes = await fetch(`${BASE_URL}/projects`, {
@@ -266,6 +279,109 @@ export default function Home() {
     navigate('/login');
   };
 
+  const handleOpenUserInfo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditProfileForm({ nickname: userInfo.nickname, email: userInfo.email, password: '', passwordConfirm: '' });
+    setProfileImageFile(null);
+    setProfileImagePreview(null);
+    setIsUserInfoModalOpen(true);
+    setIsProfileMenuOpen(false);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setProfileImageFile(file);
+      setProfileImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const hasProfileChanges = 
+    editProfileForm.nickname !== userInfo.nickname || 
+    editProfileForm.email !== userInfo.email || 
+    editProfileForm.password !== '' ||
+    profileImageFile !== null;
+
+  const handleUpdateUserInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!hasProfileChanges) {
+      setIsUserInfoModalOpen(false);
+      return;
+    }
+
+    if (editProfileForm.password && editProfileForm.password.length < 8) {
+      alert('비밀번호는 8자 이상이어야 합니다.');
+      return;
+    }
+
+    if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
+      alert('비밀번호가 일치하지 않습니다. 다시 확인해주세요.');
+      return;
+    }
+
+    const accessToken = localStorage.getItem('accessToken');
+
+    try {
+      const formData = new FormData();
+      formData.append('nickname', editProfileForm.nickname);
+      formData.append('email', editProfileForm.email);
+      if (editProfileForm.password) {
+        formData.append('password', editProfileForm.password);
+      }
+      if (profileImageFile) {
+        formData.append('profileImage', profileImageFile);
+      }
+
+      await fetch(`${BASE_URL}/members/me`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${accessToken}` 
+        },
+        body: formData
+      });
+
+      setUserInfo(prev => ({ 
+        ...prev, 
+        nickname: editProfileForm.nickname, 
+        email: editProfileForm.email,
+        profileImageUrl: profileImagePreview || prev.profileImageUrl
+      }));
+      
+      setIsUserInfoModalOpen(false);
+      
+      setToastMessage('회원정보가 수정되었습니다.');
+      setTimeout(() => {
+        setToastMessage(null);
+      }, 3000);
+
+    } catch (err) {
+      console.error('회원정보 수정 실패', err);
+      alert('회원정보 수정 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!window.confirm('정말 탈퇴하시겠습니까?\n생성된 모든 프로젝트와 정보가 삭제되며 복구할 수 없습니다.')) {
+      return;
+    }
+
+    const accessToken = localStorage.getItem('accessToken');
+    try {
+      await fetch(`${BASE_URL}/members/me`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+
+      alert('회원 탈퇴가 완료되었습니다.');
+      localStorage.removeItem('accessToken');
+      navigate('/login');
+    } catch (err) {
+      console.error('탈퇴 처리 실패', err);
+      alert('탈퇴 처리 중 오류가 발생했습니다.');
+    }
+  };
+
   const formatDate = (isoString: string) => {
     if (!isoString) return '';
     const date = new Date(isoString);
@@ -296,29 +412,40 @@ export default function Home() {
           <img src={logo} alt="logo" width="36" height="36" style={{ borderRadius: '8px' }} />
           <BrandName>InfraGen</BrandName>
         </LogoArea>
-        <ProfileWrapper onClick={(e) => { 
-          e.stopPropagation(); 
-          setIsProfileMenuOpen(!isProfileMenuOpen); 
-        }}>
-          <Avatar>{userInfo.nickname.charAt(0).toUpperCase()}</Avatar>
 
-          {isProfileMenuOpen && (
-            <ProfileDropdown onClick={(e) => e.stopPropagation()}>
-              <ProfileHeader>
-                <ProfileAvatarLg>{userInfo.nickname.charAt(0).toUpperCase()}</ProfileAvatarLg>
-                <ProfileDetails>
-                  <ProfileName>{userInfo.nickname}</ProfileName>
-                  <ProfileEmail>{userInfo.email}</ProfileEmail>
-                </ProfileDetails>
-              </ProfileHeader>
-              <ProfileDivider />
-              <ProfileMenuActions>
-                <ProfileMenuItem onClick={() => alert('회원정보 페이지는 준비 중입니다.')}>회원정보</ProfileMenuItem>
-                <ProfileMenuItem className="danger" onClick={handleLogout}>로그아웃</ProfileMenuItem>
-              </ProfileMenuActions>
-            </ProfileDropdown>
-          )}
-        </ProfileWrapper>
+        <UserInfo>
+          <ProfileWrapper onClick={(e) => { 
+            e.stopPropagation(); 
+            setIsProfileMenuOpen(!isProfileMenuOpen); 
+          }}>
+            <Avatar>
+              {userInfo.profileImageUrl ? (
+                <img src={userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
+              ) : (
+                userInfo.nickname.charAt(0).toUpperCase()
+              )}
+            </Avatar>
+            
+            {isProfileMenuOpen && (
+              <ProfileDropdown onClick={(e) => e.stopPropagation()}>
+                <ProfileAvatarLg style={{ cursor: 'default' }}>
+                  {userInfo.profileImageUrl ? (
+                    <img src={userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
+                  ) : (
+                    userInfo.nickname.charAt(0).toUpperCase()
+                  )}
+                </ProfileAvatarLg>
+                <ProfileName>{userInfo.nickname}</ProfileName>
+                <ProfileEmail>{userInfo.email}</ProfileEmail>
+                
+                <ProfileActionRow>
+                  <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
+                  <ProfileActionBtn className="danger" onClick={handleLogout}>로그아웃</ProfileActionBtn>
+                </ProfileActionRow>
+              </ProfileDropdown>
+            )}
+          </ProfileWrapper>
+        </UserInfo>
       </Header>
 
       <ContentArea>
@@ -372,7 +499,11 @@ export default function Home() {
                       
                       {isSelectMode ? (
                         <Checkbox isChecked={isSelected}>
-                          {isSelected && '✔'}
+                          {isSelected && (
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          )}
                         </Checkbox>
                       ) : (
                         <KebabMenuWrapper 
@@ -433,7 +564,7 @@ export default function Home() {
                   onChange={(e) => setNewDesc(e.target.value)}
                 />
               </InputGroup>
-              <ModalActions>
+              <ModalActions style={{ justifyContent: 'flex-end' }}>
                 <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
                 <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
               </ModalActions>
@@ -441,6 +572,7 @@ export default function Home() {
           </ModalContent>
         </ModalOverlay>
       )}
+
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -476,20 +608,113 @@ export default function Home() {
               )}
             </HistoryListWrapper>
             
-            <ModalActions style={{ marginTop: '20px' }}>
+            <ModalActions style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
               <CancelBtn style={{ width: '100%' }} onClick={() => setIsHistoryModalOpen(false)}>닫기</CancelBtn>
             </ModalActions>
           </HistoryModalContent>
         </ModalOverlay>
       )}
 
+      {isUserInfoModalOpen && (
+        <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>회원정보 관리</ModalTitle>
+            <form onSubmit={handleUpdateUserInfo}>
+              
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                <ProfileImageEditWrapper onClick={() => fileInputRef.current?.click()}>
+                  {profileImagePreview || userInfo.profileImageUrl ? (
+                    <img src={profileImagePreview || userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
+                  ) : (
+                    <ProfileAvatarLg style={{ marginBottom: 0, width: '100%', height: '100%' }}>
+                      {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
+                    </ProfileAvatarLg>
+                  )}
+                  <CameraOverlay>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                      <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                  </CameraOverlay>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    style={{ display: 'none' }} 
+                    accept="image/*" 
+                    onChange={handleImageChange} 
+                  />
+                </ProfileImageEditWrapper>
+              </div>
+
+              <InputGroup>
+                <label>닉네임</label>
+                <Input
+                  type="text"
+                  required
+                  placeholder="닉네임 입력"
+                  value={editProfileForm.nickname}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })}
+                />
+              </InputGroup>
+              <InputGroup>
+                <label>이메일</label>
+                <Input
+                  type="email"
+                  required
+                  placeholder="이메일 입력"
+                  value={editProfileForm.email}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
+                />
+              </InputGroup>
+              <InputGroup>
+                <label>새 비밀번호</label>
+                <Input
+                  type="password"
+                  placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
+                  value={editProfileForm.password}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
+                />
+              </InputGroup>
+              <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
+                <label>새 비밀번호 확인</label>
+                <Input
+                  type="password"
+                  placeholder="비밀번호를 다시 한 번 입력하세요"
+                  value={editProfileForm.passwordConfirm}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
+                  disabled={!editProfileForm.password}
+                />
+              </InputGroup>
+              
+              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <WithdrawBtn type="button" onClick={handleWithdraw}>회원 탈퇴</WithdrawBtn>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
+                  <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
+                </div>
+              </ModalActions>
+            </form>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
+
     </PageContainer>
   );
 }
 
+
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
+`;
+
+const toastAnimation = keyframes`
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 20px); }
 `;
 
 const PageContainer = styled.div`
@@ -525,14 +750,19 @@ const BrandName = styled.h1`
   margin: 0;
 `;
 
+const UserInfo = styled.div`
+  display: flex;
+  align-items: center;
+`;
+
 const ProfileWrapper = styled.div`
   position: relative;
   cursor: pointer;
 `;
 
 const Avatar = styled.div`
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: #28b4ad;
   color: white;
@@ -551,7 +781,7 @@ const Avatar = styled.div`
 
 const ProfileDropdown = styled.div`
   position: absolute;
-  top: 56px;
+  top: 70px; 
   right: 0;
   width: 240px;
   background: white;
@@ -561,75 +791,86 @@ const ProfileDropdown = styled.div`
   z-index: 200;
   overflow: hidden;
   animation: ${fadeIn} 0.15s ease-out forwards;
-`;
-
-const ProfileHeader = styled.div`
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 20px 16px;
-  background: #f8fafd;
+  padding: 24px 20px 20px;
 `;
 
 const ProfileAvatarLg = styled.div`
-  width: 48px;
-  height: 48px;
+  width: 68px;
+  height: 68px;
   border-radius: 50%;
   background: #28b4ad;
   color: white;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  margin-bottom: 12px;
 `;
 
-const ProfileDetails = styled.div`
-  display: flex;
-  flex-direction: column;
+const ProfileImageEditWrapper = styled.div`
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  position: relative;
+  cursor: pointer;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  
+  &:hover > div {
+    opacity: 1;
+  }
+`;
+
+const CameraOverlay = styled.div`
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  border-radius: 50%;
 `;
 
 const ProfileName = styled.span`
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
   color: #2d3748;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  text-align: center;
 `;
 
 const ProfileEmail = styled.span`
-  font-size: 12px;
+  font-size: 13px;
   color: #718096;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-`;
-
-const ProfileDivider = styled.div`
-  height: 1px;
-  background: #e2e8f0;
-`;
-
-const ProfileMenuActions = styled.div`
-  display: flex;
-`;
-
-const ProfileMenuItem = styled.div`
-  flex: 1;
+  margin-bottom: 24px;
   text-align: center;
-  padding: 14px 0;
+  word-break: break-all;
+  width: 100%;
+`;
+
+const ProfileActionRow = styled.div`
+  display: flex;
+  gap: 10px;
+  width: 100%;
+`;
+
+const ProfileActionBtn = styled.button`
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #4a5568;
   cursor: pointer;
-  transition: background 0.2s;
-
-  &:first-child {
-    border-right: 1px solid #e2e8f0;
-  }
+  transition: 0.2s;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #4a5568;
 
   &:hover {
     background: #f8f9fa;
@@ -639,6 +880,7 @@ const ProfileMenuItem = styled.div`
     color: #e53e3e;
     &:hover {
       background: #fff5f5;
+      border-color: #fc8181;
     }
   }
 `;
@@ -764,7 +1006,6 @@ const Checkbox = styled.div<{ isChecked: boolean }>`
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
   transition: 0.15s;
 `;
 
@@ -904,6 +1145,7 @@ const Input = styled.input`
   font-size: 14px;
   box-sizing: border-box;
   &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
+  &:disabled { background: #f8f9fa; cursor: not-allowed; }
 `;
 
 const TextArea = styled.textarea`
@@ -921,9 +1163,20 @@ const TextArea = styled.textarea`
 
 const ModalActions = styled.div`
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
   margin-top: 30px;
+`;
+
+const WithdrawBtn = styled.button`
+  background: none;
+  color: #a0aec0;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 10px 0;
+  transition: color 0.2s;
+  &:hover { color: #e53e3e; }
 `;
 
 const CancelBtn = styled.button`
@@ -1037,4 +1290,20 @@ const HistoryDescList = styled.ul`
   li {
     margin-bottom: 4px;
   }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnimation} 3s ease forwards;
 `;

@@ -6,9 +6,10 @@ interface HeaderProps {
   isGenerateMode: boolean;
   onResetUI: () => void;
   onSaveCanvas?: () => void;
+  onOpenTutorial?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, onSaveCanvas }) => {
+const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, onSaveCanvas, onOpenTutorial }) => {
   return (
     <header className="header">
       <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -20,7 +21,13 @@ const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, 
         <strong style={{ fontSize: '18px', color: '#2c3e50', lineHeight: 1 }}>infraGEN</strong>
         
         {!isGenerateMode && (
-          <span style={{ color: '#ccc', display: 'flex', alignItems: 'center', cursor: 'pointer' }}>ⓘ</span>
+          <span 
+            onClick={onOpenTutorial}
+            style={{ color: '#a0aec0', display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '16px' }}
+            title="튜토리얼 다시 보기"
+          >
+            ⓘ
+          </span>
         )}
       </div>
       
