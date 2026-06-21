@@ -13,6 +13,13 @@ interface Project {
   createdAt: string;
 }
 
+interface ProjectHistory {
+  historyId: number;
+  versionName: string;
+  description: string;
+  createdAt: string;
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
@@ -30,8 +37,21 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
 
+  // --------------- 활동 기록 모달 관련 상태 ---------------
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<ProjectHistory[]>([]);
+  const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  // 프로필 메뉴 상태
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
   useEffect(() => {
-    const handleClickOutside = () => setMenuOpenId(null);
+    // 허공 클릭 시 프로젝트 메뉴와 프로필 메뉴 모두 닫기
+    const handleClickOutside = () => {
+      setMenuOpenId(null);
+      setIsProfileMenuOpen(false);
+    };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
   }, []);
@@ -188,6 +208,32 @@ export default function Home() {
     }
   };
 
+  const handleOpenHistory = async (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+    setIsHistoryModalOpen(true);
+    setIsHistoryLoading(true);
+    setHistorySortOrder('desc'); 
+    
+    const accessToken = localStorage.getItem('accessToken');
+    try {
+      const res = await fetch(`${BASE_URL}/projects/${projectId}/histories`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const data = await res.json();
+      
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        setHistoryList(data.result?.historyList || []);
+      } else {
+        setHistoryList([]);
+      }
+    } catch (err) {
+      setHistoryList([]);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`선택한 ${selectedIds.length}개의 프로젝트를 삭제하시겠습니까?\n관련 데이터가 모두 삭제됩니다.`)) return;
@@ -224,9 +270,27 @@ export default function Home() {
   };
 
   const formatDate = (isoString: string) => {
+    if (!isoString) return '';
     const date = new Date(isoString);
     return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
   };
+
+  const formatDateTime = (isoString: string) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    return `${y}.${m}.${d} ${hh}:${mm}`;
+  };
+
+  const sortedHistory = [...historyList].sort((a, b) => {
+    return historySortOrder === 'desc' 
+      ? b.historyId - a.historyId 
+      : a.historyId - b.historyId; 
+  });
 
   return (
     <PageContainer>
@@ -235,14 +299,31 @@ export default function Home() {
           <img src={logo} alt="logo" width="36" height="36" style={{ borderRadius: '8px' }} />
           <BrandName>InfraGen</BrandName>
         </LogoArea>
-        <UserInfo>
+        <ProfileWrapper onClick={(e) => { 
+          e.stopPropagation(); 
+          setIsProfileMenuOpen(!isProfileMenuOpen); 
+        }}>
           <Avatar>{userInfo.nickname.charAt(0).toUpperCase()}</Avatar>
-          <UserDetails>
-            <UserName>{userInfo.nickname}</UserName>
-            <UserEmail>{userInfo.email}</UserEmail>
-          </UserDetails>
-          <LogoutBtn onClick={handleLogout}>로그아웃</LogoutBtn>
-        </UserInfo>
+          
+          {/* 프로필 드롭다운 메뉴 */}
+          {isProfileMenuOpen && (
+            <ProfileDropdown onClick={(e) => e.stopPropagation()}>
+              <ProfileHeader>
+                <ProfileAvatarLg>{userInfo.nickname.charAt(0).toUpperCase()}</ProfileAvatarLg>
+                <ProfileDetails>
+                  <ProfileName>{userInfo.nickname}</ProfileName>
+                  <ProfileEmail>{userInfo.email}</ProfileEmail>
+                </ProfileDetails>
+              </ProfileHeader>
+              <ProfileDivider />
+              {/* 버튼 나란히 한 줄 배치 */}
+              <ProfileMenuActions>
+                <ProfileMenuItem onClick={() => alert('회원정보 페이지는 준비 중입니다.')}>회원정보</ProfileMenuItem>
+                <ProfileMenuItem className="danger" onClick={handleLogout}>로그아웃</ProfileMenuItem>
+              </ProfileMenuActions>
+            </ProfileDropdown>
+          )}
+        </ProfileWrapper>
       </Header>
 
       <ContentArea>
@@ -314,6 +395,7 @@ export default function Home() {
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>수정</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                             </DropdownMenu>
                           )}
@@ -364,9 +446,55 @@ export default function Home() {
           </ModalContent>
         </ModalOverlay>
       )}
+
+      {/* 활동 기록 모달 */}
+      {isHistoryModalOpen && (
+        <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
+          <HistoryModalContent onClick={(e) => e.stopPropagation()}>
+            <HistoryHeaderRow>
+              <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
+              <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
+                {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
+              </SortToggleBtn>
+            </HistoryHeaderRow>
+            
+            <HistoryListWrapper>
+              {isHistoryLoading ? (
+                <EmptyHistory>로딩중...</EmptyHistory>
+              ) : sortedHistory.length === 0 ? (
+                <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장 버튼을 누르세요)</EmptyHistory>
+              ) : (
+                sortedHistory.map((h) => {
+                  const logLines = h.description ? h.description.split('\n') : ['저장되었습니다.'];
+                  
+                  return (
+                    <HistoryItemCard key={h.historyId}>
+                      <HistoryItemHeader>
+                        <HistoryDate>{formatDateTime(h.createdAt)}에 저장됨</HistoryDate>
+                      </HistoryItemHeader>
+                      <HistoryDescList>
+                        {logLines.map((line, i) => (
+                          <li key={i}>{line}</li>
+                        ))}
+                      </HistoryDescList>
+                    </HistoryItemCard>
+                  );
+                })
+              )}
+            </HistoryListWrapper>
+            
+            <ModalActions style={{ marginTop: '20px' }}>
+              <CancelBtn style={{ width: '100%' }} onClick={() => setIsHistoryModalOpen(false)}>닫기</CancelBtn>
+            </ModalActions>
+          </HistoryModalContent>
+        </ModalOverlay>
+      )}
+
     </PageContainer>
   );
 }
+
+// ---------------- Styled Components ----------------
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
@@ -406,52 +534,128 @@ const BrandName = styled.h1`
   margin: 0;
 `;
 
-const UserInfo = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 12px;
+// --- 프로필(우측 상단) 관련 Styled Components ---
+
+const ProfileWrapper = styled.div`
+  position: relative;
+  cursor: pointer;
 `;
 
 const Avatar = styled.div`
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: #28b4ad;
   color: white;
   font-weight: 700;
+  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  
+  &:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(40, 180, 173, 0.3);
+  }
 `;
 
-const UserDetails = styled.div`
+const ProfileDropdown = styled.div`
+  position: absolute;
+  top: 56px; /* 모달을 헤더 아래로 살짝 더 띄움 */
+  right: 0;
+  width: 240px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  z-index: 200;
+  overflow: hidden;
+  animation: ${fadeIn} 0.15s ease-out forwards;
+`;
+
+const ProfileHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px;
+  background: #f8fafd;
+`;
+
+const ProfileAvatarLg = styled.div`
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #28b4ad;
+  color: white;
+  font-weight: 700;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+`;
+
+const ProfileDetails = styled.div`
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 `;
 
-const UserName = styled.span`
-  font-size: 14px;
-  font-weight: 600;
+const ProfileName = styled.span`
+  font-size: 15px;
+  font-weight: 700;
   color: #2d3748;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
-const UserEmail = styled.span`
-  font-size: 12px;
-  color: #a0aec0;
-`;
-
-const LogoutBtn = styled.button`
-  background: none;
-  border: 1px solid #e2e8f0;
-  padding: 6px 12px;
-  border-radius: 6px;
+const ProfileEmail = styled.span`
   font-size: 12px;
   color: #718096;
-  cursor: pointer;
-  margin-left: 10px;
-  transition: 0.2s;
-  &:hover { background: #edf2f7; }
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
+
+const ProfileDivider = styled.div`
+  height: 1px;
+  background: #e2e8f0;
+`;
+
+/* 버튼들을 나란히 배치하기 위한 Wrapper */
+const ProfileMenuActions = styled.div`
+  display: flex;
+`;
+
+const ProfileMenuItem = styled.div`
+  flex: 1; /* 너비를 반반씩 차지하도록 설정 */
+  text-align: center;
+  padding: 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:first-child {
+    border-right: 1px solid #e2e8f0; /* 두 버튼 사이의 구분선 */
+  }
+
+  &:hover {
+    background: #f8f9fa;
+  }
+
+  &.danger {
+    color: #e53e3e;
+    &:hover {
+      background: #fff5f5;
+    }
+  }
+`;
+
+// ---------------------------------------------
 
 const ContentArea = styled.main`
   flex: 1;
@@ -623,7 +827,7 @@ const DropdownMenu = styled.div`
   width: 120px;
   z-index: 100;
   overflow: hidden;
-  animation: ${fadeIn} 0.15s ease-out;
+  animation: ${fadeIn} 0.15s ease-out forwards;
 `;
 
 const DropdownItem = styled.div`
@@ -691,8 +895,8 @@ const ModalContent = styled.div`
   width: 400px;
   padding: 30px;
   border-radius: 12px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-  animation: ${fadeIn} 0.2s ease-out;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  animation: ${fadeIn} 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 `;
 
 const ModalTitle = styled.h3`
@@ -744,6 +948,7 @@ const CancelBtn = styled.button`
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s;
   &:hover { background: #e2e8f0; }
 `;
 
@@ -755,5 +960,98 @@ const SubmitBtn = styled.button`
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s;
   &:hover { background: #219992; }
+`;
+
+// --------------- 활동 기록 전용 Styled Components ---------------
+
+const HistoryModalContent = styled(ModalContent)`
+  width: 440px;
+  max-width: 90vw;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+`;
+
+const HistoryHeaderRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const SortToggleBtn = styled.button`
+  background: #f1f3f5;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s;
+  &:hover {
+    background: #e2e8f0;
+  }
+`;
+
+const HistoryListWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  /* 스크롤바 형태와 부피 숨김 */
+  -ms-overflow-style: none; /* IE, Edge */
+  scrollbar-width: none; /* Firefox */
+  &::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+`;
+
+const EmptyHistory = styled.div`
+  text-align: center;
+  padding: 40px 0;
+  color: #a0aec0;
+  font-size: 14px;
+  font-weight: 500;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px dashed #cbd5e0;
+  line-height: 1.5;
+`;
+
+const HistoryItemCard = styled.div`
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+`;
+
+const HistoryItemHeader = styled.div`
+  margin-bottom: 10px;
+  border-bottom: 1px dashed #e2e8f0;
+  padding-bottom: 8px;
+`;
+
+const HistoryDate = styled.span`
+  font-size: 12px;
+  font-weight: 700;
+  color: #28b4ad;
+`;
+
+const HistoryDescList = styled.ul`
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #4a5568;
+  line-height: 1.6;
+  
+  li {
+    margin-bottom: 4px;
+  }
 `;
