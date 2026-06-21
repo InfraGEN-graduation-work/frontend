@@ -34,6 +34,8 @@ const Canvas: React.FC<CanvasProps> = ({
   const [isGroupDragging, setIsGroupDragging] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+
   const [startMousePos, setStartMousePos] = useState({ x: 0, y: 0 });
   const [initialPositions, setInitialPositions] = useState<Record<string, { x: number, y: number }>>({});
   const [initialSelectionPos, setInitialSelectionPos] = useState({ x: 0, y: 0 });
@@ -95,6 +97,16 @@ const Canvas: React.FC<CanvasProps> = ({
       const nodeCenterY = (node.y + 40) * zoomLevel;
       const x = nodeCenterX - (viewportRef.current.clientWidth / 2);
       const y = nodeCenterY - (viewportRef.current.clientHeight / 2);
+      viewportRef.current.scrollTo({ left: x, top: y, behavior: 'smooth' });
+    }
+  };
+
+  const scrollToEdgeCenter = (midX: number, midY: number) => {
+    if (viewportRef.current) {
+      const centerX = midX * zoomLevel;
+      const centerY = midY * zoomLevel;
+      const x = centerX - (viewportRef.current.clientWidth / 2);
+      const y = centerY - (viewportRef.current.clientHeight / 2);
       viewportRef.current.scrollTo({ left: x, top: y, behavior: 'smooth' });
     }
   };
@@ -236,6 +248,8 @@ const Canvas: React.FC<CanvasProps> = ({
     if (e.button === 2) return; 
     if (!viewportRef.current) return;
     
+    setSelectedEdgeId(null);
+    
     e.currentTarget.setPointerCapture(e.pointerId);
     const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
 
@@ -304,7 +318,12 @@ const Canvas: React.FC<CanvasProps> = ({
     if (drawingEdgeSource && e.button !== 2) {
       const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
       if (targetNode && targetNode.id !== drawingEdgeSource) {
-        const exists = edges.some(edge => (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id));
+        
+        const exists = edges.some(edge => 
+          (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id) ||
+          (edge.sourceId === targetNode.id && edge.targetId === drawingEdgeSource)
+        );
+
         if (!exists) {
           saveHistory();
           markFilesAsModified();
@@ -330,14 +349,15 @@ const Canvas: React.FC<CanvasProps> = ({
     
     if (drawingEdgeSource) {
       if (targetNode && targetNode.id !== drawingEdgeSource) {
-        const existingEdge = edges.find(edge => (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id));
-        saveHistory();
-        markFilesAsModified();
-        
-        if (!existingEdge) {
+        const exists = edges.some(edge => 
+          (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id) ||
+          (edge.sourceId === targetNode.id && edge.targetId === drawingEdgeSource)
+        );
+
+        if (!exists) {
+          saveHistory();
+          markFilesAsModified();
           setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
-        } else {
-          setEdges(prev => prev.filter(edge => edge.id !== existingEdge.id));
         }
       }
       setDrawingEdgeSource(null);
@@ -392,6 +412,7 @@ const Canvas: React.FC<CanvasProps> = ({
     >
       <div className="canvas-content" style={{ transform: `scale(${zoomLevel})`, transformOrigin: '0 0' }}>
         <div className="canvas-inner-elements">
+          
           <svg className="edge-layer">
             {edges.map(edge => {
               const s = nodes.find(n => n.id === edge.sourceId);
@@ -406,15 +427,56 @@ const Canvas: React.FC<CanvasProps> = ({
               const midX = (x1 + x2) / 2;
               const midY = (y1 + y2) / 2;
               const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+              const isSelected = selectedEdgeId === edge.id;
 
               return (
                 <g key={edge.id}>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#cbd5e0" strokeWidth="2" strokeDasharray="4" />
-                  <polygon
-                    points="-6,-5 6,0 -6,5"
-                    fill="#a0aec0"
-                    transform={`translate(${midX}, ${midY}) rotate(${angle})`}
+                  <line 
+                    x1={x1} y1={y1} x2={x2} y2={y2} 
+                    stroke="transparent" strokeWidth="20" 
+                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                    onPointerDown={(e) => {
+                      e.stopPropagation(); 
+                      setSelectedEdgeId(edge.id);
+                      scrollToEdgeCenter(midX, midY);
+                    }}
                   />
+                  
+                  <line 
+                    x1={x1} y1={y1} x2={x2} y2={y2} 
+                    stroke={isSelected ? "#28b4ad" : "#cbd5e0"} 
+                    strokeWidth={isSelected ? "3" : "2"} 
+                    strokeDasharray="4" 
+                    style={{ pointerEvents: 'none' }} 
+                  />
+
+                  {!isSelected && (
+                    <polygon
+                      points="-6,-6 6,0 -6,6"
+                      fill="#a0aec0"
+                      transform={`translate(${midX}, ${midY}) rotate(${angle})`}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )}
+
+                  {/* ⭐️ 더 선명하고 맑은 빨간색(#ff4d4f) 적용 */}
+                  {isSelected && (
+                    <g
+                      transform={`translate(${midX}, ${midY})`} 
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation(); 
+                        saveHistory();
+                        markFilesAsModified();
+                        setEdges(prev => prev.filter(eg => eg.id !== edge.id));
+                        setSelectedEdgeId(null);
+                      }}
+                    >
+                      <circle cx="0" cy="0" r="11" fill="#ff4d4f" />
+                      <line x1="-4" y1="-4" x2="4" y2="4" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1="-4" y1="4" x2="4" y2="-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" />
+                    </g>
+                  )}
                 </g>
               );
             })}
@@ -434,11 +496,12 @@ const Canvas: React.FC<CanvasProps> = ({
 
               return (
                 <g>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" />
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" style={{ pointerEvents: 'none' }} />
                   <polygon
-                    points="-6,-5 6,0 -6,5"
+                    points="-6,-6 6,0 -6,6"
                     fill="#28b4ad"
                     transform={`translate(${midX}, ${midY}) rotate(${angle})`}
+                    style={{ pointerEvents: 'none' }}
                   />
                 </g>
               );
