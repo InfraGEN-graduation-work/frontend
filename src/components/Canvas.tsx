@@ -330,11 +330,14 @@ const Canvas: React.FC<CanvasProps> = ({
     
     if (drawingEdgeSource) {
       if (targetNode && targetNode.id !== drawingEdgeSource) {
-        const exists = edges.some(edge => (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id));
-        if (!exists) {
-          saveHistory();
-          markFilesAsModified();
+        const existingEdge = edges.find(edge => (edge.sourceId === drawingEdgeSource && edge.targetId === targetNode.id));
+        saveHistory();
+        markFilesAsModified();
+        
+        if (!existingEdge) {
           setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
+        } else {
+          setEdges(prev => prev.filter(edge => edge.id !== existingEdge.id));
         }
       }
       setDrawingEdgeSource(null);
@@ -394,10 +397,54 @@ const Canvas: React.FC<CanvasProps> = ({
               const s = nodes.find(n => n.id === edge.sourceId);
               const t = nodes.find(n => n.id === edge.targetId);
               if (!s || !t) return null;
-              return <line key={edge.id} x1={s.x + 90} y1={s.y + 40} x2={t.x + 90} y2={t.y + 40} stroke="#cbd5e0" strokeWidth="2" strokeDasharray="4" />;
+              
+              const x1 = s.x + 90;
+              const y1 = s.y + 40;
+              const x2 = t.x + 90;
+              const y2 = t.y + 40;
+              
+              const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
+              const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+
+              return (
+                <g key={edge.id}>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#cbd5e0" strokeWidth="2" strokeDasharray="4" />
+                  <polygon
+                    points="-6,-5 6,0 -6,5"
+                    fill="#a0aec0"
+                    transform={`translate(${midX}, ${midY}) rotate(${angle})`}
+                  />
+                </g>
+              );
             })}
-            {drawingEdgeSource && <line x1={(nodes.find(n => n.id === drawingEdgeSource)?.x || 0) + 90} y1={(nodes.find(n => n.id === drawingEdgeSource)?.y || 0) + 40} x2={tempEdgeEnd.x} y2={tempEdgeEnd.y} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" />}
+
+            {drawingEdgeSource && (() => {
+              const s = nodes.find(n => n.id === drawingEdgeSource);
+              if (!s) return null;
+              
+              const x1 = s.x + 90;
+              const y1 = s.y + 40;
+              const x2 = tempEdgeEnd.x;
+              const y2 = tempEdgeEnd.y;
+              
+              const midX = (x1 + x2) / 2;
+              const midY = (y1 + y2) / 2;
+              const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
+
+              return (
+                <g>
+                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" />
+                  <polygon
+                    points="-6,-5 6,0 -6,5"
+                    fill="#28b4ad"
+                    transform={`translate(${midX}, ${midY}) rotate(${angle})`}
+                  />
+                </g>
+              );
+            })()}
           </svg>
+
           {nodes.map((node) => (
             <div 
               key={node.id} 
@@ -438,7 +485,6 @@ const Canvas: React.FC<CanvasProps> = ({
               </svg>
             </div>
           )}
-
         </div>
       </div>
     </main>

@@ -5,7 +5,7 @@ import springbootIcon from '../assets/springboot.png';
 
 interface LeftPanelProps {
   projectName: string;
-  setProjectName: (name: string) => void;
+  onUpdateProjectName: (newName: string) => void;
   nodes: NodeData[];
   activeTab: 'Project' | 'Settings' | 'Validation';
   setActiveTab: (tab: 'Project' | 'Settings' | 'Validation') => void;
@@ -25,20 +25,24 @@ interface LeftPanelProps {
   isSelectMode: boolean;
   resetTrigger: number;
   userInfo: { nickname: string; email: string };
-  onLogout: () => void;
+  onGoHome: () => void; 
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({ 
-  projectName, setProjectName, nodes, activeTab, setActiveTab, onSelectCategory, onToggleRightSidebar, 
+  projectName, onUpdateProjectName, nodes, activeTab, setActiveTab, onSelectCategory, onToggleRightSidebar, 
   showRightSidebar, setShowRightSidebar,
   onZoomIn, onZoomOut, onSelectMode, onCancelSelection, onDelete, onUndo, onRedo, 
-  canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onLogout
+  canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onGoHome
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    setTempName(projectName);
+  }, [projectName]);
 
   useEffect(() => {
     if (resetTrigger > 0) {
@@ -61,8 +65,20 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     return nodes.filter(node => templates.includes(node.type)).length;
   };
 
-  const handleEditClick = () => { setIsEditing(true); setTempName(projectName); };
-  const handleSaveClick = () => { if (tempName.trim()) setProjectName(tempName); setIsEditing(false); };
+  const handleEditClick = () => { 
+    setIsEditing(true); 
+    setTempName(projectName); 
+  };
+  
+  const handleSaveClick = () => { 
+    const trimmedName = tempName.trim();
+    if (trimmedName && trimmedName !== projectName) {
+      onUpdateProjectName(trimmedName);
+    } else {
+      setTempName(projectName);
+    }
+    setIsEditing(false); 
+  };
 
   const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
     if (activeTab === tab && showRightSidebar) {
@@ -253,11 +269,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             <span className="user-email">{userInfo.email}</span>
           </div>
         </div>
-        <button className="logout-icon-btn" onClick={onLogout} title="로그아웃">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
+        <button className="home-icon-btn" onClick={onGoHome} title="홈으로 돌아가기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
           </svg>
         </button>
       </div>

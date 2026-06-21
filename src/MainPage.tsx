@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -27,13 +27,16 @@ export interface ViewportState {
   scrollHeight: number;
 }
 
-const App: React.FC = () => {
-  const [showTutorial, setShowTutorial] = useState(true);
+const MainPage: React.FC = () => {
+  const { projectId } = useParams(); 
   const navigate = useNavigate();
+  const [showTutorial, setShowTutorial] = useState(true);
 
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
 
-  const [projectName, setProjectName] = useState('Project');
+  const [projectName, setProjectName] = useState('로딩중...');
+  const [projectDescription, setProjectDescription] = useState('');
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
@@ -76,28 +79,203 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const accessToken = localStorage.getItem('accessToken');
-    if (accessToken) {
-      fetch('http://infragen.kro.kr/api/v1/members/me', {
+    if (!accessToken) {
+      navigate('/login');
+      return;
+    }
+
+    fetch('http://infragen.kro.kr/api/v1/members/me', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      const isSuccess = data.isSuccess ?? data.is_success;
+      if (isSuccess && data.result) {
+        setUserInfo({ nickname: data.result.nickname, email: data.result.email });
+      } else {
+        setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+      }
+    })
+    .catch(() => {
+      setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+    });
+
+    if (projectId) {
+      fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       })
       .then(res => res.json())
       .then(data => {
         const isSuccess = data.isSuccess ?? data.is_success;
         if (isSuccess && data.result) {
-          setUserInfo({ nickname: data.result.nickname, email: data.result.email });
+          setProjectName(data.result.title);
+          setProjectDescription(data.result.description || '');
+
+          const fetchedNodes = data.result.nodes || [];
+          const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => ({
+            id: n.id.toString(),
+            type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType,
+            name: n.nodeName,
+            x: n.positionX,
+            y: n.positionY,
+            settings: n.properties || {}
+          }));
+          setNodes(loadedNodes);
+
+          const fetchedEdges = data.result.edges || [];
+          const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
+            id: `edge-${e.id}`,
+            sourceId: e.sourceNodeId.toString(),
+            targetId: e.targetNodeId.toString()
+          }));
+          setEdges(loadedEdges);
+
+          const reconstructedFiles: Record<string, FileGroup> = {};
+          loadedNodes.forEach((n: any) => {
+            const props = n.settings;
+            if (props && props.fileId) {
+              if (!reconstructedFiles[props.fileId]) {
+                reconstructedFiles[props.fileId] = {
+                  id: props.fileId,
+                  name: props.fileName || '새 파일',
+                  isGenerated: !!props.fileIsGenerated,
+                  nodeIds: [],
+                  isExpanded: true
+                };
+              }
+              reconstructedFiles[props.fileId].nodeIds.push(n.id);
+            }
+          });
+          const loadedFiles = Object.values(reconstructedFiles);
+          setFiles(loadedFiles);
+          setTargetFileIds(loadedFiles.map(f => f.id));
+
         } else {
-          setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+          setProjectName('알 수 없는 프로젝트');
         }
       })
-      .catch(() => {
-        setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+      .catch(err => {
+        console.error("프로젝트 상세 정보를 불러오는데 실패했습니다:", err);
+        setProjectName('연결 오류');
       });
     }
-  }, []);
+  }, [navigate, projectId]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    navigate('/');
+
+  const handleSaveCanvas = async () => {
+    const accessToken = localStorage.getItem('accessToken');
+    if (!accessToken || !projectId) return;
+
+    const mappedNodes = nodes.map(n => {
+      const file = files.find(f => f.nodeIds.includes(n.id));
+      const properties: any = { ...(n as any).settings };
+      
+      if (file) {
+        properties.fileId = file.id;
+        properties.fileName = file.name;
+        properties.fileIsGenerated = file.isGenerated;
+      } else {
+        delete properties.fileId;
+        delete properties.fileName;
+        delete properties.fileIsGenerated;
+      }
+
+      return {
+        nodeName: n.name,
+        componentType: n.type.toUpperCase().replace(' ', '_'),
+        positionX: n.x,
+        positionY: n.y,
+        properties: properties
+      };
+    });
+
+    const mappedEdges = edges.map(e => {
+      const sourceNode = nodes.find(n => n.id === e.sourceId);
+      const targetNode = nodes.find(n => n.id === e.targetId);
+      return {
+        sourceNodeName: sourceNode?.name || '',
+        targetNodeName: targetNode?.name || ''
+      };
+    }).filter(e => e.sourceNodeName && e.targetNodeName);
+
+    try {
+      const res = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          title: projectName,
+          description: projectDescription,
+          nodes: mappedNodes,
+          edges: mappedEdges
+        })
+      });
+
+      const data = await res.json();
+      const isSuccess = data.isSuccess ?? data.is_success;
+
+      if (res.ok && isSuccess) {
+        alert('캔버스가 성공적으로 저장되었습니다.');
+      } else {
+        alert(data.message || '저장에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('서버 오류가 발생했습니다.');
+    }
+  };
+
+  const handleUpdateProjectName = async (newName: string) => {
+    if (!newName.trim() || newName === projectName) return;
+
+    const accessToken = localStorage.getItem('accessToken');
+    if (!accessToken || !projectId) return;
+
+    const previousName = projectName;
+    setProjectName(newName);
+
+    const mappedNodes = nodes.map(n => {
+      const file = files.find(f => f.nodeIds.includes(n.id));
+      const properties: any = { ...(n as any).settings };
+      if (file) {
+        properties.fileId = file.id; properties.fileName = file.name; properties.fileIsGenerated = file.isGenerated;
+      } else {
+        delete properties.fileId; delete properties.fileName; delete properties.fileIsGenerated;
+      }
+      return {
+        nodeName: n.name, componentType: n.type.toUpperCase().replace(' ', '_'),
+        positionX: n.x, positionY: n.y, properties: properties
+      };
+    });
+
+    const mappedEdges = edges.map(e => {
+      const sourceNode = nodes.find(n => n.id === e.sourceId);
+      const targetNode = nodes.find(n => n.id === e.targetId);
+      return { sourceNodeName: sourceNode?.name || '', targetNodeName: targetNode?.name || '' };
+    }).filter(e => e.sourceNodeName && e.targetNodeName);
+
+    try {
+      const res = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({ title: newName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !(data.isSuccess ?? data.is_success)) {
+        alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
+        setProjectName(previousName);
+      }
+    } catch (err) {
+      alert('서버 오류가 발생했습니다.');
+      setProjectName(previousName);
+    }
+  };
+
+  const handleGoHome = () => {
+    navigate('/dashboard');
   };
 
   const handleResetUI = () => {
@@ -109,7 +287,6 @@ const App: React.FC = () => {
     setSelectedCategory(null);
     setLeftActiveTab('Project');
     setShowRightSidebar(false); 
-    
     setUiResetTrigger(prev => prev + 1);
   };
 
@@ -188,10 +365,18 @@ const App: React.FC = () => {
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.1, 3));
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
 
-  const addNode = (type: string, name: string, x: number, y: number) => {
+  const addNode = (type: string, baseName: string, x: number, y: number) => {
     saveHistory(); 
     markFilesAsModified();
-    const newNode: NodeData = { id: `node-${Date.now()}`, type, name, x, y };
+    
+    let finalName = baseName;
+    let counter = 1;
+    while (nodes.some(n => n.name === finalName)) {
+      finalName = `${baseName}_${counter}`;
+      counter++;
+    }
+
+    const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y };
     setNodes((prev) => [...prev, newNode]);
   };
 
@@ -239,12 +424,14 @@ const App: React.FC = () => {
         onGenerate={handleGenerateClick} 
         isGenerateMode={appMode === 'generating'} 
         onResetUI={handleResetUI} 
+        onSaveCanvas={handleSaveCanvas}
       />
       
       {appMode === 'editor' ? (
         <div className="main-layout">
           <LeftPanel 
-            projectName={projectName} setProjectName={setProjectName}
+            projectName={projectName} 
+            onUpdateProjectName={handleUpdateProjectName} 
             nodes={nodes} activeTab={leftActiveTab} setActiveTab={setLeftActiveTab}
             onSelectCategory={setSelectedCategory} onToggleRightSidebar={toggleRightSidebar}
             showRightSidebar={showRightSidebar} setShowRightSidebar={setShowRightSidebar}
@@ -256,7 +443,7 @@ const App: React.FC = () => {
             isSelectMode={isSelectMode}
             resetTrigger={uiResetTrigger}
             userInfo={userInfo}
-            onLogout={handleLogout}
+            onGoHome={handleGoHome}
           />
           <Canvas 
             nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges}
@@ -360,4 +547,4 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+export default MainPage;
