@@ -417,7 +417,6 @@ const MainPage: React.FC = () => {
     }
   };
 
-  // 🚨 [수정] Generate 시 어떤 파일이 생성되었는지 정확히 명시하여 로그 기록
   const confirmGenerate = async () => {
     setIsConfirmModalOpen(false);
     setAppMode('generating');
@@ -425,10 +424,8 @@ const MainPage: React.FC = () => {
     
     saveHistory(); 
     
-    // 타겟 파일들의 이름 추출
     const generatedFileNames = targetFileIds.map(id => files.find(f => f.id === id)?.name || '알 수 없는 파일');
-    
-    // 파일명 명시된 로그 생성
+
     const generateLogMsg = generatedFileNames.length > 0 
       ? `[생성] ${generatedFileNames.map(n => `'${n}'`).join(', ')} 파일의 코드가 생성되었습니다.`
       : `[생성] 인프라 코드 Generate가 실행되었습니다.`;
@@ -461,7 +458,6 @@ const MainPage: React.FC = () => {
         console.error("히스토리 자동 저장 통신 실패:", err);
       }
     } else {
-      // 서버 전송이 안 되더라도 로컬 임시 배열에는 남김
       setActivityLog(prev => [...prev, generateLogMsg]);
     }
 

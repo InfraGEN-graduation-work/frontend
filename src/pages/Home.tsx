@@ -37,17 +37,14 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
 
-  // --------------- 활동 기록 모달 관련 상태 ---------------
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyList, setHistoryList] = useState<ProjectHistory[]>([]);
   const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
-  // 프로필 메뉴 상태
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
 
   useEffect(() => {
-    // 허공 클릭 시 프로젝트 메뉴와 프로필 메뉴 모두 닫기
     const handleClickOutside = () => {
       setMenuOpenId(null);
       setIsProfileMenuOpen(false);
@@ -304,8 +301,7 @@ export default function Home() {
           setIsProfileMenuOpen(!isProfileMenuOpen); 
         }}>
           <Avatar>{userInfo.nickname.charAt(0).toUpperCase()}</Avatar>
-          
-          {/* 프로필 드롭다운 메뉴 */}
+
           {isProfileMenuOpen && (
             <ProfileDropdown onClick={(e) => e.stopPropagation()}>
               <ProfileHeader>
@@ -316,7 +312,6 @@ export default function Home() {
                 </ProfileDetails>
               </ProfileHeader>
               <ProfileDivider />
-              {/* 버튼 나란히 한 줄 배치 */}
               <ProfileMenuActions>
                 <ProfileMenuItem onClick={() => alert('회원정보 페이지는 준비 중입니다.')}>회원정보</ProfileMenuItem>
                 <ProfileMenuItem className="danger" onClick={handleLogout}>로그아웃</ProfileMenuItem>
@@ -446,8 +441,6 @@ export default function Home() {
           </ModalContent>
         </ModalOverlay>
       )}
-
-      {/* 활동 기록 모달 */}
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -494,8 +487,6 @@ export default function Home() {
   );
 }
 
-// ---------------- Styled Components ----------------
-
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -534,8 +525,6 @@ const BrandName = styled.h1`
   margin: 0;
 `;
 
-// --- 프로필(우측 상단) 관련 Styled Components ---
-
 const ProfileWrapper = styled.div`
   position: relative;
   cursor: pointer;
@@ -562,7 +551,7 @@ const Avatar = styled.div`
 
 const ProfileDropdown = styled.div`
   position: absolute;
-  top: 56px; /* 모달을 헤더 아래로 살짝 더 띄움 */
+  top: 56px;
   right: 0;
   width: 240px;
   background: white;
@@ -624,13 +613,12 @@ const ProfileDivider = styled.div`
   background: #e2e8f0;
 `;
 
-/* 버튼들을 나란히 배치하기 위한 Wrapper */
 const ProfileMenuActions = styled.div`
   display: flex;
 `;
 
 const ProfileMenuItem = styled.div`
-  flex: 1; /* 너비를 반반씩 차지하도록 설정 */
+  flex: 1;
   text-align: center;
   padding: 14px 0;
   font-size: 13px;
@@ -640,7 +628,7 @@ const ProfileMenuItem = styled.div`
   transition: background 0.2s;
 
   &:first-child {
-    border-right: 1px solid #e2e8f0; /* 두 버튼 사이의 구분선 */
+    border-right: 1px solid #e2e8f0;
   }
 
   &:hover {
@@ -654,8 +642,6 @@ const ProfileMenuItem = styled.div`
     }
   }
 `;
-
-// ---------------------------------------------
 
 const ContentArea = styled.main`
   flex: 1;
@@ -964,8 +950,6 @@ const SubmitBtn = styled.button`
   &:hover { background: #219992; }
 `;
 
-// --------------- 활동 기록 전용 Styled Components ---------------
-
 const HistoryModalContent = styled(ModalContent)`
   width: 440px;
   max-width: 90vw;
@@ -1004,11 +988,10 @@ const HistoryListWrapper = styled.div`
   overflow-y: auto;
   padding-right: 4px;
 
-  /* 스크롤바 형태와 부피 숨김 */
-  -ms-overflow-style: none; /* IE, Edge */
-  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
   &::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
+    display: none;
   }
 `;
 

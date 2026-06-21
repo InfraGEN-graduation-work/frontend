@@ -429,17 +429,14 @@ const Canvas: React.FC<CanvasProps> = ({
               const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
               const isSelected = selectedEdgeId === edge.id;
 
-              // 💡 화살표가 타겟 노드의 테두리에 딱 붙도록 수학적 비율 계산
               const dx = x2 - x1;
               const dy = y2 - y1;
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
               
-              // 타겟 노드의 크기 절반 (width: 180 -> 90, height: 80 -> 40)
               const tx = 90 / Math.abs(dx || 0.001);
               const ty = 40 / Math.abs(dy || 0.001);
               const tRatio = Math.min(tx, ty);
-              
-              // 노드 경계에서 화살표(폴리곤) 크기 약 6px 만큼만 뒤로 빼줌
+
               const pullBack = Math.min(tRatio + (6 / len), 1); 
               
               const arrowX = x2 - pullBack * dx;
@@ -466,7 +463,6 @@ const Canvas: React.FC<CanvasProps> = ({
                     style={{ pointerEvents: 'none' }} 
                   />
 
-                  {/* 선택되지 않았을 때만 화살표 렌더링 (도착 노드 바로 앞에 붙음) */}
                   {!isSelected && (
                     <polygon
                       points="-6,-6 6,0 -6,6"
@@ -476,7 +472,6 @@ const Canvas: React.FC<CanvasProps> = ({
                     />
                   )}
 
-                  {/* 선을 선택했을 때 나타나는 빨간색 삭제 버튼 (가운데 유지) */}
                   {isSelected && (
                     <g
                       transform={`translate(${midX}, ${midY})`} 
@@ -498,7 +493,6 @@ const Canvas: React.FC<CanvasProps> = ({
               );
             })}
 
-            {/* 마우스로 선을 긋고 있을 때 나타나는 임시 화살표 */}
             {drawingEdgeSource && (() => {
               const s = nodes.find(n => n.id === drawingEdgeSource);
               if (!s) return null;
@@ -510,7 +504,6 @@ const Canvas: React.FC<CanvasProps> = ({
               
               const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
 
-              // 마우스 포인터 끝에 화살표가 위치하도록 6px 뒤로 뺌
               const dx = x2 - x1;
               const dy = y2 - y1;
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
