@@ -56,6 +56,7 @@ export default function Home() {
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
+  const [downloadSelection, setDownloadSelection] = useState<Set<number>>(new Set());
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
@@ -285,14 +286,25 @@ export default function Home() {
       setCodeViewerFiles(files);
       setCodeViewerNodes(nodes);
       setSelectedViewFile(files[0]);
+
+      const allFileIds = files.map((f: any) => f.fileId);
+      setDownloadSelection(new Set(allFileIds));
+
       setIsCodeViewerOpen(true);
     } catch (err) {}
   };
 
   const handleDownloadZip = async () => {
+    if (downloadSelection.size === 0) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 파일을 하나 이상 선택해주세요.' }));
+      return;
+    }
+
     const zip = new JSZip();
     codeViewerFiles.forEach(file => {
-      zip.file(file.fileName, file.content);
+      if (downloadSelection.has(file.fileId)) {
+        zip.file(file.fileName, file.content);
+      }
     });
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, "infragen-export.zip");
@@ -309,8 +321,7 @@ export default function Home() {
       setProjects(projects.filter(p => !selectedIds.includes(p.projectId)));
       setSelectedIds([]);
       setIsSelectMode(false);
-      setToastMessage(`${selectedIds.length}개의 프로젝트가 삭제되었습니다.`);
-      setTimeout(() => setToastMessage(null), 3000);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: `${selectedIds.length}개의 프로젝트가 삭제되었습니다.` }));
     } catch (err) {}
   };
 
@@ -392,10 +403,7 @@ export default function Home() {
       }));
       
       setIsUserInfoModalOpen(false);
-      
-      setToastMessage('회원정보가 수정되었습니다.');
-      setTimeout(() => setToastMessage(null), 3000);
-
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 수정되었습니다.' }));
     } catch (err) {}
   };
 
@@ -808,23 +816,40 @@ export default function Home() {
               <CVLeftSidebar>
                 <CVSectionTitle>파일 목록</CVSectionTitle>
                 <CVFileList>
-                  {codeViewerFiles.map(file => (
-                    <CVFileItem 
-                      key={file.fileId} 
-                      $active={selectedViewFile?.fileId === file.fileId}
-                      onClick={() => setSelectedViewFile(file)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                      {file.fileName}
-                    </CVFileItem>
-                  ))}
+                  {codeViewerFiles.map(file => {
+                    const isSelected = downloadSelection.has(file.fileId);
+                    const isViewing = selectedViewFile?.fileId === file.fileId;
+                    
+                    return (
+                      <CVFileItem 
+                        key={file.fileId} 
+                        $selected={isSelected}
+                        $isViewing={isViewing}
+                        onClick={() => {
+                          setSelectedViewFile(file);
+                          setDownloadSelection(prev => {
+                            const next = new Set(prev);
+                            if (next.has(file.fileId)) next.delete(file.fileId);
+                            else next.add(file.fileId);
+                            return next;
+                          });
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}>
+                          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                          <polyline points="13 2 13 9 20 9"></polyline>
+                        </svg>
+                        {file.fileName}
+                      </CVFileItem>
+                    );
+                  })}
                 </CVFileList>
               </CVLeftSidebar>
 
               <CVRightArea>
                 {selectedViewFile ? (
                   <>
-                    <CVSectionTitle>포함된 노드 설정</CVSectionTitle>
+                    <CVSectionTitle>포함된 노드</CVSectionTitle>
                     <CVAssignedNodes>
                       {codeViewerNodes
                         .filter(n => n.properties?.fileName === selectedViewFile.fileName)
@@ -1618,7 +1643,7 @@ const CVFileList = styled.div`
   gap: 6px;
 `;
 
-const CVFileItem = styled.div<{ $active: boolean }>`
+const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 13px;
@@ -1627,13 +1652,28 @@ const CVFileItem = styled.div<{ $active: boolean }>`
   display: flex;
   align-items: center;
   transition: 0.2s;
-  
-  background: ${({ $active }) => $active ? '#f0fdfc' : 'transparent'};
-  color: ${({ $active }) => $active ? '#28b4ad' : '#4a5568'};
-  border: 1px solid ${({ $active }) => $active ? 'var(--mint)' : 'transparent'};
+  position: relative;
+
+  background: ${({ $selected }) => $selected ? '#f0fdfc' : 'transparent'};
+  color: ${({ $selected }) => $selected ? '#28b4ad' : '#4a5568'};
+  border: 1px solid ${({ $selected }) => $selected ? 'var(--mint)' : 'transparent'};
+
+  ${({ $isViewing }) => $isViewing && css`
+    &::before {
+      content: '';
+      position: absolute;
+      left: -1px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 60%;
+      background: #28b4ad;
+      border-radius: 0 4px 4px 0;
+    }
+  `}
 
   &:hover {
-    background: ${({ $active }) => $active ? '#f0fdfc' : '#f1f3f5'};
+    background: ${({ $selected }) => $selected ? '#e6fcfb' : '#f1f3f5'};
   }
 `;
 
