@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
+import { useAuth } from "../contexts/AuthContext";
 
 const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
 const REDIRECT_URI = "http://localhost:3000/oauth/kakao/callback";
@@ -16,6 +17,7 @@ const KAKAO_AUTH_URL =
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const { setAccessToken } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -36,7 +38,7 @@ export default function LoginPage() {
       const res = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        credentials: "include", // 쿠키에 Refresh Token을 받기 위해 필수
         body: JSON.stringify({ email, password }),
       });
 
@@ -44,7 +46,8 @@ export default function LoginPage() {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
-        localStorage.setItem("accessToken", data.result.accessToken);
+        // 로컬 스토리지 대신 AuthContext에 저장
+        setAccessToken(data.result.accessToken);
         navigate("/dashboard");
       } else {
         const errorMessage = typeof data.result === 'string' ? data.result : data.message;

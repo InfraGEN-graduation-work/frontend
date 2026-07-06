@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
+import { useAuth } from '../contexts/AuthContext';
 
 const BASE_URL = 'http://infragen.kro.kr/api/v1';
 
@@ -22,6 +23,7 @@ interface ProjectHistory {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', profileImageUrl: '' });
   const [projects, setProjects] = useState<Project[]>([]);
@@ -39,9 +41,14 @@ export default function Home() {
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [activeHistoryProjectId, setActiveHistoryProjectId] = useState<number | null>(null);
   const [historyList, setHistoryList] = useState<ProjectHistory[]>([]);
   const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+
+  const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
+  const [historyDetail, setHistoryDetail] = useState<any>(null);
+  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
@@ -63,17 +70,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const accessToken = localStorage.getItem('accessToken');
-    if (!accessToken) {
-      navigate('/login');
-      return;
-    }
-
     const fetchDashboardData = async () => {
       try {
-        const userRes = await fetch(`${BASE_URL}/members/me`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const userRes = await fetchWithAuth(`${BASE_URL}/members/me`);
+        if (userRes.status === 401) {
+          navigate('/login');
+          return;
+        }
+
         const userData = await userRes.json();
         if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
           setUserInfo({ 
@@ -83,16 +87,11 @@ export default function Home() {
           });
         }
 
-        const projRes = await fetch(`${BASE_URL}/projects`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
         const projData = await projRes.json();
         
         if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
           setProjects(projData.result.projectList || []);
-        } else if (projRes.status === 401) {
-          localStorage.removeItem('accessToken');
-          navigate('/login');
         }
       } catch (err) {
         console.error('데이터를 불러오는데 실패했습니다.', err);
@@ -100,19 +99,17 @@ export default function Home() {
     };
 
     fetchDashboardData();
-  }, [navigate]);
+  }, [navigate, fetchWithAuth]);
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return alert('프로젝트 이름을 입력해주세요.');
 
-    const accessToken = localStorage.getItem('accessToken');
-
     if (modalMode === 'create') {
       try {
-        const res = await fetch(`${BASE_URL}/projects`, {
+        const res = await fetchWithAuth(`${BASE_URL}/projects`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: newTitle, description: newDesc }),
         });
 
@@ -146,9 +143,9 @@ export default function Home() {
           };
         }).filter(e => e.sourceNodeName && e.targetNodeName);
 
-        const res = await fetch(`${BASE_URL}/projects/${editTargetId}`, {
+        const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: newTitle,
             description: newDesc,
@@ -177,12 +174,9 @@ export default function Home() {
   const handleOpenEdit = async (e: React.MouseEvent, proj: Project) => {
     e.stopPropagation();
     setMenuOpenId(null);
-    const accessToken = localStorage.getItem('accessToken');
 
     try {
-      const res = await fetch(`${BASE_URL}/projects/${proj.projectId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}`);
       const data = await res.json();
       
       if (res.ok && (data.isSuccess ?? data.is_success)) {
@@ -205,11 +199,9 @@ export default function Home() {
     setMenuOpenId(null);
     if (!window.confirm('정말 이 프로젝트를 삭제하시겠습니까? 관련 데이터가 모두 삭제됩니다.')) return;
 
-    const accessToken = localStorage.getItem('accessToken');
     try {
-      const res = await fetch(`${BASE_URL}/projects/${projectId}`, {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (res.ok) setProjects(projects.filter((p) => p.projectId !== projectId));
       else alert('삭제에 실패했습니다.');
@@ -223,13 +215,12 @@ export default function Home() {
     setMenuOpenId(null);
     setIsHistoryModalOpen(true);
     setIsHistoryLoading(true);
-    setHistorySortOrder('desc'); 
+    setHistorySortOrder('desc');
+    setSelectedHistoryId(null);
+    setActiveHistoryProjectId(projectId);
     
-    const accessToken = localStorage.getItem('accessToken');
     try {
-      const res = await fetch(`${BASE_URL}/projects/${projectId}/histories`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
       const data = await res.json();
       
       if (res.ok && (data.isSuccess ?? data.is_success)) {
@@ -244,18 +235,36 @@ export default function Home() {
     }
   };
 
+  const handleHistoryItemClick = async (historyId: number) => {
+    if (!activeHistoryProjectId) return;
+    setSelectedHistoryId(historyId);
+    setIsHistoryDetailLoading(true);
+
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${activeHistoryProjectId}/histories/${historyId}`);
+      const data = await res.json();
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        setHistoryDetail(data.result);
+      } else {
+        alert('상세 이력을 불러오지 못했습니다.');
+        setSelectedHistoryId(null);
+      }
+    } catch (e) {
+      alert('서버 오류가 발생했습니다.');
+      setSelectedHistoryId(null);
+    } finally {
+      setIsHistoryDetailLoading(false);
+    }
+  };
+
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`선택한 ${selectedIds.length}개의 프로젝트를 삭제하시겠습니까?\n관련 데이터가 모두 삭제됩니다.`)) return;
 
-    const accessToken = localStorage.getItem('accessToken');
     try {
       await Promise.all(
         selectedIds.map(id =>
-          fetch(`${BASE_URL}/projects/${id}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${accessToken}` },
-          })
+          fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' })
         )
       );
       setProjects(projects.filter(p => !selectedIds.includes(p.projectId)));
@@ -274,9 +283,8 @@ export default function Home() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    navigate('/login');
+  const handleLogoutClick = async () => {
+    await logout();
   };
 
   const handleOpenUserInfo = (e: React.MouseEvent) => {
@@ -320,8 +328,6 @@ export default function Home() {
       return;
     }
 
-    const accessToken = localStorage.getItem('accessToken');
-
     try {
       const formData = new FormData();
       formData.append('nickname', editProfileForm.nickname);
@@ -333,12 +339,9 @@ export default function Home() {
         formData.append('profileImage', profileImageFile);
       }
 
-      await fetch(`${BASE_URL}/members/me`, {
+      await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${accessToken}` 
-        },
-        body: formData
+        body: formData 
       });
 
       setUserInfo(prev => ({ 
@@ -366,15 +369,13 @@ export default function Home() {
       return;
     }
 
-    const accessToken = localStorage.getItem('accessToken');
     try {
-      await fetch(`${BASE_URL}/members/me`, {
+      await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${accessToken}` }
       });
 
       alert('회원 탈퇴가 완료되었습니다.');
-      localStorage.removeItem('accessToken');
+      await logout();
       navigate('/login');
     } catch (err) {
       console.error('탈퇴 처리 실패', err);
@@ -438,9 +439,19 @@ export default function Home() {
                 <ProfileName>{userInfo.nickname}</ProfileName>
                 <ProfileEmail>{userInfo.email}</ProfileEmail>
                 
+                <div style={{ width: '100%', borderBottom: '1px solid #e2e8f0', margin: '12px 0' }} />
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>자동 저장 (10분)</span>
+                  <ToggleSwitchContainer>
+                    <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => setIsAutoSaveEnabled(e.target.checked)} />
+                    <ToggleSlider checked={isAutoSaveEnabled} />
+                  </ToggleSwitchContainer>
+                </div>
+
                 <ProfileActionRow>
                   <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
-                  <ProfileActionBtn className="danger" onClick={handleLogout}>로그아웃</ProfileActionBtn>
+                  <ProfileActionBtn className="danger" onClick={handleLogoutClick}>로그아웃</ProfileActionBtn>
                 </ProfileActionRow>
               </ProfileDropdown>
             )}
@@ -576,38 +587,72 @@ export default function Home() {
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
-            <HistoryHeaderRow>
-              <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
-              <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
-                {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
-              </SortToggleBtn>
-            </HistoryHeaderRow>
-            
-            <HistoryListWrapper>
-              {isHistoryLoading ? (
-                <EmptyHistory>로딩중...</EmptyHistory>
-              ) : sortedHistory.length === 0 ? (
-                <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장 버튼을 누르세요)</EmptyHistory>
-              ) : (
-                sortedHistory.map((h) => {
-                  const logLines = h.description ? h.description.split('\n') : ['저장되었습니다.'];
-                  
-                  return (
-                    <HistoryItemCard key={h.historyId}>
-                      <HistoryItemHeader>
-                        <HistoryDate>{formatDateTime(h.createdAt)}에 저장됨</HistoryDate>
-                      </HistoryItemHeader>
-                      <HistoryDescList>
-                        {logLines.map((line, i) => (
-                          <li key={i}>{line}</li>
-                        ))}
-                      </HistoryDescList>
-                    </HistoryItemCard>
-                  );
-                })
-              )}
-            </HistoryListWrapper>
-            
+            {selectedHistoryId && historyDetail ? (
+              <HistoryDetailContainer>
+                <HistoryHeaderRow>
+                  <ModalTitle style={{ marginBottom: 0 }}>버전: {historyDetail.versionName}</ModalTitle>
+                  <SortToggleBtn onClick={() => setSelectedHistoryId(null)}>← 목록으로</SortToggleBtn>
+                </HistoryHeaderRow>
+                
+                <HistoryDescList style={{ marginBottom: 16 }}>
+                  {historyDetail.description.split('\n').map((line: string, i: number) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </HistoryDescList>
+                
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#4a5568' }}>생성된 코드 파일 내역</div>
+                <FileListWrapper>
+                  {historyDetail.generatedFileList && historyDetail.generatedFileList.length > 0 ? (
+                    historyDetail.generatedFileList.map((file: any) => (
+                      <FileBlock key={file.fileId}>
+                        <FileHeader>
+                          <span>{file.fileName}</span>
+                          <span style={{ color: '#a0aec0' }}>{file.fileSize} Bytes</span>
+                        </FileHeader>
+                        <FileContent>{file.content}</FileContent>
+                      </FileBlock>
+                    ))
+                  ) : (
+                    <EmptyHistory>생성된 파일 내역이 없습니다.</EmptyHistory>
+                  )}
+                </FileListWrapper>
+              </HistoryDetailContainer>
+            ) : (
+              <>
+                <HistoryHeaderRow>
+                  <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
+                  <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
+                    {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
+                  </SortToggleBtn>
+                </HistoryHeaderRow>
+                
+                <HistoryListWrapper>
+                  {isHistoryLoading ? (
+                    <EmptyHistory>로딩중...</EmptyHistory>
+                  ) : sortedHistory.length === 0 ? (
+                    <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장 버튼을 누르세요)</EmptyHistory>
+                  ) : (
+                    sortedHistory.map((h) => {
+                      const logLines = h.description ? h.description.split('\n') : ['저장되었습니다.'];
+                      
+                      return (
+                        <HistoryItemCard key={h.historyId} onClick={() => handleHistoryItemClick(h.historyId)}>
+                          <HistoryItemHeader>
+                            <HistoryDate>{formatDateTime(h.createdAt)}에 저장됨</HistoryDate>
+                            <span style={{ fontSize: 12, color: '#a0aec0' }}>상세 보기 →</span>
+                          </HistoryItemHeader>
+                          <HistoryDescList>
+                            {logLines.map((line, i) => (
+                              <li key={i}>{line}</li>
+                            ))}
+                          </HistoryDescList>
+                        </HistoryItemCard>
+                      );
+                    })
+                  )}
+                </HistoryListWrapper>
+              </>
+            )}
             <ModalActions style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
               <CancelBtn style={{ width: '100%' }} onClick={() => setIsHistoryModalOpen(false)}>닫기</CancelBtn>
             </ModalActions>
@@ -704,7 +749,6 @@ export default function Home() {
   );
 }
 
-
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -725,14 +769,15 @@ const PageContainer = styled.div`
   font-family: 'Inter', 'Pretendard', sans-serif;
 `;
 
+// 높이(60px)와 패딩(0 20px)을 MainPage.css와 맞춤
 const Header = styled.header`
-  height: 64px;
+  height: 60px;
   background: white;
   border-bottom: 1px solid #e9ecef;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 40px;
+  padding: 0 20px;
   flex-shrink: 0;
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 `;
@@ -848,10 +893,40 @@ const ProfileName = styled.span`
 const ProfileEmail = styled.span`
   font-size: 13px;
   color: #718096;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
   text-align: center;
   word-break: break-all;
   width: 100%;
+`;
+
+const ToggleSwitchContainer = styled.label`
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+`;
+
+const ToggleInput = styled.input`
+  display: none;
+`;
+
+const ToggleSlider = styled.div<{ checked: boolean }>`
+  width: 36px;
+  height: 20px;
+  background-color: ${({ checked }) => (checked ? '#28b4ad' : '#cbd5e0')};
+  border-radius: 20px;
+  position: relative;
+  transition: 0.3s;
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: ${({ checked }) => (checked ? '18px' : '2px')};
+    width: 16px;
+    height: 16px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.3s;
+  }
 `;
 
 const ProfileActionRow = styled.div`
@@ -1204,11 +1279,12 @@ const SubmitBtn = styled.button`
 `;
 
 const HistoryModalContent = styled(ModalContent)`
-  width: 440px;
+  width: 500px;
   max-width: 90vw;
   padding: 24px;
   display: flex;
   flex-direction: column;
+  max-height: 80vh;
 `;
 
 const HistoryHeaderRow = styled.div`
@@ -1216,6 +1292,7 @@ const HistoryHeaderRow = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-shrink: 0;
 `;
 
 const SortToggleBtn = styled.button`
@@ -1237,9 +1314,9 @@ const HistoryListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 400px;
   overflow-y: auto;
   padding-right: 4px;
+  flex: 1;
 
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -1265,13 +1342,23 @@ const HistoryItemCard = styled.div`
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 16px;
+  cursor: pointer;
+  transition: 0.2s;
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  
+  &:hover {
+    background: #f8f9fa;
+    border-color: #cbd5e0;
+    transform: translateY(-1px);
+  }
 `;
 
 const HistoryItemHeader = styled.div`
   margin-bottom: 10px;
   border-bottom: 1px dashed #e2e8f0;
   padding-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
 `;
 
 const HistoryDate = styled.span`
@@ -1290,6 +1377,56 @@ const HistoryDescList = styled.ul`
   li {
     margin-bottom: 4px;
   }
+`;
+
+const HistoryDetailContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+`;
+
+const FileListWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+const FileBlock = styled.div`
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+`;
+
+const FileHeader = styled.div`
+  background: #f8f9fa;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #2d3748;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+`;
+
+const FileContent = styled.pre`
+  margin: 0;
+  padding: 12px;
+  background: #ffffff;
+  font-size: 12px;
+  color: #333;
+  overflow-x: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  white-space: pre-wrap;
 `;
 
 const ToastNotification = styled.div`

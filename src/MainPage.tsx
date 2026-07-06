@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import styled, { keyframes } from 'styled-components';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -8,6 +9,9 @@ import RightSideBar from './components/RightSideBar';
 import Generate from './components/Generate'; 
 import type { NodeData, SelectionArea, Edge, FileGroup } from './types';
 import Tutorial from './components/Tutorial';
+import { useAuth } from './contexts/AuthContext';
+
+const BASE_URL = 'http://infragen.kro.kr/api/v1';
 
 interface HistoryState {
   nodes: NodeData[];
@@ -30,9 +34,9 @@ export interface ViewportState {
 const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
+  const { fetchWithAuth, isAutoSaveEnabled } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
-
   const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
 
   const [projectName, setProjectName] = useState('로딩중...');
@@ -71,9 +75,13 @@ const MainPage: React.FC = () => {
   const [uiResetTrigger, setUiResetTrigger] = useState(0);
 
   const [activityLog, setActivityLog] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const isDataLoaded = useRef(false);
   const isUndoRedo = useRef(false);
+  
+  const hasUnsavedChanges = useRef(false);
+  const autoSaveCallback = useRef<(() => void) | null>(null);
 
   const validationErrors: { name: string; desc: string }[] = [];
   if (nodes.length === 0) {
@@ -85,7 +93,7 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (activityLog.length > 0) {
+      if (activityLog.length > 0 || hasUnsavedChanges.current) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -95,32 +103,28 @@ const MainPage: React.FC = () => {
   }, [activityLog]);
 
   useEffect(() => {
-    const accessToken = localStorage.getItem('accessToken');
-    if (!accessToken) {
-      navigate('/login');
-      return;
-    }
-
-    fetch('http://infragen.kro.kr/api/v1/members/me', {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      const isSuccess = data.isSuccess ?? data.is_success;
-      if (isSuccess && data.result) {
-        setUserInfo({ nickname: data.result.nickname, email: data.result.email });
-      } else {
+    fetchWithAuth(`${BASE_URL}/members/me`)
+      .then(res => {
+        if (res.status === 401) {
+          navigate('/login');
+          throw new Error('Unauthorized');
+        }
+        return res.json();
+      })
+      .then(data => {
+        const isSuccess = data.isSuccess ?? data.is_success;
+        if (isSuccess && data.result) {
+          setUserInfo({ nickname: data.result.nickname, email: data.result.email });
+        } else {
+          setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+        }
+      })
+      .catch(() => {
         setUserInfo({ nickname: '사용자', email: '알 수 없음' });
-      }
-    })
-    .catch(() => {
-      setUserInfo({ nickname: '사용자', email: '알 수 없음' });
-    });
+      });
 
     if (projectId) {
-      fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      })
+      fetchWithAuth(`${BASE_URL}/projects/${projectId}`)
       .then(res => res.json())
       .then(data => {
         const isSuccess = data.isSuccess ?? data.is_success;
@@ -172,7 +176,7 @@ const MainPage: React.FC = () => {
           prevEdges.current = loadedEdges;
           prevFiles.current = loadedFiles;
           prevTargetFileIds.current = loadedTargetFileIds;
-          setTimeout(() => { isDataLoaded.current = true; }, 100);
+          setTimeout(() => { isDataLoaded.current = true; hasUnsavedChanges.current = false; }, 100);
 
         } else {
           setProjectName('알 수 없는 프로젝트');
@@ -183,11 +187,12 @@ const MainPage: React.FC = () => {
         setProjectName('연결 오류');
       });
     }
-  }, [navigate, projectId]);
+  }, [navigate, projectId, fetchWithAuth]);
   
   const prevEdges = useRef(edges);
   useEffect(() => {
     if (isDataLoaded.current && !isUndoRedo.current) {
+      hasUnsavedChanges.current = true;
       if (edges.length > prevEdges.current.length) {
         const addedEdges = edges.filter(e => !prevEdges.current.some(pe => pe.id === e.id));
         addedEdges.forEach(e => {
@@ -205,6 +210,7 @@ const MainPage: React.FC = () => {
   const prevFiles = useRef(files);
   useEffect(() => {
     if (isDataLoaded.current && !isUndoRedo.current) {
+      hasUnsavedChanges.current = true;
       files.forEach(currentFile => {
         const previousFile = prevFiles.current.find(f => f.id === currentFile.id);
         
@@ -235,6 +241,7 @@ const MainPage: React.FC = () => {
   const prevTargetFileIds = useRef(targetFileIds);
   useEffect(() => {
     if (isDataLoaded.current && !isUndoRedo.current) {
+      hasUnsavedChanges.current = true;
       if (targetFileIds.length > prevTargetFileIds.current.length) {
         const addedIds = targetFileIds.filter(id => !prevTargetFileIds.current.includes(id));
         addedIds.forEach(id => {
@@ -248,6 +255,11 @@ const MainPage: React.FC = () => {
     prevTargetFileIds.current = targetFileIds;
   }, [targetFileIds, files]);
 
+  useEffect(() => {
+    if (isDataLoaded.current && !isUndoRedo.current) {
+      hasUnsavedChanges.current = true;
+    }
+  }, [projectName, projectDescription, nodes]);
 
   const getMappedCanvasData = () => {
     const mappedNodes = nodes.map(n => {
@@ -328,19 +340,16 @@ const MainPage: React.FC = () => {
     return { generateNodes, generateEdges };
   };
 
-  const handleSaveCanvas = async () => {
-    const accessToken = localStorage.getItem('accessToken');
-    if (!accessToken || !projectId) return;
+  const handleSaveCanvas = async (isAutoSave: boolean = false) => {
+    if (!projectId) return;
+    if (isAutoSave && !hasUnsavedChanges.current) return;
 
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     try {
-      const res = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: projectName,
           description: projectDescription,
@@ -353,32 +362,58 @@ const MainPage: React.FC = () => {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
+        // 수동 저장(혹은 자동 저장) 시 남은 로그가 있다면 히스토리 생성
         if (activityLog.length > 0) {
           const combinedLogString = activityLog.join('\n');
-          await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/histories`, {
+          await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ description: combinedLogString })
           });
           
-          setActivityLog([]);
+          setActivityLog([]); 
         }
 
-        alert('프로젝트가 성공적으로 저장되었습니다.');
+        hasUnsavedChanges.current = false; 
+
+        if (!isAutoSave) {
+          alert('프로젝트가 성공적으로 저장되었습니다.');
+        } else {
+          setToastMessage('자동 저장되었습니다.');
+          setTimeout(() => setToastMessage(null), 3000);
+        }
       } else {
-        alert(data.message || '저장에 실패했습니다.');
+        if (!isAutoSave) alert(data.message || '저장에 실패했습니다.');
       }
     } catch (err) {
       console.error(err);
-      alert('서버 오류가 발생했습니다.');
+      if (!isAutoSave) alert('서버 오류가 발생했습니다.');
     }
   };
 
-  const handleUpdateProjectName = async (newName: string) => {
-    if (!newName.trim() || newName === projectName) return;
+  useEffect(() => {
+    autoSaveCallback.current = () => {
+      if (hasUnsavedChanges.current) {
+        handleSaveCanvas(true);
+      }
+    };
+  }); 
 
-    const accessToken = localStorage.getItem('accessToken');
-    if (!accessToken || !projectId) return;
+  useEffect(() => {
+    if (!isAutoSaveEnabled || !projectId) return;
+    
+    const tick = () => {
+      if (autoSaveCallback.current) {
+        autoSaveCallback.current();
+      }
+    };
+    
+    const timerId = setInterval(tick, 10 * 60 * 1000); 
+    return () => clearInterval(timerId);
+  }, [isAutoSaveEnabled, projectId]);
+
+  const handleUpdateProjectName = async (newName: string) => {
+    if (!newName.trim() || newName === projectName || !projectId) return;
 
     const previousName = projectName;
     setProjectName(newName);
@@ -388,12 +423,9 @@ const MainPage: React.FC = () => {
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     try {
-      const res = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${accessToken}` 
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: newName, 
           description: projectDescription, 
@@ -406,6 +438,8 @@ const MainPage: React.FC = () => {
       if (!res.ok || !(data.isSuccess ?? data.is_success)) {
         alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
         setProjectName(previousName);
+      } else {
+        hasUnsavedChanges.current = false;
       }
     } catch (err) {
       alert('서버 오류가 발생했습니다.');
@@ -414,8 +448,8 @@ const MainPage: React.FC = () => {
   };
 
   const handleGoHome = () => {
-    if (activityLog.length > 0) {
-      if (!window.confirm('저장하지 않은 변경사항이 있습니다. 정말 나가시겠습니까?\n(저장하지 않고 나가면 기록이 모두 삭제됩니다.)')) {
+    if (activityLog.length > 0 || hasUnsavedChanges.current) {
+      if (!window.confirm('저장하지 않은 변경사항이 있습니다. 정말 나가시겠습니까?\n(저장하지 않고 나가면 최근 작업 내역이 날아갈 수 있습니다.)')) {
         return;
       }
     }
@@ -461,22 +495,17 @@ const MainPage: React.FC = () => {
     
     saveHistory(); 
     
-    const generatedFileNames = targetFileIds.map(id => files.find(f => f.id === id)?.name || '알 수 없는 파일');
-    const generateLogMsg = generatedFileNames.length > 0 
-      ? `[생성] ${generatedFileNames.map(n => `'${n}'`).join(', ')} 파일의 코드가 생성되었습니다.`
-      : `[생성] 인프라 코드 Generate가 실행되었습니다.`;
-
-    const accessToken = localStorage.getItem('accessToken');
-    if (accessToken && projectId) {
+    if (projectId) {
       try {
         const progressInterval = setInterval(() => {
           setGenProgress(prev => (prev >= 90 ? 90 : prev + 5));
         }, 100);
 
+        // 1. 현재 캔버스 상태 업데이트 (PUT)
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
-        await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}`, {
+        await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: projectName,
             description: projectDescription,
@@ -485,10 +514,11 @@ const MainPage: React.FC = () => {
           })
         });
 
+        // 2. 인프라 코드 생성 (POST)
         const { generateNodes, generateEdges } = getGeneratePayload();
-        const generateRes = await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/generate`, {
+        const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             projectId: Number(projectId),
             nodes: generateNodes,
@@ -516,14 +546,11 @@ const MainPage: React.FC = () => {
             return f;
           }));
 
-          const finalLogs = [...activityLog, generateLogMsg];
-          await fetch(`http://infragen.kro.kr/api/v1/projects/${projectId}/histories`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
-            body: JSON.stringify({ description: finalLogs.join('\n') })
-          });
+          // 백엔드 명세에 따라 Generate API 자체에서 History를 자동 생성하므로 
+          // 여기서 수동으로 POST /histories 를 두 번 호출하지 않습니다. (중복 생성 방지 해결)
           
           setActivityLog([]); 
+          hasUnsavedChanges.current = false;
         } else {
           alert(generateData.message || '코드 생성에 실패했습니다.');
           setAppMode('editor'); 
@@ -660,7 +687,7 @@ const MainPage: React.FC = () => {
         onGenerate={handleGenerateClick} 
         isGenerateMode={appMode === 'generating'} 
         onResetUI={handleResetUI} 
-        onSaveCanvas={handleSaveCanvas}
+        onSaveCanvas={() => handleSaveCanvas(false)}
         onOpenTutorial={() => setShowTutorial(true)}
       />
       
@@ -778,9 +805,34 @@ const MainPage: React.FC = () => {
           onSkip={() => setShowTutorial(false)}
         />
       )}
+
+      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
       
     </div>
   );
 };
 
 export default MainPage;
+
+const toastAnimation = keyframes`
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 20px); }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnimation} 3s ease forwards;
+`;

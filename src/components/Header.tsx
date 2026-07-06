@@ -11,19 +11,23 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, onSaveCanvas, onOpenTutorial }) => {
   return (
-    <header className="header">
-      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <header className="header" style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <img 
           src={mainlogo} 
           alt='logo' 
-          style={{ height: '40px', width: 'auto', objectFit: 'contain', display: 'block' }} 
+          width="36"
+          height="36"
+          style={{ borderRadius: '8px', display: 'block' }} 
         />
-        <strong style={{ fontSize: '18px', color: '#2c3e50', lineHeight: 1 }}>infraGEN</strong>
+        <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#1a1a1a', margin: 0, fontFamily: "'Inter', 'Pretendard', sans-serif" }}>
+          InfraGen
+        </h1>
         
         {!isGenerateMode && (
           <span 
             onClick={onOpenTutorial}
-            style={{ color: '#a0aec0', display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '16px' }}
+            style={{ color: '#a0aec0', display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '16px', marginLeft: '4px' }}
             title="튜토리얼 다시 보기"
           >
             ⓘ

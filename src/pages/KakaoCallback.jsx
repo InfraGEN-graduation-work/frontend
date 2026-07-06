@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
+import { useAuth } from "../contexts/AuthContext";
 
 const BASE_URL = "http://infragen.kro.kr/api/v1";
 
 export default function KakaoCallback() {
   const navigate = useNavigate();
+  const { setAccessToken } = useAuth();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -37,7 +39,7 @@ export default function KakaoCallback() {
 
       if (!res.ok || !isSuccess) throw new Error(`로그인 실패: ${data.message || res.status}`);
 
-      localStorage.setItem("accessToken", data.result.accessToken);
+      setAccessToken(data.result.accessToken);
       navigate("/dashboard");
     } catch (err) {
       console.error("카카오 로그인 처리 오류:", err);
