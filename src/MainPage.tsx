@@ -362,7 +362,6 @@ const MainPage: React.FC = () => {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
-        // 수동 저장(혹은 자동 저장) 시 남은 로그가 있다면 히스토리 생성
         if (activityLog.length > 0) {
           const combinedLogString = activityLog.join('\n');
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`, {
@@ -501,7 +500,6 @@ const MainPage: React.FC = () => {
           setGenProgress(prev => (prev >= 90 ? 90 : prev + 5));
         }, 100);
 
-        // 1. 현재 캔버스 상태 업데이트 (PUT)
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
         await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
@@ -514,7 +512,6 @@ const MainPage: React.FC = () => {
           })
         });
 
-        // 2. 인프라 코드 생성 (POST)
         const { generateNodes, generateEdges } = getGeneratePayload();
         const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
           method: 'POST',
@@ -545,9 +542,6 @@ const MainPage: React.FC = () => {
             }
             return f;
           }));
-
-          // 백엔드 명세에 따라 Generate API 자체에서 History를 자동 생성하므로 
-          // 여기서 수동으로 POST /histories 를 두 번 호출하지 않습니다. (중복 생성 방지 해결)
           
           setActivityLog([]); 
           hasUnsavedChanges.current = false;

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -25,7 +27,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', profileImageUrl: '' });
+  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', profileImageUrl: '', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
@@ -50,6 +52,11 @@ export default function Home() {
   const [historyDetail, setHistoryDetail] = useState<any>(null);
   const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
 
+  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
+  const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
+  const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
+
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({ nickname: '', email: '', password: '', passwordConfirm: '' });
@@ -70,6 +77,15 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const handleGlobalToast = (e: any) => {
+      setToastMessage(e.detail);
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+    window.addEventListener('global-toast', handleGlobalToast);
+    return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
+
+  useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         const userRes = await fetchWithAuth(`${BASE_URL}/members/me`);
@@ -83,8 +99,12 @@ export default function Home() {
           setUserInfo({ 
             nickname: userData.result.nickname, 
             email: userData.result.email,
-            profileImageUrl: userData.result.profileImageUrl || '' 
+            profileImageUrl: userData.result.profileImageUrl || '',
+            provider: userData.result.provider || 'LOCAL' 
           });
+          if(userData.result.autoSaveEnabled !== undefined) {
+            setIsAutoSaveEnabled(userData.result.autoSaveEnabled);
+          }
         }
 
         const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
@@ -94,12 +114,11 @@ export default function Home() {
           setProjects(projData.result.projectList || []);
         }
       } catch (err) {
-        console.error('데이터를 불러오는데 실패했습니다.', err);
       }
     };
 
     fetchDashboardData();
-  }, [navigate, fetchWithAuth]);
+  }, [navigate, fetchWithAuth, setIsAutoSaveEnabled]);
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,12 +136,8 @@ export default function Home() {
         if (res.ok && (data.isSuccess ?? data.is_success)) {
           setModalMode(null);
           navigate(`/project/${data.result.projectId}`);
-        } else {
-          alert(data.message || '프로젝트 생성에 실패했습니다.');
         }
-      } catch (err) {
-        alert('서버 오류가 발생했습니다.');
-      }
+      } catch (err) {}
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
       try {
@@ -162,12 +177,8 @@ export default function Home() {
               ? { ...p, title: newTitle, description: newDesc } 
               : p
           ));
-        } else {
-          alert(data.message || '프로젝트 수정에 실패했습니다.');
         }
-      } catch (err) {
-        alert('서버 오류가 발생했습니다.');
-      }
+      } catch (err) {}
     }
   };
 
@@ -186,12 +197,8 @@ export default function Home() {
         setEditEdges(data.result.edges || []);
         setEditTargetId(proj.projectId);
         setModalMode('edit');
-      } else {
-        alert('프로젝트 상세 정보를 불러오지 못했습니다.');
       }
-    } catch (err) {
-      alert('서버 통신 오류가 발생했습니다.');
-    }
+    } catch (err) {}
   };
 
   const handleDeleteSingle = async (e: React.MouseEvent, projectId: number) => {
@@ -200,14 +207,9 @@ export default function Home() {
     if (!window.confirm('정말 이 프로젝트를 삭제하시겠습니까? 관련 데이터가 모두 삭제됩니다.')) return;
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
-        method: 'DELETE',
-      });
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, { method: 'DELETE' });
       if (res.ok) setProjects(projects.filter((p) => p.projectId !== projectId));
-      else alert('삭제에 실패했습니다.');
-    } catch (err) {
-      alert('서버 오류가 발생했습니다.');
-    }
+    } catch (err) {}
   };
 
   const handleOpenHistory = async (e: React.MouseEvent, projectId: number) => {
@@ -246,15 +248,54 @@ export default function Home() {
       if (res.ok && (data.isSuccess ?? data.is_success)) {
         setHistoryDetail(data.result);
       } else {
-        alert('상세 이력을 불러오지 못했습니다.');
         setSelectedHistoryId(null);
       }
     } catch (e) {
-      alert('서버 오류가 발생했습니다.');
       setSelectedHistoryId(null);
     } finally {
       setIsHistoryDetailLoading(false);
     }
+  };
+
+  const handleOpenCodeViewer = async (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+    try {
+      const histListRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
+      const histListObj = await histListRes.json();
+      if (!histListRes.ok || !histListObj.result?.historyList?.length) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '아직 코드가 생성되지 않았습니다. (에디터에서 Generate를 진행해주세요)' }));
+        return;
+      }
+      const latestHistId = histListObj.result.historyList.sort((a:any, b:any)=>b.historyId - a.historyId)[0].historyId;
+
+      const histDetailRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories/${latestHistId}`);
+      const histDetailObj = await histDetailRes.json();
+      const files = histDetailObj.result?.generatedFileList || [];
+
+      if (files.length === 0) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 파일 내역이 없습니다.' }));
+        return;
+      }
+
+      const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
+      const projObj = await projRes.json();
+      const nodes = projObj.result?.nodes || [];
+
+      setCodeViewerFiles(files);
+      setCodeViewerNodes(nodes);
+      setSelectedViewFile(files[0]);
+      setIsCodeViewerOpen(true);
+    } catch (err) {}
+  };
+
+  const handleDownloadZip = async () => {
+    const zip = new JSZip();
+    codeViewerFiles.forEach(file => {
+      zip.file(file.fileName, file.content);
+    });
+    const content = await zip.generateAsync({ type: "blob" });
+    saveAs(content, "infragen-export.zip");
   };
 
   const handleBulkDelete = async () => {
@@ -263,16 +304,14 @@ export default function Home() {
 
     try {
       await Promise.all(
-        selectedIds.map(id =>
-          fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' })
-        )
+        selectedIds.map(id => fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' }))
       );
       setProjects(projects.filter(p => !selectedIds.includes(p.projectId)));
       setSelectedIds([]);
       setIsSelectMode(false);
-    } catch (err) {
-      alert('일부 프로젝트 삭제에 실패했습니다.');
-    }
+      setToastMessage(`${selectedIds.length}개의 프로젝트가 삭제되었습니다.`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {}
   };
 
   const handleCardClick = (projectId: number) => {
@@ -338,6 +377,7 @@ export default function Home() {
       if (profileImageFile) {
         formData.append('profileImage', profileImageFile);
       }
+      formData.append('autoSaveEnabled', String(isAutoSaveEnabled)); 
 
       await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
@@ -354,33 +394,32 @@ export default function Home() {
       setIsUserInfoModalOpen(false);
       
       setToastMessage('회원정보가 수정되었습니다.');
-      setTimeout(() => {
-        setToastMessage(null);
-      }, 3000);
+      setTimeout(() => setToastMessage(null), 3000);
 
-    } catch (err) {
-      console.error('회원정보 수정 실패', err);
-      alert('회원정보 수정 중 오류가 발생했습니다.');
-    }
+    } catch (err) {}
+  };
+
+  const handleToggleAutoSave = async (checked: boolean) => {
+    setIsAutoSaveEnabled(checked);
+    try {
+      const formData = new FormData();
+      formData.append('nickname', userInfo.nickname);
+      formData.append('email', userInfo.email);
+      formData.append('autoSaveEnabled', String(checked));
+      await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'PUT', body: formData });
+    } catch (err) {}
   };
 
   const handleWithdraw = async () => {
     if (!window.confirm('정말 탈퇴하시겠습니까?\n생성된 모든 프로젝트와 정보가 삭제되며 복구할 수 없습니다.')) {
       return;
     }
-
     try {
-      await fetchWithAuth(`${BASE_URL}/members/me`, {
-        method: 'DELETE',
-      });
-
+      await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       alert('회원 탈퇴가 완료되었습니다.');
       await logout();
       navigate('/login');
-    } catch (err) {
-      console.error('탈퇴 처리 실패', err);
-      alert('탈퇴 처리 중 오류가 발생했습니다.');
-    }
+    } catch (err) {}
   };
 
   const formatDate = (isoString: string) => {
@@ -444,7 +483,7 @@ export default function Home() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>자동 저장 (10분)</span>
                   <ToggleSwitchContainer>
-                    <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => setIsAutoSaveEnabled(e.target.checked)} />
+                    <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => handleToggleAutoSave(e.target.checked)} />
                     <ToggleSlider checked={isAutoSaveEnabled} />
                   </ToggleSwitchContainer>
                 </div>
@@ -533,6 +572,7 @@ export default function Home() {
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>수정</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
                               <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                             </DropdownMenu>
                           )}
@@ -578,6 +618,99 @@ export default function Home() {
               <ModalActions style={{ justifyContent: 'flex-end' }}>
                 <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
                 <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
+              </ModalActions>
+            </form>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isUserInfoModalOpen && (
+        <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle>회원정보 관리</ModalTitle>
+            <form onSubmit={handleUpdateUserInfo}>
+              
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                <ProfileImageEditWrapper onClick={() => fileInputRef.current?.click()}>
+                  {profileImagePreview || userInfo.profileImageUrl ? (
+                    <img src={profileImagePreview || userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
+                  ) : (
+                    <ProfileAvatarLg style={{ marginBottom: 0, width: '100%', height: '100%' }}>
+                      {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
+                    </ProfileAvatarLg>
+                  )}
+                  <CameraOverlay>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                      <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                  </CameraOverlay>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    style={{ display: 'none' }} 
+                    accept="image/*" 
+                    onChange={handleImageChange} 
+                  />
+                </ProfileImageEditWrapper>
+              </div>
+
+              <InputGroup>
+                <label>닉네임</label>
+                <Input
+                  type="text"
+                  required
+                  placeholder="닉네임 입력"
+                  value={editProfileForm.nickname}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })}
+                />
+              </InputGroup>
+              <InputGroup>
+                <label>이메일</label>
+                <Input
+                  type="email"
+                  required
+                  placeholder="이메일 입력"
+                  value={editProfileForm.email}
+                  onChange={(e) => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
+                />
+              </InputGroup>
+
+              {userInfo.provider !== 'KAKAO' ? (
+                <>
+                  <InputGroup>
+                    <label>새 비밀번호</label>
+                    <Input
+                      type="password"
+                      placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
+                      value={editProfileForm.password}
+                      onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
+                    />
+                  </InputGroup>
+                  <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
+                    <label>새 비밀번호 확인</label>
+                    <Input
+                      type="password"
+                      placeholder="비밀번호를 다시 한 번 입력하세요"
+                      value={editProfileForm.passwordConfirm}
+                      onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
+                      disabled={!editProfileForm.password}
+                    />
+                  </InputGroup>
+                </>
+              ) : (
+                <SocialNoticeBox>
+                  <span className="icon">💬</span>
+                  <p>카카오 소셜 로그인 회원은 비밀번호를 변경할 수 없습니다.</p>
+                </SocialNoticeBox>
+              )}
+              
+              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: userInfo.provider === 'KAKAO' ? '30px' : '20px' }}>
+                <WithdrawBtn type="button" onClick={handleWithdraw}>회원 탈퇴</WithdrawBtn>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
+                  <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
+                </div>
               </ModalActions>
             </form>
           </ModalContent>
@@ -634,7 +767,6 @@ export default function Home() {
                   ) : (
                     sortedHistory.map((h) => {
                       const logLines = h.description ? h.description.split('\n') : ['저장되었습니다.'];
-                      
                       return (
                         <HistoryItemCard key={h.historyId} onClick={() => handleHistoryItemClick(h.historyId)}>
                           <HistoryItemHeader>
@@ -660,86 +792,64 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {isUserInfoModalOpen && (
-        <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>회원정보 관리</ModalTitle>
-            <form onSubmit={handleUpdateUserInfo}>
-              
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                <ProfileImageEditWrapper onClick={() => fileInputRef.current?.click()}>
-                  {profileImagePreview || userInfo.profileImageUrl ? (
-                    <img src={profileImagePreview || userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
-                  ) : (
-                    <ProfileAvatarLg style={{ marginBottom: 0, width: '100%', height: '100%' }}>
-                      {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
-                    </ProfileAvatarLg>
-                  )}
-                  <CameraOverlay>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                      <circle cx="12" cy="13" r="4"></circle>
-                    </svg>
-                  </CameraOverlay>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    style={{ display: 'none' }} 
-                    accept="image/*" 
-                    onChange={handleImageChange} 
-                  />
-                </ProfileImageEditWrapper>
+      {isCodeViewerOpen && (
+        <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
+          <CodeViewerModal onClick={(e) => e.stopPropagation()}>
+            
+            <CVHeader>
+              <ModalTitle style={{ margin: 0 }}>생성된 코드 뷰어</ModalTitle>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <ZipDownloadBtn onClick={handleDownloadZip}>ZIP 일괄 다운로드</ZipDownloadBtn>
+                <CloseBtn onClick={() => setIsCodeViewerOpen(false)}>✕</CloseBtn>
               </div>
+            </CVHeader>
 
-              <InputGroup>
-                <label>닉네임</label>
-                <Input
-                  type="text"
-                  required
-                  placeholder="닉네임 입력"
-                  value={editProfileForm.nickname}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })}
-                />
-              </InputGroup>
-              <InputGroup>
-                <label>이메일</label>
-                <Input
-                  type="email"
-                  required
-                  placeholder="이메일 입력"
-                  value={editProfileForm.email}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
-                />
-              </InputGroup>
-              <InputGroup>
-                <label>새 비밀번호</label>
-                <Input
-                  type="password"
-                  placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
-                  value={editProfileForm.password}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
-                />
-              </InputGroup>
-              <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
-                <label>새 비밀번호 확인</label>
-                <Input
-                  type="password"
-                  placeholder="비밀번호를 다시 한 번 입력하세요"
-                  value={editProfileForm.passwordConfirm}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
-                  disabled={!editProfileForm.password}
-                />
-              </InputGroup>
-              
-              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <WithdrawBtn type="button" onClick={handleWithdraw}>회원 탈퇴</WithdrawBtn>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
-                  <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
-                </div>
-              </ModalActions>
-            </form>
-          </ModalContent>
+            <CVBody>
+              <CVLeftSidebar>
+                <CVSectionTitle>파일 목록</CVSectionTitle>
+                <CVFileList>
+                  {codeViewerFiles.map(file => (
+                    <CVFileItem 
+                      key={file.fileId} 
+                      $active={selectedViewFile?.fileId === file.fileId}
+                      onClick={() => setSelectedViewFile(file)}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                      {file.fileName}
+                    </CVFileItem>
+                  ))}
+                </CVFileList>
+              </CVLeftSidebar>
+
+              <CVRightArea>
+                {selectedViewFile ? (
+                  <>
+                    <CVSectionTitle>포함된 노드 설정</CVSectionTitle>
+                    <CVAssignedNodes>
+                      {codeViewerNodes
+                        .filter(n => n.properties?.fileName === selectedViewFile.fileName)
+                        .map(n => (
+                          <CVNodeBadge key={n.id}>
+                            <span className="type">{n.componentType}</span>
+                            <span className="name">{n.nodeName}</span>
+                          </CVNodeBadge>
+                      ))}
+                      {codeViewerNodes.filter(n => n.properties?.fileName === selectedViewFile.fileName).length === 0 && (
+                        <span style={{ fontSize: 12, color: '#a0aec0' }}>이 파일에 매핑된 노드가 없습니다. (수동 추가 파일 등)</span>
+                      )}
+                    </CVAssignedNodes>
+
+                    <CVSectionTitle>코드 내용</CVSectionTitle>
+                    <CVCodeContainer>
+                      {selectedViewFile.content}
+                    </CVCodeContainer>
+                  </>
+                ) : (
+                  <EmptyHistory>선택된 파일이 없습니다.</EmptyHistory>
+                )}
+              </CVRightArea>
+            </CVBody>
+          </CodeViewerModal>
         </ModalOverlay>
       )}
 
@@ -769,7 +879,6 @@ const PageContainer = styled.div`
   font-family: 'Inter', 'Pretendard', sans-serif;
 `;
 
-// 높이(60px)와 패딩(0 20px)을 MainPage.css와 맞춤
 const Header = styled.header`
   height: 60px;
   background: white;
@@ -1067,7 +1176,7 @@ const ProjectCard = styled.div<{ isSelected: boolean; isSelectMode: boolean }>`
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 10px 20px rgba(0,0,0,0.06);
-    ${({ isSelectMode, isSelected }) => !isSelectMode && !isSelected && css`border-color: #a0aec0;`}
+    ${({ isSelectMode, isSelected }) => !isSelectMode && !isSelected && css`border-color: #28b4ad;`}
   }
 `;
 
@@ -1126,7 +1235,7 @@ const DropdownMenu = styled.div`
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  width: 120px;
+  width: 130px;
   z-index: 100;
   overflow: hidden;
   animation: ${fadeIn} 0.15s ease-out forwards;
@@ -1278,6 +1387,20 @@ const SubmitBtn = styled.button`
   &:hover { background: #219992; }
 `;
 
+const SocialNoticeBox = styled.div`
+  background: #f8f9fa;
+  border: 1px dashed #cbd5e0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  
+  .icon { font-size: 18px; }
+  p { margin: 0; font-size: 13px; color: #718096; line-height: 1.4; }
+`;
+
 const HistoryModalContent = styled(ModalContent)`
   width: 500px;
   max-width: 90vw;
@@ -1374,9 +1497,7 @@ const HistoryDescList = styled.ul`
   color: #4a5568;
   line-height: 1.6;
   
-  li {
-    margin-bottom: 4px;
-  }
+  li { margin-bottom: 4px; }
 `;
 
 const HistoryDetailContainer = styled.div`
@@ -1396,9 +1517,7 @@ const FileListWrapper = styled.div`
 
   -ms-overflow-style: none;
   scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
-  }
+  &::-webkit-scrollbar { display: none; }
 `;
 
 const FileBlock = styled.div`
@@ -1443,4 +1562,176 @@ const ToastNotification = styled.div`
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   z-index: 9999;
   animation: ${toastAnimation} 3s ease forwards;
+`;
+
+const CodeViewerModal = styled(ModalContent)`
+  width: 900px;
+  max-width: 95vw;
+  height: 85vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`;
+
+const CVHeader = styled.div`
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: white;
+`;
+
+const CVBody = styled.div`
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: #f8fafd;
+`;
+
+const CVLeftSidebar = styled.div`
+  width: 250px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+`;
+
+const CVSectionTitle = styled.div`
+  font-size: 12px;
+  font-weight: 700;
+  color: #718096;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const CVFileList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const CVFileItem = styled.div<{ $active: boolean }>`
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: 0.2s;
+  
+  background: ${({ $active }) => $active ? '#f0fdfc' : 'transparent'};
+  color: ${({ $active }) => $active ? '#28b4ad' : '#4a5568'};
+  border: 1px solid ${({ $active }) => $active ? 'var(--mint)' : 'transparent'};
+
+  &:hover {
+    background: ${({ $active }) => $active ? '#f0fdfc' : '#f1f3f5'};
+  }
+`;
+
+const CVRightArea = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+`;
+
+const CVAssignedNodes = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+`;
+
+const CVNodeBadge = styled.div`
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #cbd5e0;
+  border-radius: 20px;
+  padding: 4px 12px 4px 4px;
+  
+  .type {
+    background: #edf2f7;
+    color: #4a5568;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 12px;
+    margin-right: 8px;
+  }
+  .name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2d3748;
+  }
+`;
+
+const CVCodeContainer = styled.pre`
+  flex: 1;
+  margin: 0;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  color: #2d3748;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-y: auto;
+  
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+`;
+
+const ZipDownloadBtn = styled.button`
+  background: #28b4ad;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: 0.2s;
+  box-shadow: 0 2px 6px rgba(40,180,173,0.3);
+  
+  &:hover {
+    background: #219992;
+    transform: translateY(-1px);
+  }
+`;
+
+const CloseBtn = styled.button`
+  background: #f1f3f5;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #4a5568;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: 0.2s;
+
+  &:hover {
+    background: #e2e8f0;
+    color: #1a1a1a;
+  }
 `;

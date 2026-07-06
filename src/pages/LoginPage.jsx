@@ -38,7 +38,7 @@ export default function LoginPage() {
       const res = await fetch(`${BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", // 쿠키에 Refresh Token을 받기 위해 필수
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
@@ -46,7 +46,6 @@ export default function LoginPage() {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
-        // 로컬 스토리지 대신 AuthContext에 저장
         setAccessToken(data.result.accessToken);
         navigate("/dashboard");
       } else {

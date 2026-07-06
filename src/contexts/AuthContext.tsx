@@ -17,9 +17,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(true); // 자동 저장 기본값: 켜짐
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(true);
 
-  // 리프레시 토큰(쿠키)을 이용해 엑세스 토큰 재발급
   const reissueToken = async (): Promise<string | null> => {
     try {
       const res = await fetch(`${BASE_URL}/auth/reissue`, {
@@ -35,7 +34,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.error("Token reissue failed", err);
     }
     
-    // 갱신 실패 시 토큰 상태 초기화 및 강제 로그아웃 (퍼블릭 페이지 제외)
     setAccessToken(null);
     const path = window.location.pathname;
     if (path !== '/' && path !== '/login' && path !== '/signup' && path !== '/oauth/kakao/callback') {
@@ -44,7 +42,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return null;
   };
 
-  // 401 에러 발생 시 자동 토큰 갱신 기능을 포함한 fetch 래퍼
   const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
     let currentToken = accessToken;
     
@@ -70,6 +67,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         response = await makeRequest(currentToken);
       }
     }
+
+    if (!response.ok && response.status !== 401) {
+      try {
+        const errorData = await response.clone().json();
+        const msg = (errorData.result && typeof errorData.result === 'string') 
+                    ? errorData.result 
+                    : (errorData.message || '서버 통신 중 오류가 발생했습니다.');
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+      } catch (e) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: `오류가 발생했습니다. (Status: ${response.status})` }));
+      }
+    }
+
     return response;
   };
 
@@ -86,7 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     setAccessToken(null);
-    window.location.href = '/login'; // 로그아웃 시 명시적 이동
+    window.location.href = '/login';
   };
 
   useEffect(() => {
