@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -56,7 +58,9 @@ const MainPage: React.FC = () => {
   const [files, setFiles] = useState<FileGroup[]>([]);
   const [targetFileIds, setTargetFileIds] = useState<string[]>([]);
   const [leftActiveTab, setLeftActiveTab] = useState<'Project' | 'Settings' | 'Validation'>('Project');
+  
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState(0);
   
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
 
@@ -90,6 +94,19 @@ const MainPage: React.FC = () => {
   if (targetFileIds.length === 0) {
     validationErrors.push({ name: '생성할 코드 미배치', desc: '생성할 파일 목록에 파일이 존재하지 않습니다.' });
   }
+
+  useEffect(() => {
+    setActiveSubTab(0);
+  }, [selectedFileId]);
+
+  useEffect(() => {
+    const handleGlobalToast = (e: any) => {
+      setToastMessage(e.detail);
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+    window.addEventListener('global-toast', handleGlobalToast);
+    return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -151,17 +168,27 @@ const MainPage: React.FC = () => {
           }));
           setEdges(loadedEdges);
 
-          const reconstructedFiles: Record<string, FileGroup> = {};
+          const reconstructedFiles: Record<string, any> = {};
           loadedNodes.forEach((n: any) => {
             const props = n.settings;
             if (props && props.fileId) {
               if (!reconstructedFiles[props.fileId]) {
+                
+                let parsedFiles = [];
+                try {
+                  parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : [];
+                } catch (e) {
+                  console.error("Failed to parse fileGeneratedCodes:", e);
+                }
+
                 reconstructedFiles[props.fileId] = {
                   id: props.fileId,
                   name: props.fileName || '새 파일',
-                  isGenerated: !!props.fileIsGenerated,
+                  isGenerated: String(props.fileIsGenerated) === 'true',
                   nodeIds: [],
-                  isExpanded: true
+                  isExpanded: true,
+                  generatedFiles: parsedFiles,
+                  _isTarget: props.fileIsTarget !== 'false'
                 };
               }
               reconstructedFiles[props.fileId].nodeIds.push(n.id);
@@ -170,7 +197,9 @@ const MainPage: React.FC = () => {
           const loadedFiles = Object.values(reconstructedFiles);
           setFiles(loadedFiles);
           
-          const loadedTargetFileIds = loadedFiles.map(f => f.id);
+          const loadedTargetFileIds = loadedFiles
+            .filter((f: any) => f._isTarget)
+            .map(f => f.id);
           setTargetFileIds(loadedTargetFileIds);
 
           prevEdges.current = loadedEdges;
@@ -183,7 +212,7 @@ const MainPage: React.FC = () => {
         }
       })
       .catch(err => {
-        console.error("프로젝트 상세 정보를 불러오는데 실패했습니다:", err);
+        console.error("Project details fetch failed:", err);
         setProjectName('연결 오류');
       });
     }
@@ -217,9 +246,9 @@ const MainPage: React.FC = () => {
         if (previousFile) {
           if (previousFile.name !== currentFile.name) {
             if (previousFile.name === '') {
-              setActivityLog(prev => [...prev, `[생성] '${currentFile.name}' 파일을 새로 만들었습니다.`]);
+              setActivityLog(prev => [...prev, `[생성] '${currentFile.name}' 폴더를 새로 만들었습니다.`]);
             } else {
-              setActivityLog(prev => [...prev, `[수정] 파일명이 '${previousFile.name}'에서 '${currentFile.name}'(으)로 변경되었습니다.`]);
+              setActivityLog(prev => [...prev, `[수정] 폴더명이 '${previousFile.name}'에서 '${currentFile.name}'(으)로 변경되었습니다.`]);
             }
           }
 
@@ -228,7 +257,7 @@ const MainPage: React.FC = () => {
             addedNodeIds.forEach(nodeId => {
               const node = nodes.find(n => n.id === nodeId);
               if (node) {
-                setActivityLog(prev => [...prev, `[배치] '${node.name}' 노드를 '${currentFile.name}' 파일 안에 포함시켰습니다.`]);
+                setActivityLog(prev => [...prev, `[배치] '${node.name}' 노드를 '${currentFile.name}' 폴더 안에 포함시켰습니다.`]);
               }
             });
           }
@@ -247,7 +276,7 @@ const MainPage: React.FC = () => {
         addedIds.forEach(id => {
           const file = files.find(f => f.id === id);
           if (file) {
-            setActivityLog(prev => [...prev, `[이동] '${file.name}' 파일이 생성할 파일 목록에 들어갔습니다.`]);
+            setActivityLog(prev => [...prev, `[이동] '${file.name}' 폴더가 생성할 대상 목록에 들어갔습니다.`]);
           }
         });
       }
@@ -261,6 +290,46 @@ const MainPage: React.FC = () => {
     }
   }, [projectName, projectDescription, nodes]);
 
+  const processProperties = (n: NodeData, rawProperties: any) => {
+    if (n.type === 'MySQL') {
+      if (!rawProperties.port) rawProperties.port = 3306;
+      if (!rawProperties.name) rawProperties.name = 'mysql';
+
+      const envKeys = ['databaseName', 'username', 'userPassword', 'rootPassword'];
+      const envObj: Record<string, string> = {};
+      envKeys.forEach(k => {
+        if (rawProperties[k]) {
+          envObj[k] = String(rawProperties[k]).trim();
+          delete rawProperties[k];
+        }
+      });
+      if (Object.keys(envObj).length > 0) {
+        rawProperties.env = envObj;
+      }
+    }
+
+    if (n.type === 'Spring Boot') {
+      if (!rawProperties.port) rawProperties.port = 8080;
+      if (!rawProperties.name) rawProperties.name = 'app';
+    }
+
+    const finalProperties: Record<string, any> = {};
+    for (const key in rawProperties) {
+      if (rawProperties[key] !== undefined && rawProperties[key] !== null && rawProperties[key] !== '') {
+        if (typeof rawProperties[key] === 'object') {
+          finalProperties[key] = rawProperties[key];
+        } else if (key === 'port') {
+          finalProperties[key] = Number(rawProperties[key]);
+        } else if (key === 'fileGeneratedCodes') {
+          finalProperties[key] = rawProperties[key];
+        } else {
+          finalProperties[key] = String(rawProperties[key]).trim();
+        }
+      }
+    }
+    return finalProperties;
+  };
+
   const getMappedCanvasData = () => {
     const mappedNodes = nodes.map(n => {
       const file = files.find(f => f.nodeIds.includes(n.id));
@@ -269,18 +338,15 @@ const MainPage: React.FC = () => {
       if (file) {
         rawProperties.fileId = file.id;
         rawProperties.fileName = file.name;
-        rawProperties.fileIsGenerated = file.isGenerated;
+        rawProperties.fileIsGenerated = String(file.isGenerated);
+        rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
+        rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
       } else {
         delete rawProperties.fileId;
         delete rawProperties.fileName;
         delete rawProperties.fileIsGenerated;
-      }
-
-      const stringifiedProperties: Record<string, string> = {};
-      for (const key in rawProperties) {
-        if (rawProperties[key] !== undefined && rawProperties[key] !== null) {
-          stringifiedProperties[key] = String(rawProperties[key]);
-        }
+        delete rawProperties.fileGeneratedCodes;
+        delete rawProperties.fileIsTarget;
       }
 
       return {
@@ -288,13 +354,20 @@ const MainPage: React.FC = () => {
         componentType: n.type.toUpperCase().replace(/ /g, '_'),
         positionX: n.x,
         positionY: n.y,
-        properties: stringifiedProperties
+        properties: processProperties(n, rawProperties)
       };
     });
 
     const mappedEdges = edges.map(e => {
-      const sourceNode = nodes.find(n => n.id === e.sourceId);
-      const targetNode = nodes.find(n => n.id === e.targetId);
+      let sourceNode = nodes.find(n => n.id === e.sourceId);
+      let targetNode = nodes.find(n => n.id === e.targetId);
+
+      if (sourceNode?.type === 'Spring Boot' && targetNode?.type === 'MySQL') {
+        const temp = sourceNode;
+        sourceNode = targetNode;
+        targetNode = temp;
+      }
+
       return {
         sourceNodeName: sourceNode?.name || '',
         targetNodeName: targetNode?.name || ''
@@ -308,17 +381,13 @@ const MainPage: React.FC = () => {
     const generateNodes = nodes.map(n => {
       const file = files.find(f => f.nodeIds.includes(n.id));
       const rawProperties: any = { ...(n as any).settings };
+      
       if (file) {
         rawProperties.fileId = file.id;
         rawProperties.fileName = file.name;
-        rawProperties.fileIsGenerated = file.isGenerated;
-      }
-
-      const stringifiedProperties: Record<string, string> = {};
-      for (const key in rawProperties) {
-        if (rawProperties[key] !== undefined && rawProperties[key] !== null) {
-          stringifiedProperties[key] = String(rawProperties[key]);
-        }
+        rawProperties.fileIsGenerated = String(file.isGenerated);
+        rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
+        rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
       }
 
       return {
@@ -326,16 +395,29 @@ const MainPage: React.FC = () => {
         componentType: n.type.toUpperCase().replace(/ /g, '_'),
         positionX: n.x,
         positionY: n.y,
-        properties: stringifiedProperties
+        properties: processProperties(n, rawProperties)
       };
     });
 
-    const generateEdges = edges.map(e => ({
-      edgeId: e.id,
-      sourceNodeId: e.sourceId,
-      targetNodeId: e.targetId,
-      connectionType: "DEFAULT"
-    }));
+    const generateEdges = edges.map(e => {
+      const sourceNode = nodes.find(n => n.id === e.sourceId);
+      const targetNode = nodes.find(n => n.id === e.targetId);
+
+      let finalSourceId = e.sourceId;
+      let finalTargetId = e.targetId;
+
+      if (sourceNode?.type === 'Spring Boot' && targetNode?.type === 'MySQL') {
+        finalSourceId = e.targetId;
+        finalTargetId = e.sourceId;
+      }
+
+      return {
+        edgeId: e.id,
+        sourceNodeId: finalSourceId,
+        targetNodeId: finalTargetId,
+        connectionType: "DEFAULT"
+      };
+    });
 
     return { generateNodes, generateEdges };
   };
@@ -376,7 +458,7 @@ const MainPage: React.FC = () => {
         hasUnsavedChanges.current = false; 
 
         if (!isAutoSave) {
-          alert('프로젝트가 성공적으로 저장되었습니다.');
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 성공적으로 저장되었습니다.' }));
         } else {
           setToastMessage('자동 저장되었습니다.');
           setTimeout(() => setToastMessage(null), 3000);
@@ -531,17 +613,22 @@ const MainPage: React.FC = () => {
         if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
           const generatedFilesFromApi = generateData.result.files || [];
 
-          setFiles(prev => prev.map(f => {
-            if (targetFileIds.includes(f.id)) {
-              const matchedApiFile = generatedFilesFromApi.find((apiFile: any) => apiFile.fileName === f.name);
-              return {
-                ...f,
-                isGenerated: true,
-                content: matchedApiFile ? matchedApiFile.content : `# ${f.name}\n생성된 코드를 서버에서 찾지 못했습니다.`
-              };
-            }
-            return f;
-          }));
+          setFiles(prev => {
+            let updatedFiles = [...prev];
+            
+            updatedFiles = updatedFiles.map(f => {
+              if (targetFileIds.includes(f.id)) {
+                return {
+                  ...f,
+                  isGenerated: true,
+                  generatedFiles: generatedFilesFromApi
+                };
+              }
+              return f;
+            });
+
+            return updatedFiles;
+          });
           
           setActivityLog([]); 
           hasUnsavedChanges.current = false;
@@ -660,7 +747,7 @@ const MainPage: React.FC = () => {
     const deletedNodes = nodes.filter(n => nodeIdsToDelete.includes(n.id)).map(n => n.name);
     
     if (deletedFiles.length > 0) {
-      setActivityLog(prev => [...prev, `[삭제] 우측 패널에서 ${deletedFiles.map(n => `'${n}'`).join(', ')} 파일을 삭제했습니다.`]);
+      setActivityLog(prev => [...prev, `[삭제] 우측 패널에서 ${deletedFiles.map(n => `'${n}'`).join(', ')} 폴더를 삭제했습니다.`]);
     }
     if (deletedNodes.length > 0) {
       setActivityLog(prev => [...prev, `[삭제] 우측 패널에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`]);
@@ -712,22 +799,63 @@ const MainPage: React.FC = () => {
             setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId}
             resetTrigger={uiResetTrigger}
           />
+          
           {selectedFileId && (
-            <div className="code-viewer-panel">
-              <div className="code-viewer-header">
-                <div className="code-viewer-tab">
-                  {files.find(f => f.id === selectedFileId)?.name}
-                </div>
-              </div>
-              <div className="code-viewer-content">
-                {files.find(f => f.id === selectedFileId)?.isGenerated ? (
-                  files.find(f => f.id === selectedFileId)?.content || `# ${files.find(f => f.id === selectedFileId)?.name}\n코드를 불러오는 중입니다...`
-                ) : (
-                  `// 코드가 생성되지 않았습니다.\n// Generate 버튼을 클릭하여 코드를 생성하세요.`
-                )}
-              </div>
+            <div className="code-viewer-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {(() => {
+                const f = files.find(file => file.id === selectedFileId);
+                if (!f) return null;
+
+                return (
+                  <>
+                    <div className="code-viewer-header" style={{ padding: '16px 16px 0 16px', marginBottom: 0, borderBottom: 'none' }}>
+                      <div className="code-viewer-tab">
+                        {f.name} <span style={{fontSize:'11px', color:'#718096', fontWeight:'normal'}}>(프로젝트 폴더)</span>
+                      </div>
+                    </div>
+                    
+                    <div className="code-viewer-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, border: 'none', background: 'transparent' }}>
+                      {f.generatedFiles && f.generatedFiles.length > 0 ? (
+                        <>
+                          <div style={{ display: 'flex', background: '#f8f9fa', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
+                            {f.generatedFiles.map((gf, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => setActiveSubTab(idx)}
+                                title={gf.fileName}
+                                style={{
+                                  flex: 1, padding: '10px 8px', border: 'none', borderRight: '1px solid var(--border)',
+                                  background: activeSubTab === idx ? 'white' : 'transparent',
+                                  fontWeight: activeSubTab === idx ? 'bold' : 'normal',
+                                  color: activeSubTab === idx ? 'var(--mint)' : '#4a5568',
+                                  cursor: 'pointer', borderBottom: activeSubTab === idx ? '2px solid var(--mint)' : '2px solid transparent',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                {idx + 1}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
+                            <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center' }}>
+                              {f.generatedFiles[activeSubTab]?.fileName}
+                            </div>
+                            {f.generatedFiles[activeSubTab]?.content}
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ padding: '16px', background: 'white', flex: 1, fontSize: '12px', color: '#718096' }}>
+                          {`// 폴더에 생성된 코드가 없습니다.\n// Generate 버튼을 클릭하여 코드를 생성하세요.`}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
+
           {showRightSidebar && (
             <RightSideBar 
               nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} saveHistory={saveHistory}
@@ -779,9 +907,9 @@ const MainPage: React.FC = () => {
             <div className="modal-body">
               <div style={{fontWeight: 'bold', marginBottom: '8px', color: '#333'}}>프로젝트명</div>
               {targetFileIds.length > 0 ? (
-                targetFileIds.map(id => <div key={id} style={{color: '#718096', marginBottom: '4px'}}>- {files.find(f => f.id === id)?.name}</div>)
+                targetFileIds.map(id => <div key={id} style={{color: '#718096', marginBottom: '4px'}}>- {files.find(f => f.id === id)?.name} (폴더)</div>)
               ) : (
-                <div style={{color: '#718096'}}>- 생성할 파일이 없습니다.</div>
+                <div style={{color: '#718096'}}>- 생성할 폴더가 없습니다.</div>
               )}
             </div>
             <div className="modal-actions">

@@ -240,22 +240,25 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const handleDownloadItems = () => {
     const selectedFiles = files.filter(f => checkedItems.has(f.id));
-    const generatedFiles = selectedFiles.filter(f => f.isGenerated);
 
-    if (generatedFiles.length > 0) {
-      generatedFiles.forEach(file => {
-        const codeContent = file.content || `# ${file.name}\n생성된 코드가 없습니다.`;
-        const blob = new Blob([codeContent], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${file.name || 'generated_code'}.txt`;
-        
-        document.body.appendChild(link);
-        link.click();
-        
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+    const filesWithCode = selectedFiles.filter(f => f.generatedFiles && f.generatedFiles.length > 0);
+
+    if (filesWithCode.length > 0) {
+      filesWithCode.forEach(fileGroup => {
+        const gFiles = fileGroup.generatedFiles || [];
+        if (gFiles.length > 0) {
+          gFiles.forEach(gf => {
+            const blob = new Blob([gf.content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${fileGroup.name}_${gf.fileName}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          });
+        }
       });
     } else {
       alert("다운로드 할 수 없습니다. (먼저 코드를 Generate 해주세요)");
@@ -588,7 +591,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     </div>
                     
                     <div className="setting-row">
-                      <label>노드 이름</label>
+                      <label>노드 이름 (화면 표시용)</label>
                       <input 
                         type="text" 
                         value={selectedNode.name} 
@@ -603,7 +606,11 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     {selectedNode.type === 'MySQL' ? (
                       <>
                         <div className="setting-row">
-                          <label>도커 이미지 버전</label>
+                          <label>서비스 이름 (name)</label>
+                          <input type="text" value={settings.name || ''} placeholder="mysql" onChange={(e) => updateSetting('name', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>도커 이미지 버전 (imageVersion)</label>
                           <select 
                             value={settings.imageVersion || ''} 
                             onChange={(e) => updateSetting('imageVersion', e.target.value)} 
@@ -617,43 +624,47 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                           </select>
                         </div>
                         <div className="setting-row">
-                          <label>컨테이너 이름</label>
+                          <label>컨테이너 이름 (containerName)</label>
                           <input type="text" value={settings.containerName || ''} placeholder="container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>포트 번호</label>
-                          <input type="text" value={settings.port !== undefined ? settings.port : '3306'} placeholder="3306" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
+                          <label>포트 번호 (port)</label>
+                          <input type="text" value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 3306" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>볼륨 이름</label>
+                          <label>볼륨 이름 (volumeName)</label>
                           <input type="text" value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={saveHistory} />
                         </div>
 
                         <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
                           <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}>🔒</span> 
-                          환경 변수
+                          데이터베이스 설정 (env)
                         </div>
                         <div className="setting-row">
-                          <label>데이터베이스 이름</label>
-                          <input type="text" value={settings.dbName || ''} placeholder="database" onChange={(e) => updateSetting('dbName', e.target.value)} onFocus={saveHistory} />
+                          <label>데이터베이스 이름 (databaseName)</label>
+                          <input type="text" value={settings.databaseName || ''} placeholder="database" onChange={(e) => updateSetting('databaseName', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>사용자 이름</label>
-                          <input type="text" value={settings.dbUser || ''} placeholder="user" onChange={(e) => updateSetting('dbUser', e.target.value)} onFocus={saveHistory} />
+                          <label>사용자 이름 (username)</label>
+                          <input type="text" value={settings.username || ''} placeholder="user" onChange={(e) => updateSetting('username', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>일반 사용자 패스워드</label>
-                          <input type="password" value={settings.dbPassword || ''} placeholder="user password" onChange={(e) => updateSetting('dbPassword', e.target.value)} onFocus={saveHistory} />
+                          <label>사용자 비밀번호 (userPassword)</label>
+                          <input type="password" value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateSetting('userPassword', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>루트 패스워드</label>
+                          <label>루트 비밀번호 (rootPassword)</label>
                           <input type="password" value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateSetting('rootPassword', e.target.value)} onFocus={saveHistory} />
                         </div>
                       </>
                     ) : selectedNode.type === 'Spring Boot' ? (
                       <>
                         <div className="setting-row">
-                          <label>Java 버전</label>
+                          <label>서비스 이름 (name)</label>
+                          <input type="text" value={settings.name || ''} placeholder="app" onChange={(e) => updateSetting('name', e.target.value)} onFocus={saveHistory} />
+                        </div>
+                        <div className="setting-row">
+                          <label>Java 버전 (javaVersion)</label>
                           <select 
                             value={settings.javaVersion || ''} 
                             onChange={(e) => updateSetting('javaVersion', e.target.value)} 
@@ -666,12 +677,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                           </select>
                         </div>
                         <div className="setting-row">
-                          <label>컨테이너 이름</label>
+                          <label>컨테이너 이름 (containerName)</label>
                           <input type="text" value={settings.containerName || ''} placeholder="container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} />
                         </div>
                         <div className="setting-row">
-                          <label>포트 번호</label>
-                          <input type="text" value={settings.port !== undefined ? settings.port : '8080'} placeholder="8080" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
+                          <label>포트 번호 (port)</label>
+                          <input type="text" value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 8080" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} />
                         </div>
                       </>
                     ) : (

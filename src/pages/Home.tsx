@@ -286,7 +286,7 @@ export default function Home() {
       setCodeViewerFiles(files);
       setCodeViewerNodes(nodes);
       setSelectedViewFile(files[0]);
-
+      
       const allFileIds = files.map((f: any) => f.fileId);
       setDownloadSelection(new Set(allFileIds));
 
@@ -814,7 +814,7 @@ export default function Home() {
 
             <CVBody>
               <CVLeftSidebar>
-                <CVSectionTitle>파일 목록</CVSectionTitle>
+                <CVSectionTitle>파일 목록 (클릭하여 다운로드 선택/해제)</CVSectionTitle>
                 <CVFileList>
                   {codeViewerFiles.map(file => {
                     const isSelected = downloadSelection.has(file.fileId);
@@ -849,7 +849,7 @@ export default function Home() {
               <CVRightArea>
                 {selectedViewFile ? (
                   <>
-                    <CVSectionTitle>포함된 노드</CVSectionTitle>
+                    <CVSectionTitle>포함된 노드 설정</CVSectionTitle>
                     <CVAssignedNodes>
                       {codeViewerNodes
                         .filter(n => n.properties?.fileName === selectedViewFile.fileName)
@@ -866,6 +866,9 @@ export default function Home() {
 
                     <CVSectionTitle>코드 내용</CVSectionTitle>
                     <CVCodeContainer>
+                      <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
+                        {selectedViewFile.fileName}
+                      </div>
                       {selectedViewFile.content}
                     </CVCodeContainer>
                   </>
@@ -1653,7 +1656,7 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   align-items: center;
   transition: 0.2s;
   position: relative;
-
+  
   background: ${({ $selected }) => $selected ? '#f0fdfc' : 'transparent'};
   color: ${({ $selected }) => $selected ? '#28b4ad' : '#4a5568'};
   border: 1px solid ${({ $selected }) => $selected ? 'var(--mint)' : 'transparent'};
