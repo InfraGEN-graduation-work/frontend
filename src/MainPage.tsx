@@ -92,7 +92,7 @@ const MainPage: React.FC = () => {
     validationErrors.push({ name: '노드 미배치', desc: '노드를 배치하지 않았습니다.' });
   }
   if (targetFileIds.length === 0) {
-    validationErrors.push({ name: '생성할 코드 미배치', desc: '생성할 파일 목록에 파일이 존재하지 않습니다.' });
+    validationErrors.push({ name: '생성할 코드 미배치', desc: '생성할 파일 목록에 폴더가 존재하지 않습니다.' });
   }
 
   useEffect(() => {
@@ -177,13 +177,11 @@ const MainPage: React.FC = () => {
                 let parsedFiles = [];
                 try {
                   parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : [];
-                } catch (e) {
-                  console.error("Failed to parse fileGeneratedCodes:", e);
-                }
+                } catch (e) {}
 
                 reconstructedFiles[props.fileId] = {
                   id: props.fileId,
-                  name: props.fileName || '새 파일',
+                  name: props.fileName || '새 폴더',
                   isGenerated: String(props.fileIsGenerated) === 'true',
                   nodeIds: [],
                   isExpanded: true,
@@ -212,7 +210,6 @@ const MainPage: React.FC = () => {
         }
       })
       .catch(err => {
-        console.error("Project details fetch failed:", err);
         setProjectName('연결 오류');
       });
     }
@@ -330,6 +327,7 @@ const MainPage: React.FC = () => {
     return finalProperties;
   };
 
+  // ★ PUT /projects 저장용 (전체 노드/엣지 데이터)
   const getMappedCanvasData = () => {
     const mappedNodes = nodes.map(n => {
       const file = files.find(f => f.nodeIds.includes(n.id));
@@ -377,18 +375,21 @@ const MainPage: React.FC = () => {
     return { mappedNodes, mappedEdges };
   };
 
-  const getGeneratePayload = () => {
-    const generateNodes = nodes.map(n => {
-      const file = files.find(f => f.nodeIds.includes(n.id));
+  // ★ 특정 폴더(fileId)에 속한 노드와 엣지만 추출하여 Payload 생성
+  const getGeneratePayloadForFolder = (fileId: string) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return { generateNodes: [], generateEdges: [] };
+
+    // 폴더에 속한 노드만 필터링
+    const folderNodes = nodes.filter(n => file.nodeIds.includes(n.id));
+
+    const generateNodes = folderNodes.map(n => {
       const rawProperties: any = { ...(n as any).settings };
-      
-      if (file) {
-        rawProperties.fileId = file.id;
-        rawProperties.fileName = file.name;
-        rawProperties.fileIsGenerated = String(file.isGenerated);
-        rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
-        rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
-      }
+      rawProperties.fileId = file.id;
+      rawProperties.fileName = file.name;
+      rawProperties.fileIsGenerated = String(file.isGenerated);
+      rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
+      rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
 
       return {
         nodeId: n.id, 
@@ -399,7 +400,12 @@ const MainPage: React.FC = () => {
       };
     });
 
-    const generateEdges = edges.map(e => {
+    // 폴더에 속한 노드들끼리 연결된 엣지만 필터링
+    const folderEdges = edges.filter(e => 
+      file.nodeIds.includes(e.sourceId) && file.nodeIds.includes(e.targetId)
+    );
+
+    const generateEdges = folderEdges.map(e => {
       const sourceNode = nodes.find(n => n.id === e.sourceId);
       const targetNode = nodes.find(n => n.id === e.targetId);
 
@@ -467,7 +473,6 @@ const MainPage: React.FC = () => {
         if (!isAutoSave) alert(data.message || '저장에 실패했습니다.');
       }
     } catch (err) {
-      console.error(err);
       if (!isAutoSave) alert('서버 오류가 발생했습니다.');
     }
   };
@@ -582,6 +587,7 @@ const MainPage: React.FC = () => {
           setGenProgress(prev => (prev >= 90 ? 90 : prev + 5));
         }, 100);
 
+        // 1. 현재 캔버스 전체 상태 저장 (PUT)
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
         await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
@@ -594,50 +600,73 @@ const MainPage: React.FC = () => {
           })
         });
 
-        const { generateNodes, generateEdges } = getGeneratePayload();
-        const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: Number(projectId),
-            nodes: generateNodes,
-            edges: generateEdges
-          })
-        });
+        // ★ 2. 타겟 폴더들을 순회하며 "개별적으로" Generate API 호출
+        const updatedFilesList = [...files];
+        let hasError = false;
+        let errorMsg = '';
 
-        const generateData = await generateRes.json();
+        for (const tFileId of targetFileIds) {
+          const { generateNodes, generateEdges } = getGeneratePayloadForFolder(tFileId);
+          
+          if (generateNodes.length === 0) continue; // 빈 폴더면 건너뜀
+
+          const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectId: Number(projectId),
+              nodes: generateNodes,
+              edges: generateEdges
+            })
+          });
+
+          const generateData = await generateRes.json();
+
+          if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
+            const generatedFilesFromApi = generateData.result.files || [];
+            
+            // 해당 폴더의 generatedFiles 속성에 개별 응답 결과 삽입
+            const fileIdx = updatedFilesList.findIndex(f => f.id === tFileId);
+            if (fileIdx > -1) {
+              updatedFilesList[fileIdx] = {
+                ...updatedFilesList[fileIdx],
+                isGenerated: true,
+                generatedFiles: generatedFilesFromApi
+              };
+            }
+          } else {
+            hasError = true;
+            errorMsg = generateData.message || '코드 생성에 실패했습니다.';
+            break;
+          }
+        }
         
         clearInterval(progressInterval);
         setGenProgress(100); 
 
-        if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
-          const generatedFilesFromApi = generateData.result.files || [];
-
-          setFiles(prev => {
-            let updatedFiles = [...prev];
-            
-            updatedFiles = updatedFiles.map(f => {
-              if (targetFileIds.includes(f.id)) {
-                return {
-                  ...f,
-                  isGenerated: true,
-                  generatedFiles: generatedFilesFromApi
-                };
-              }
-              return f;
-            });
-
-            return updatedFiles;
-          });
-          
+        if (!hasError) {
+          setFiles(updatedFilesList);
           setActivityLog([]); 
           hasUnsavedChanges.current = false;
+          
+          // Generate 후 최신 코드를 포함하여 다시 한 번 캔버스 상태 저장 (이력 유지용)
+          const finalMapped = getMappedCanvasData();
+          await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: projectName,
+              description: projectDescription,
+              nodes: finalMapped.mappedNodes,
+              edges: finalMapped.mappedEdges
+            })
+          });
+
         } else {
-          alert(generateData.message || '코드 생성에 실패했습니다.');
+          alert(errorMsg);
           setAppMode('editor'); 
         }
       } catch (err) {
-        console.error("제너레이트 통신 실패:", err);
         alert('서버 오류가 발생했습니다.');
         setAppMode('editor');
       }

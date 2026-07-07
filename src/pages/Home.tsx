@@ -56,7 +56,7 @@ export default function Home() {
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
-  const [downloadSelection, setDownloadSelection] = useState<Set<number>>(new Set());
+  const [downloadSelection, setDownloadSelection] = useState<Set<string>>(new Set());
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
@@ -258,36 +258,53 @@ export default function Home() {
     }
   };
 
+  // ★ 변경된 코드 뷰어 로직 (모든 폴더의 코드를 끌어옴)
   const handleOpenCodeViewer = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
     try {
-      const histListRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
-      const histListObj = await histListRes.json();
-      if (!histListRes.ok || !histListObj.result?.historyList?.length) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '아직 코드가 생성되지 않았습니다. (에디터에서 Generate를 진행해주세요)' }));
-        return;
-      }
-      const latestHistId = histListObj.result.historyList.sort((a:any, b:any)=>b.historyId - a.historyId)[0].historyId;
-
-      const histDetailRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories/${latestHistId}`);
-      const histDetailObj = await histDetailRes.json();
-      const files = histDetailObj.result?.generatedFileList || [];
-
-      if (files.length === 0) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 파일 내역이 없습니다.' }));
-        return;
-      }
-
+      // 껍데기만 있는 History가 아니라, 모든 정보가 온전히 저장된 Project 통째로 가져오기
       const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
 
-      setCodeViewerFiles(files);
+      const allFiles: any[] = [];
+      const folderMap = new Map();
+
+      // 노드에 박혀있는 fileGeneratedCodes(폴더의 생성된 코드들)를 모두 뽑아서 배열(allFiles)로 합침
+      nodes.forEach((n: any) => {
+        const props = n.properties || {};
+        if (props.fileId && String(props.fileIsGenerated) === 'true') {
+          if (!folderMap.has(props.fileId)) {
+            let parsedFiles = [];
+            try {
+              parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : [];
+            } catch(e) {}
+            
+            folderMap.set(props.fileId, true);
+            
+            parsedFiles.forEach((gf: any, idx: number) => {
+              allFiles.push({
+                fileId: `${props.fileId}-${idx}`,
+                folderName: props.fileName || '폴더',
+                fileName: gf.fileName,
+                content: gf.content
+              });
+            });
+          }
+        }
+      });
+
+      if (allFiles.length === 0) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 코드 내역이 없습니다. (에디터에서 Generate를 진행해주세요)' }));
+        return;
+      }
+
+      setCodeViewerFiles(allFiles);
       setCodeViewerNodes(nodes);
-      setSelectedViewFile(files[0]);
+      setSelectedViewFile(allFiles[0]);
       
-      const allFileIds = files.map((f: any) => f.fileId);
+      const allFileIds = allFiles.map(f => f.fileId);
       setDownloadSelection(new Set(allFileIds));
 
       setIsCodeViewerOpen(true);
@@ -303,7 +320,8 @@ export default function Home() {
     const zip = new JSZip();
     codeViewerFiles.forEach(file => {
       if (downloadSelection.has(file.fileId)) {
-        zip.file(file.fileName, file.content);
+        // 폴더가 2개여도 파일명이 겹치지 않게 "폴더명_파일명" 형태로 압축
+        zip.file(`${file.folderName}_${file.fileName}`, file.content);
       }
     });
     const content = await zip.generateAsync({ type: "blob" });
@@ -699,7 +717,7 @@ export default function Home() {
                     <label>새 비밀번호 확인</label>
                     <Input
                       type="password"
-                      placeholder="비밀번호를 다시 한 번 입력하세요"
+                      placeholder="비밀번호를 다시 한 일 입력하세요"
                       value={editProfileForm.passwordConfirm}
                       onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
                       disabled={!editProfileForm.password}
@@ -835,11 +853,14 @@ export default function Home() {
                           });
                         }}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 6}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 8, flexShrink: 0}}>
                           <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
                           <polyline points="13 2 13 9 20 9"></polyline>
                         </svg>
-                        {file.fileName}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
+                          <span style={{ fontSize: '10px', color: isSelected ? '#28b4ad' : '#a0aec0', marginBottom: '2px', opacity: 0.8 }}>{file.folderName}</span>
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{file.fileName}</span>
+                        </div>
                       </CVFileItem>
                     );
                   })}
@@ -852,15 +873,15 @@ export default function Home() {
                     <CVSectionTitle>포함된 노드 설정</CVSectionTitle>
                     <CVAssignedNodes>
                       {codeViewerNodes
-                        .filter(n => n.properties?.fileName === selectedViewFile.fileName)
+                        .filter(n => n.properties?.fileName === selectedViewFile.folderName)
                         .map(n => (
                           <CVNodeBadge key={n.id}>
                             <span className="type">{n.componentType}</span>
                             <span className="name">{n.nodeName}</span>
                           </CVNodeBadge>
                       ))}
-                      {codeViewerNodes.filter(n => n.properties?.fileName === selectedViewFile.fileName).length === 0 && (
-                        <span style={{ fontSize: 12, color: '#a0aec0' }}>이 파일에 매핑된 노드가 없습니다. (수동 추가 파일 등)</span>
+                      {codeViewerNodes.filter(n => n.properties?.fileName === selectedViewFile.folderName).length === 0 && (
+                        <span style={{ fontSize: 12, color: '#a0aec0' }}>이 파일에 매핑된 노드가 없습니다.</span>
                       )}
                     </CVAssignedNodes>
 
