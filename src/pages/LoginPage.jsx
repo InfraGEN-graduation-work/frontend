@@ -1,14 +1,14 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 import logo2 from "../assets/mainlogo-2.png";
 import { useAuth } from "../contexts/AuthContext";
 
-const KAKAO_REST_API_KEY = "cd41f03a061efffe67d9a79f67bc5b8b";
-const REDIRECT_URI = "http://localhost:3000/oauth/kakao/callback";
+const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
+const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI;
 
-const BASE_URL = "http://infragen.kro.kr/api/v1";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
@@ -25,6 +25,51 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const [showLogin, setShowLogin] = useState(false);
+
+  // 리다이렉트 URI가 루트("/")라서, 카카오 인가 코드가 이 페이지로 그대로 들어옵니다.
+  // code가 있으면 로그인 폼 대신 처리 중 화면을 보여줍니다.
+  const params = new URLSearchParams(window.location.search);
+  const kakaoCode = params.get("code");
+  const kakaoError = params.get("error");
+  const [isKakaoProcessing, setIsKakaoProcessing] = useState(!!kakaoCode);
+  const hasExchanged = useRef(false);
+
+  useEffect(() => {
+    if (kakaoError) {
+      console.error("카카오 로그인 거부 또는 오류:", kakaoError);
+      window.history.replaceState({}, "", "/");
+      return;
+    }
+
+    if (kakaoCode && !hasExchanged.current) {
+      hasExchanged.current = true;
+      exchangeKakaoCode(kakaoCode);
+    }
+  }, []);
+
+  const exchangeKakaoCode = async (code) => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/login/kakao`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ authorizationCode: code }),
+      });
+
+      const data = await res.json();
+      const isSuccess = data.isSuccess ?? data.is_success;
+
+      if (!res.ok || !isSuccess) throw new Error(`로그인 실패: ${data.message || res.status}`);
+
+      setAccessToken(data.result.accessToken);
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("카카오 로그인 처리 오류:", err);
+      window.history.replaceState({}, "", "/");
+      setIsKakaoProcessing(false);
+      setError("카카오 로그인에 실패했습니다.");
+    }
+  };
   
   const wheelTimeout = useRef(null);
   const touchStartY = useRef(0);
@@ -70,6 +115,14 @@ export default function LoginPage() {
   const handleKakaoLogin = () => {
     window.location.href = KAKAO_AUTH_URL;
   };
+
+  if (isKakaoProcessing) {
+    return (
+      <KakaoProcessingPage>
+        <KakaoProcessingMessage>로그인 처리 중...</KakaoProcessingMessage>
+      </KakaoProcessingPage>
+    );
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -479,3 +532,17 @@ function KakaoIcon() {
     </svg>
   );
 }
+
+const KakaoProcessingPage = styled.div`
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  font-family: "Pretendard", "Apple SD Gothic Neo", -apple-system, sans-serif;
+`;
+
+const KakaoProcessingMessage = styled.p`
+  font-size: 15px;
+  color: #aaaaaa;
+`;
