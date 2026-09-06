@@ -6,7 +6,7 @@ import { saveAs } from 'file-saver';
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
 
-const BASE_URL = 'http://infragen.kro.kr/api/v1';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://infragen.kro.kr/api/v1';
 
 interface Project {
   projectId: number;
@@ -50,7 +50,7 @@ export default function Home() {
 
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
   const [historyDetail, setHistoryDetail] = useState<any>(null);
-  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
+  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false); 
 
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
@@ -258,12 +258,10 @@ export default function Home() {
     }
   };
 
-  // ★ 변경된 코드 뷰어 로직 (모든 폴더의 코드를 끌어옴)
   const handleOpenCodeViewer = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
     try {
-      // 껍데기만 있는 History가 아니라, 모든 정보가 온전히 저장된 Project 통째로 가져오기
       const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
@@ -271,7 +269,6 @@ export default function Home() {
       const allFiles: any[] = [];
       const folderMap = new Map();
 
-      // 노드에 박혀있는 fileGeneratedCodes(폴더의 생성된 코드들)를 모두 뽑아서 배열(allFiles)로 합침
       nodes.forEach((n: any) => {
         const props = n.properties || {};
         if (props.fileId && String(props.fileIsGenerated) === 'true') {
@@ -320,7 +317,6 @@ export default function Home() {
     const zip = new JSZip();
     codeViewerFiles.forEach(file => {
       if (downloadSelection.has(file.fileId)) {
-        // 폴더가 2개여도 파일명이 겹치지 않게 "폴더명_파일명" 형태로 압축
         zip.file(`${file.folderName}_${file.fileName}`, file.content);
       }
     });
@@ -408,10 +404,17 @@ export default function Home() {
       }
       formData.append('autoSaveEnabled', String(isAutoSaveEnabled)); 
 
-      await fetchWithAuth(`${BASE_URL}/members/me`, {
+      const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
         body: formData 
       });
+
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (!res.ok || !isSuccess) {
+        throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원정보 수정에 실패했습니다.'));
+      }
 
       setUserInfo(prev => ({ 
         ...prev, 
@@ -422,7 +425,10 @@ export default function Home() {
       
       setIsUserInfoModalOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 수정되었습니다.' }));
-    } catch (err) {}
+    } catch (err: any) {
+      alert(err.message || '서버 통신 중 오류가 발생했습니다.');
+      console.error('Update User Info Error:', err);
+    }
   };
 
   const handleToggleAutoSave = async (checked: boolean) => {
@@ -432,8 +438,15 @@ export default function Home() {
       formData.append('nickname', userInfo.nickname);
       formData.append('email', userInfo.email);
       formData.append('autoSaveEnabled', String(checked));
-      await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'PUT', body: formData });
-    } catch (err) {}
+      
+      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'PUT', body: formData });
+      if (!res.ok) {
+        throw new Error('자동 저장 설정 변경에 실패했습니다.');
+      }
+    } catch (err: any) {
+      setIsAutoSaveEnabled(!checked);
+      alert(err.message || '설정 변경 중 오류가 발생했습니다.');
+    }
   };
 
   const handleWithdraw = async () => {
@@ -441,11 +454,21 @@ export default function Home() {
       return;
     }
     try {
-      await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
+      
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (!res.ok || !isSuccess) {
+        throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원 탈퇴 처리에 실패했습니다.'));
+      }
+
       alert('회원 탈퇴가 완료되었습니다.');
       await logout();
-      navigate('/login');
-    } catch (err) {}
+    } catch (err: any) {
+      alert(err.message || '탈퇴 처리 중 서버 오류가 발생했습니다.');
+      console.error('Withdrawal Error:', err);
+    }
   };
 
   const formatDate = (isoString: string) => {
@@ -717,7 +740,7 @@ export default function Home() {
                     <label>새 비밀번호 확인</label>
                     <Input
                       type="password"
-                      placeholder="비밀번호를 다시 한 일 입력하세요"
+                      placeholder="비밀번호를 다시 한 번 입력하세요"
                       value={editProfileForm.passwordConfirm}
                       onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
                       disabled={!editProfileForm.password}
@@ -746,7 +769,13 @@ export default function Home() {
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
-            {selectedHistoryId && historyDetail ? (
+            {isHistoryDetailLoading ? (
+              <HistoryDetailContainer style={{ justifyContent: 'center', alignItems: 'center' }}>
+                <EmptyHistory style={{ border: 'none', background: 'transparent' }}>
+                  상세 내역을 불러오는 중입니다...
+                </EmptyHistory>
+              </HistoryDetailContainer>
+            ) : selectedHistoryId && historyDetail ? (
               <HistoryDetailContainer>
                 <HistoryHeaderRow>
                   <ModalTitle style={{ marginBottom: 0 }}>버전: {historyDetail.versionName}</ModalTitle>
@@ -1597,22 +1626,6 @@ const FileContent = styled.pre`
   white-space: pre-wrap;
 `;
 
-const ToastNotification = styled.div`
-  position: fixed;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #4a5568;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 9999;
-  animation: ${toastAnimation} 3s ease forwards;
-`;
-
 const CodeViewerModal = styled(ModalContent)`
   width: 900px;
   max-width: 95vw;
@@ -1798,4 +1811,20 @@ const CloseBtn = styled.button`
     background: #e2e8f0;
     color: #1a1a1a;
   }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnimation} 3s ease forwards;
 `;

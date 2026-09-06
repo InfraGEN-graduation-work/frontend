@@ -4,6 +4,7 @@ export interface NodeData {
   name: string;
   x: number;
   y: number;
+  settings?: Record<string, any>;
 }
 
 export interface Edge {
@@ -27,4 +28,27 @@ export interface FileGroup {
   nodeIds: string[];
   isExpanded: boolean;
   generatedFiles?: { fileName: string; content: string }[]; 
+  _isTarget?: boolean;
+}
+
+export type CloudProvider = 'AWS' | 'OCI';
+
+export interface CloudSettings {
+  region: string;
+  vpcName: string;
+  subnetName: string;
+  internetGatewayName: string;
+  routeTableName: string;
+  securityGroupName: string;
+  instanceName: string;
+  vpcCidr: string;
+  subnetCidr: string;
+  amiId: string;
+  instanceType: string;
+  adminCidr: string;
+  appCidr: string;
+  hostnameLabel?: string;
+  compartmentId?: string;
+  availabilityDomain?: string;
+  sshAuthorizedKeys?: string;
 }

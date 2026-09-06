@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-const BASE_URL = "http://infragen.kro.kr/api/v1";
+// 환경변수 기반 BASE_URL로 수정 (통일성 유지)
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 interface AuthContextType {
   accessToken: string | null;
@@ -25,10 +26,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         method: 'POST',
         credentials: 'include'
       });
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setAccessToken(data.result.accessToken);
-        return data.result.accessToken;
+      
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await res.json();
+        if (res.ok && (data.isSuccess ?? data.is_success)) {
+          setAccessToken(data.result.accessToken);
+          return data.result.accessToken;
+        }
       }
     } catch (err) {
       console.error("Token reissue failed", err);
@@ -70,11 +75,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     if (!response.ok && response.status !== 401) {
       try {
-        const errorData = await response.clone().json();
-        const msg = (errorData.result && typeof errorData.result === 'string') 
-                    ? errorData.result 
-                    : (errorData.message || '서버 통신 중 오류가 발생했습니다.');
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await response.clone().json();
+          const msg = (errorData.result && typeof errorData.result === 'string') 
+                      ? errorData.result 
+                      : (errorData.message || '서버 통신 중 오류가 발생했습니다.');
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+        } else {
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: `오류가 발생했습니다. (Status: ${response.status})` }));
+        }
       } catch (e) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: `오류가 발생했습니다. (Status: ${response.status})` }));
       }

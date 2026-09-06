@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
 import type { ViewportState } from '../MainPage';
 import mysqlIcon from '../assets/mysql.png';
+import redisIcon from '../assets/redis.png';
 import springbootIcon from '../assets/springboot.png';
 
 interface CanvasProps {
@@ -394,6 +395,7 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const getNodeIcon = (type: string) => {
     if (type === 'MySQL') return mysqlIcon;
+    if (type === 'Redis') return redisIcon;
     if (type === 'Spring Boot') return springbootIcon;
     return null;
   };

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { NodeData } from '../types';
+import type { NodeData, CloudProvider } from '../types';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
+import redisIcon from '../assets/redis.png'; // 👈 Redis 아이콘 추가
 
 interface LeftPanelProps {
   projectName: string;
@@ -25,36 +26,39 @@ interface LeftPanelProps {
   isSelectMode: boolean;
   resetTrigger: number;
   userInfo: { nickname: string; email: string };
-  onGoHome: () => void; 
+  onGoHome: () => void;
+  cloudProvider: CloudProvider;
+  setCloudProvider: React.Dispatch<React.SetStateAction<CloudProvider>>;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({ 
   projectName, onUpdateProjectName, nodes, activeTab, setActiveTab, onSelectCategory, onToggleRightSidebar, 
   showRightSidebar, setShowRightSidebar,
   onZoomIn, onZoomOut, onSelectMode, onCancelSelection, onDelete, onUndo, onRedo, 
-  canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onGoHome
+  canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onGoHome,
+  cloudProvider, setCloudProvider
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCloudDropdownOpen, setIsCloudDropdownOpen] = useState(false);
 
-  useEffect(() => {
-    setTempName(projectName);
-  }, [projectName]);
+  useEffect(() => { setTempName(projectName); }, [projectName]);
 
   useEffect(() => {
     if (resetTrigger > 0) {
       setActiveCategory(null);
       setSearchTerm('');
       setIsEditing(false);
+      setIsCloudDropdownOpen(false);
     }
   }, [resetTrigger]);
 
   const nodeTemplates: Record<string, string[]> = {
     Server: ['Spring Boot'],
-    Database: ['MySQL'],
+    Database: ['MySQL', 'Redis'], 
     Storage: ['S3 Bucket', 'EFS', 'Block Storage'],
     Network: ['VPC', 'Subnet', 'Load Balancer']
   };
@@ -65,28 +69,18 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     return nodes.filter(node => templates.includes(node.type)).length;
   };
 
-  const handleEditClick = () => { 
-    setIsEditing(true); 
-    setTempName(projectName); 
-  };
+  const handleEditClick = () => { setIsEditing(true); setTempName(projectName); };
   
   const handleSaveClick = () => { 
     const trimmedName = tempName.trim();
-    if (trimmedName && trimmedName !== projectName) {
-      onUpdateProjectName(trimmedName);
-    } else {
-      setTempName(projectName);
-    }
+    if (trimmedName && trimmedName !== projectName) onUpdateProjectName(trimmedName);
+    else setTempName(projectName);
     setIsEditing(false); 
   };
 
   const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
-    if (activeTab === tab && showRightSidebar) {
-      setShowRightSidebar(false);
-    } else {
-      setActiveTab(tab);
-      setShowRightSidebar(true);
-    }
+    if (activeTab === tab && showRightSidebar) setShowRightSidebar(false);
+    else { setActiveTab(tab); setShowRightSidebar(true); }
   };
 
   useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);
@@ -109,21 +103,18 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   const getNodeIconSrc = (type: string) => {
     if (type === 'MySQL') return mysqlIcon;
     if (type === 'Spring Boot') return springbootIcon;
+    if (type === 'Redis') return redisIcon; // 👈 Redis 매핑 추가
     return '';
   };
 
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
     e.dataTransfer.setData('nodeType', nodeName);
-
     const dragGhost = document.createElement('div');
     dragGhost.className = 'deployed-node'; 
-    dragGhost.style.position = 'absolute';
-    dragGhost.style.top = '-9999px';
-    dragGhost.style.left = '-9999px';
-    dragGhost.style.pointerEvents = 'none';
+    dragGhost.style.position = 'absolute'; dragGhost.style.top = '-9999px'; dragGhost.style.left = '-9999px'; dragGhost.style.pointerEvents = 'none';
 
     const iconSrc = getNodeIconSrc(nodeName);
-    const imgTag = iconSrc ? `<img src="${iconSrc}" alt="${nodeName}" style="width: 80%; height: 80%; object-fit: contain;" />` : '';
+    const imgTag = iconSrc ? `<img src="${iconSrc}" alt="${nodeName}" style="width: 80%; height: 80%; object-fit: contain;" />` : `<span style="font-size:12px; font-weight:bold;">${nodeName.charAt(0)}</span>`;
 
     dragGhost.innerHTML = `
       <div class="node-header">
@@ -139,12 +130,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
     document.body.appendChild(dragGhost);
     e.dataTransfer.setDragImage(dragGhost, 90, 40);
-
-    setTimeout(() => {
-      if (document.body.contains(dragGhost)) {
-        document.body.removeChild(dragGhost);
-      }
-    }, 0);
+    setTimeout(() => { if (document.body.contains(dragGhost)) document.body.removeChild(dragGhost); }, 0);
   };
 
   return (
@@ -153,28 +139,36 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         {isEditing ? (
           <>
             <input
-              ref={inputRef}
-              type="text"
-              value={tempName}
+              ref={inputRef} type="text" value={tempName}
               onChange={(e) => setTempName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveClick(); }}
               onBlur={handleSaveClick}
-              style={{
-                flex: 1, padding: 0, margin: 0, border: 'none', background: 'transparent', outline: 'none',
-                fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, width: '100%', fontFamily: 'inherit'
-              }}
+              style={{ flex: 1, padding: 0, margin: 0, border: 'none', background: 'transparent', outline: 'none', fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, width: '100%', fontFamily: 'inherit' }}
             />
-            <button 
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={handleSaveClick} 
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad' }}
-            >✔</button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={handleSaveClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad' }}>✔</button>
           </>
         ) : (
           <>
             <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, marginBottom: '2px' }}>{projectName}</span>
             <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, marginBottom: '6px' }}>✏️</button>
           </>
+        )}
+      </div>
+
+      <div style={{ position: 'relative', marginBottom: '16px' }}>
+        <div
+          onClick={() => setIsCloudDropdownOpen(!isCloudDropdownOpen)}
+          style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor:'pointer', transition: '0.2s' }}
+        >
+          <span>[ PROVIDER ] {cloudProvider}</span>
+          <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
+        </div>
+        
+        {isCloudDropdownOpen && (
+          <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
+            <div onClick={() => { setCloudProvider('AWS'); setIsCloudDropdownOpen(false); }} style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: cloudProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: cloudProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7' }}>AWS (Amazon Web Services)</div>
+            <div onClick={() => { setCloudProvider('OCI'); setIsCloudDropdownOpen(false); }} style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: cloudProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: cloudProvider === 'OCI' ? 'bold' : 'normal' }}>OCI (Oracle Cloud)</div>
+          </div>
         )}
       </div>
 
@@ -200,23 +194,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div className="search-bar" style={{ position: 'relative' }}>
-        <input 
-          type="text" 
-          placeholder="노드에 대해 검색합니다..." 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ paddingRight: '28px' }} 
-        />
+        <input type="text" placeholder="노드 검색..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ paddingRight: '28px' }} />
         {searchTerm && (
-          <button
-            onClick={() => setSearchTerm('')}
-            style={{
-              position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
-              background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0',
-              fontSize: '12px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-7px' 
-            }}
-            title="검색어 지우기"
-          >✕</button>
+          <button onClick={() => setSearchTerm('')} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#a0aec0', fontSize: '12px', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-7px' }}>✕</button>
         )}
       </div>
 
@@ -233,7 +213,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
                 <div key={node} className="draggable-node-item" draggable onDragStart={(e) => handleDragStart(e, node)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                     <div className="node-icon-small" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
-                      {iconSrc && <img src={iconSrc} alt={node} style={{ width: '80%', height: '80%', objectFit: 'contain' }} />}
+                      {iconSrc ? <img src={iconSrc} alt={node} style={{ width: '80%', height: '80%', objectFit: 'contain' }} /> : <span style={{fontSize:'10px', fontWeight:'bold'}}>{node.charAt(0)}</span>}
                     </div>
                     <span>{node}</span>
                   </div>

@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { useAuth } from "../contexts/AuthContext";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// 환경변수 추가 및 fallback 세팅
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 export default function KakaoCallback() {
   const navigate = useNavigate();
@@ -33,6 +34,13 @@ export default function KakaoCallback() {
         credentials: "include",
         body: JSON.stringify({ authorizationCode: code }),
       });
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("카카오 로그인 응답이 JSON이 아닙니다:", text);
+        throw new Error(`CORS 문제 또는 백엔드 오류 (Status: ${res.status})`);
+      }
 
       const data = await res.json();
       const isSuccess = data.isSuccess ?? data.is_success;

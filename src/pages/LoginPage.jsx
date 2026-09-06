@@ -5,10 +5,11 @@ import logo from "../assets/mainlogo.png";
 import logo2 from "../assets/mainlogo-2.png";
 import { useAuth } from "../contexts/AuthContext";
 
-const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
-const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI;
+const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "";
+const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "http://localhost:5173/oauth/kakao/callback";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// 환경변수가 없으면 명세서의 기본 URL 사용
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +
@@ -26,8 +27,6 @@ export default function LoginPage() {
 
   const [showLogin, setShowLogin] = useState(false);
 
-  // 리다이렉트 URI가 루트("/")라서, 카카오 인가 코드가 이 페이지로 그대로 들어옵니다.
-  // code가 있으면 로그인 폼 대신 처리 중 화면을 보여줍니다.
   const params = new URLSearchParams(window.location.search);
   const kakaoCode = params.get("code");
   const kakaoError = params.get("error");
@@ -56,6 +55,13 @@ export default function LoginPage() {
         body: JSON.stringify({ authorizationCode: code }),
       });
 
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("카카오 로그인 응답이 JSON이 아닙니다:", text);
+        throw new Error(`CORS 문제 또는 백엔드 오류 (Status: ${res.status})`);
+      }
+
       const data = await res.json();
       const isSuccess = data.isSuccess ?? data.is_success;
 
@@ -67,7 +73,7 @@ export default function LoginPage() {
       console.error("카카오 로그인 처리 오류:", err);
       window.history.replaceState({}, "", "/");
       setIsKakaoProcessing(false);
-      setError("카카오 로그인에 실패했습니다.");
+      setError(err.message || "카카오 로그인에 실패했습니다.");
     }
   };
   
@@ -140,6 +146,14 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
+      // HTML 등 JSON이 아닌 응답(에러)이 올 경우를 대비한 안전망
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("Non-JSON Response:", text);
+        throw new Error(`CORS 설정 문제이거나 서버 에러입니다. (Status: ${res.status})`);
+      }
+
       const data = await res.json();
       const isSuccess = data.isSuccess ?? data.is_success;
 
@@ -151,7 +165,8 @@ export default function LoginPage() {
         setError(errorMessage || "이메일 또는 비밀번호가 올바르지 않습니다.");
       }
     } catch (error) {
-      setError("서버와 통신할 수 없습니다.");
+      console.error("Login Request Failed:", error);
+      setError(error.message || "서버와 통신할 수 없습니다.");
     }
   };
 
@@ -177,7 +192,6 @@ export default function LoginPage() {
         <LoginSection>
           <Card>
             <LogoWrap>
-
               <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
             </LogoWrap>
 

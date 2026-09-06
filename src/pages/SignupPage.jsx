@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
-const BASE_URL = "http://infragen.kro.kr/api/v1";
+// 환경변수 추가 및 fallback 세팅
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -54,6 +55,14 @@ export default function SignupPage() {
         }),
       });
 
+      // JSON 파싱 방어 코드
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("Non-JSON Response:", text);
+        throw new Error(`CORS 설정 문제이거나 서버 에러입니다. (Status: ${res.status})`);
+      }
+
       const data = await res.json();
       const isSuccess = data.isSuccess ?? data.is_success;
 
@@ -64,7 +73,8 @@ export default function SignupPage() {
         setErrors({ general: errorMessage || "회원가입에 실패했습니다." });
       }
     } catch (error) {
-      setErrors({ general: "서버와 통신할 수 없습니다. 다시 시도해주세요." });
+      console.error("Signup Request Failed:", error);
+      setErrors({ general: error.message || "서버와 통신할 수 없습니다. 다시 시도해주세요." });
     }
   };
 
