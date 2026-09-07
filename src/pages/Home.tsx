@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -27,7 +27,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', profileImageUrl: '', provider: 'LOCAL' });
+  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
@@ -50,7 +50,7 @@ export default function Home() {
 
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
   const [historyDetail, setHistoryDetail] = useState<any>(null);
-  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false); 
+  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
 
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
@@ -60,11 +60,7 @@ export default function Home() {
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
-  const [editProfileForm, setEditProfileForm] = useState({ nickname: '', email: '', password: '', passwordConfirm: '' });
-
-  const [profileImageFile, setProfileImageFile] = useState<File | null>(null);
-  const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editProfileForm, setEditProfileForm] = useState({ nickname: '', password: '', passwordConfirm: '' });
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -100,7 +96,6 @@ export default function Home() {
           setUserInfo({ 
             nickname: userData.result.nickname, 
             email: userData.result.email,
-            profileImageUrl: userData.result.profileImageUrl || '',
             provider: userData.result.provider || 'LOCAL' 
           });
           if(userData.result.autoSaveEnabled !== undefined) {
@@ -142,31 +137,14 @@ export default function Home() {
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
       try {
-        const mappedNodes = editNodes.map((n: any) => ({
-          nodeName: n.nodeName,
-          componentType: n.componentType,
-          positionX: n.positionX,
-          positionY: n.positionY,
-          properties: n.properties || {}
-        }));
-
-        const mappedEdges = editEdges.map((e: any) => {
-          const sNode = editNodes.find((n: any) => n.id === e.sourceNodeId);
-          const tNode = editNodes.find((n: any) => n.id === e.targetNodeId);
-          return {
-            sourceNodeName: sNode?.nodeName || '',
-            targetNodeName: tNode?.nodeName || ''
-          };
-        }).filter(e => e.sourceNodeName && e.targetNodeName);
-
         const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: newTitle,
             description: newDesc,
-            nodes: mappedNodes,
-            edges: mappedEdges
+            nodes: editNodes,
+            edges: editEdges
           }),
         });
 
@@ -353,27 +331,16 @@ export default function Home() {
 
   const handleOpenUserInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditProfileForm({ nickname: userInfo.nickname, email: userInfo.email, password: '', passwordConfirm: '' });
-    setProfileImageFile(null);
-    setProfileImagePreview(null);
+    setEditProfileForm({ nickname: userInfo.nickname, password: '', passwordConfirm: '' });
     setIsUserInfoModalOpen(true);
     setIsProfileMenuOpen(false);
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setProfileImageFile(file);
-      setProfileImagePreview(URL.createObjectURL(file));
-    }
-  };
-
   const hasProfileChanges = 
     editProfileForm.nickname !== userInfo.nickname || 
-    editProfileForm.email !== userInfo.email || 
-    editProfileForm.password !== '' ||
-    profileImageFile !== null;
+    editProfileForm.password !== '';
 
+  // ★ 백엔드 DB 스펙에 완벽히 맞춘 JSON 회원정보 수정
   const handleUpdateUserInfo = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -393,20 +360,17 @@ export default function Home() {
     }
 
     try {
-      const formData = new FormData();
-      formData.append('nickname', editProfileForm.nickname);
-      formData.append('email', editProfileForm.email);
+      const payload: any = {
+        nickname: editProfileForm.nickname,
+      };
       if (editProfileForm.password) {
-        formData.append('password', editProfileForm.password);
+        payload.password = editProfileForm.password;
       }
-      if (profileImageFile) {
-        formData.append('profileImage', profileImageFile);
-      }
-      formData.append('autoSaveEnabled', String(isAutoSaveEnabled)); 
-
+      
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
-        body: formData 
+        headers: { 'Content-Type': 'application/json' }, // DB 스펙인 JSON 전송으로 변경!
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json().catch(() => ({}));
@@ -416,44 +380,22 @@ export default function Home() {
         throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원정보 수정에 실패했습니다.'));
       }
 
-      setUserInfo(prev => ({ 
-        ...prev, 
-        nickname: editProfileForm.nickname, 
-        email: editProfileForm.email,
-        profileImageUrl: profileImagePreview || prev.profileImageUrl
-      }));
-      
+      setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
       setIsUserInfoModalOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 수정되었습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
     } catch (err: any) {
       alert(err.message || '서버 통신 중 오류가 발생했습니다.');
       console.error('Update User Info Error:', err);
     }
   };
 
-  const handleToggleAutoSave = async (checked: boolean) => {
-    setIsAutoSaveEnabled(checked);
-    try {
-      const formData = new FormData();
-      formData.append('nickname', userInfo.nickname);
-      formData.append('email', userInfo.email);
-      formData.append('autoSaveEnabled', String(checked));
-      
-      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'PUT', body: formData });
-      if (!res.ok) {
-        throw new Error('자동 저장 설정 변경에 실패했습니다.');
-      }
-    } catch (err: any) {
-      setIsAutoSaveEnabled(!checked);
-      alert(err.message || '설정 변경 중 오류가 발생했습니다.');
-    }
-  };
-
+  // ★ 확실한 회원 탈퇴 검증
   const handleWithdraw = async () => {
     if (!window.confirm('정말 탈퇴하시겠습니까?\n생성된 모든 프로젝트와 정보가 삭제되며 복구할 수 없습니다.')) {
       return;
     }
     try {
+      // 1. 탈퇴 요청
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       
       const data = await res.json().catch(() => ({}));
@@ -463,12 +405,20 @@ export default function Home() {
         throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원 탈퇴 처리에 실패했습니다.'));
       }
 
+      // 2. 완벽한 로그아웃(토큰 삭제) 처리
       alert('회원 탈퇴가 완료되었습니다.');
-      await logout();
+      await logout(); 
+
     } catch (err: any) {
-      alert(err.message || '탈퇴 처리 중 서버 오류가 발생했습니다.');
+      // 만약 500에러가 난다면 백엔드의 DB 제약조건(FK) 문제일 확률이 높음!
+      alert(err.message || '탈퇴 처리 중 서버 오류가 발생했습니다. (백엔드 DB 제약조건 문제일 수 있습니다)');
       console.error('Withdrawal Error:', err);
     }
+  };
+
+  const handleToggleAutoSave = async (checked: boolean) => {
+    // 자동 저장 기능은 프론트엔드 전용 기능이므로 상태만 변경
+    setIsAutoSaveEnabled(checked);
   };
 
   const formatDate = (isoString: string) => {
@@ -508,21 +458,13 @@ export default function Home() {
             setIsProfileMenuOpen(!isProfileMenuOpen); 
           }}>
             <Avatar>
-              {userInfo.profileImageUrl ? (
-                <img src={userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
-              ) : (
-                userInfo.nickname.charAt(0).toUpperCase()
-              )}
+              {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
             
             {isProfileMenuOpen && (
               <ProfileDropdown onClick={(e) => e.stopPropagation()}>
                 <ProfileAvatarLg style={{ cursor: 'default' }}>
-                  {userInfo.profileImageUrl ? (
-                    <img src={userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
-                  ) : (
-                    userInfo.nickname.charAt(0).toUpperCase()
-                  )}
+                  {userInfo.nickname.charAt(0).toUpperCase()}
                 </ProfileAvatarLg>
                 <ProfileName>{userInfo.nickname}</ProfileName>
                 <ProfileEmail>{userInfo.email}</ProfileEmail>
@@ -680,28 +622,9 @@ export default function Home() {
             <form onSubmit={handleUpdateUserInfo}>
               
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                <ProfileImageEditWrapper onClick={() => fileInputRef.current?.click()}>
-                  {profileImagePreview || userInfo.profileImageUrl ? (
-                    <img src={profileImagePreview || userInfo.profileImageUrl} alt="profile" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} />
-                  ) : (
-                    <ProfileAvatarLg style={{ marginBottom: 0, width: '100%', height: '100%' }}>
-                      {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
-                    </ProfileAvatarLg>
-                  )}
-                  <CameraOverlay>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                      <circle cx="12" cy="13" r="4"></circle>
-                    </svg>
-                  </CameraOverlay>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    style={{ display: 'none' }} 
-                    accept="image/*" 
-                    onChange={handleImageChange} 
-                  />
-                </ProfileImageEditWrapper>
+                <ProfileAvatarLg style={{ marginBottom: 0, width: '80px', height: '80px', cursor: 'default' }}>
+                  {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
+                </ProfileAvatarLg>
               </div>
 
               <InputGroup>
@@ -715,13 +638,12 @@ export default function Home() {
                 />
               </InputGroup>
               <InputGroup>
-                <label>이메일</label>
+                <label>이메일 (ID)</label>
                 <Input
                   type="email"
-                  required
-                  placeholder="이메일 입력"
-                  value={editProfileForm.email}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
+                  value={userInfo.email}
+                  disabled
+                  title="이메일은 변경할 수 없습니다."
                 />
               </InputGroup>
 
@@ -850,7 +772,6 @@ export default function Home() {
       {isCodeViewerOpen && (
         <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
           <CodeViewerModal onClick={(e) => e.stopPropagation()}>
-            
             <CVHeader>
               <ModalTitle style={{ margin: 0 }}>생성된 코드 뷰어</ModalTitle>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -869,9 +790,7 @@ export default function Home() {
                     
                     return (
                       <CVFileItem 
-                        key={file.fileId} 
-                        $selected={isSelected}
-                        $isViewing={isViewing}
+                        key={file.fileId} $selected={isSelected} $isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
                           setDownloadSelection(prev => {
@@ -1041,32 +960,6 @@ const ProfileAvatarLg = styled.div`
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
-`;
-
-const ProfileImageEditWrapper = styled.div`
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  position: relative;
-  cursor: pointer;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  
-  &:hover > div {
-    opacity: 1;
-  }
-`;
-
-const CameraOverlay = styled.div`
-  position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.2s;
-  border-radius: 50%;
 `;
 
 const ProfileName = styled.span`

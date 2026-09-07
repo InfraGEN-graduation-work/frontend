@@ -54,6 +54,16 @@ const ToastNotification = styled.div`
   animation: ${toastAnimation} 3s ease forwards;
 `;
 
+//오류추적
+interface ValidationError {
+  name: string;
+  desc: string;
+  targetNodeId?: string;
+  isGlobal?: boolean;
+  targetField?: string;
+  isProjectTab?: boolean;
+}
+
 const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
@@ -77,12 +87,12 @@ const MainPage: React.FC = () => {
     instanceName: 'my-instance',
     vpcCidr: '10.0.0.0/16',
     subnetCidr: '10.0.1.0/24',
-    amiId: 'ami-12345678',
+    amiId: 'ami-084e92d3e117f7692',
     instanceType: 't3.micro',
     adminCidr: '0.0.0.0/0',
     appCidr: '0.0.0.0/0',
     hostnameLabel: 'myhost',
-    compartmentId: 'ocid1.compartment.oc1..',
+    compartmentId: '',
     availabilityDomain: 'AD-1',
     sshAuthorizedKeys: ''
   });
@@ -99,6 +109,7 @@ const MainPage: React.FC = () => {
 
   const [files, setFiles] = useState<FileGroup[]>([]);
   const [targetFileIds, setTargetFileIds] = useState<string[]>([]);
+  
   const [leftActiveTab, setLeftActiveTab] = useState<'Project' | 'Settings' | 'Validation'>('Project');
   
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -126,51 +137,111 @@ const MainPage: React.FC = () => {
   const hasUnsavedChanges = useRef(false);
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
-  // ==========================================
-  // 유효성 검사 (Validation) 로직 
-  // ==========================================
-  const validationErrors: { name: string; desc: string }[] = [];
+  const validationErrors: ValidationError[] = [];
   
   if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
+  
+  //생성 대상 누락
   if (targetFileIds.length === 0) {
-    validationErrors.push({ name: '생성 대상 없음', desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.' });
+    validationErrors.push({ 
+      name: '생성 대상 없음', 
+      desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.', 
+      isProjectTab: true, 
+      targetField: 'target-file-box' 
+    });
   }
 
-  // 1. 노드별 세팅 누락 검사
+  const nameRegex = /^[a-zA-Z0-9_-]+$/;
+  const portMap = new Map<number, {id: string, name: string}[]>();
+
   nodes.forEach(node => {
     const settings = node.settings || {};
-    if (node.type === 'MySQL' && !settings.imageVersion) {
-      validationErrors.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 Settings 탭에서 선택해주세요.` });
+    
+    const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
+      if (val && !nameRegex.test(val)) {
+        validationErrors.push({ 
+          name: `${label} 형식 오류`, 
+          desc: `'${node.name}' 노드의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`,
+          targetNodeId: node.id, targetField: fieldKey 
+        });
+      }
+    };
+
+    if (!settings.name) validationErrors.push({ name: '서비스 이름 누락', desc: `'${node.name}' 노드의 [서비스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'name' });
+    else checkNameFormat(settings.name, '서비스 이름', 'name');
+
+    if (!settings.containerName) validationErrors.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
+    else checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
+
+    if (!settings.port) {
+      validationErrors.push({ name: '포트 번호 누락', desc: `'${node.name}' 노드의 [포트 번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'port' });
+    } else {
+      const portNum = Number(settings.port);
+      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+        validationErrors.push({ name: '포트 번호 범위 초과', desc: `'${node.name}' 노드의 포트 번호는 1024부터 65535 사이의 숫자여야 합니다.`, targetNodeId: node.id, targetField: 'port' });
+      } else {
+        if (!portMap.has(portNum)) portMap.set(portNum, []);
+        portMap.get(portNum)!.push({ id: node.id, name: node.name });
+      }
     }
-    if (node.type === 'Redis' && !settings.imageVersion) {
-      validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 Settings 탭에서 선택해주세요.` });
+
+    if (node.type === 'MySQL') {
+      if (!settings.imageVersion) validationErrors.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      
+      if (!settings.databaseName) validationErrors.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
+      else checkNameFormat(settings.databaseName, '데이터베이스 이름', 'databaseName');
+
+      if (!settings.username) validationErrors.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
+      else checkNameFormat(settings.username, '사용자 이름', 'username');
+
+      if (!settings.userPassword) validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      else if (settings.userPassword.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'userPassword' });
+
+      if (!settings.rootPassword) validationErrors.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
+      else if (settings.rootPassword.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'rootPassword' });
     }
-    if (node.type === 'Spring Boot' && !settings.javaVersion) {
-      validationErrors.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 Settings 탭에서 선택해주세요.` });
+    
+    if (node.type === 'Redis') {
+      if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      
+      if (!settings.password) validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      else if (settings.password.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'password' });
+    }
+    
+    if (node.type === 'Spring Boot') {
+      if (!settings.javaVersion) validationErrors.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'javaVersion' });
     }
   });
 
-  // 2. 노드 간 연결 규칙 검증 ("MySQL·Redis에서 Spring Boot 방향으로 연결합니다")
+  portMap.forEach((nodesInfo, port) => {
+    if (nodesInfo.length > 1) {
+      validationErrors.push({ 
+        name: '포트 번호 중복', 
+        desc: `포트 번호 ${port}가 여러 노드(${nodesInfo.map(n => n.name).join(', ')})에서 중복 사용되고 있습니다.`, 
+        targetNodeId: nodesInfo[0].id, 
+        targetField: 'port' 
+      });
+    }
+  });
+
   edges.forEach(edge => {
     const sNode = nodes.find(n => n.id === edge.sourceId);
     const tNode = nodes.find(n => n.id === edge.targetId);
     if (sNode && tNode) {
       const isSourceDb = sNode.type === 'MySQL' || sNode.type === 'Redis';
       const isTargetServer = tNode.type === 'Spring Boot';
-
-      // 만약 Spring Boot가 소스이거나 DB가 타겟이면 잘못된 연결
       if (!isSourceDb || !isTargetServer) {
         validationErrors.push({
           name: '잘못된 노드 연결 방향',
-          desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 인프라 연결은 Database(MySQL/Redis)에서 Spring Boot 방향이어야 합니다.`
+          desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`,
+          targetNodeId: sNode.id
         });
       }
     }
   });
 
-  // 3. 동일 타입 DB 중복 연결 검사
   const springNodes = nodes.filter(n => n.type === 'Spring Boot');
   springNodes.forEach(springNode => {
     const connectedMysqlCount = edges.filter(e => {
@@ -179,9 +250,7 @@ const MainPage: React.FC = () => {
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
     }).length;
 
-    if (connectedMysqlCount > 1) {
-      validationErrors.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)` });
-    }
+    if (connectedMysqlCount > 1) validationErrors.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
 
     const connectedRedisCount = edges.filter(e => {
       const s = nodes.find(n => n.id === e.sourceId);
@@ -189,12 +258,25 @@ const MainPage: React.FC = () => {
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
     }).length;
 
-    if (connectedRedisCount > 1) {
-      validationErrors.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)` });
-    }
+    if (connectedRedisCount > 1) validationErrors.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
   });
 
-  // 4. 클라우드 필수 글로벌 설정 누락 검사
+  const checkCloudNameFormat = (val: string | undefined, label: string, key: string) => {
+    if (val && !nameRegex.test(val)) {
+      validationErrors.push({ name: `클라우드 이름 형식 오류`, desc: `Settings 탭의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, isGlobal: true, targetField: key });
+    }
+  };
+
+  const cloudNameFields = [
+    { key: 'vpcName', label: 'VPC/VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
+    { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+    { key: 'securityGroupName', label: 'Security Group/List Name' }, { key: 'instanceName', label: 'Instance Name' }
+  ];
+
+  cloudNameFields.forEach(({ key, label }) => {
+    checkCloudNameFormat(cloudSettings[key as keyof CloudSettings], label, key);
+  });
+
   if (cloudProvider === 'AWS') {
     const requiredAws = [
       { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VPC Name' }, { key: 'subnetName', label: 'Subnet Name' },
@@ -204,7 +286,7 @@ const MainPage: React.FC = () => {
     ];
     requiredAws.forEach(({ key, label }) => {
       if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-        validationErrors.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.` });
+        validationErrors.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
       }
     });
   } else if (cloudProvider === 'OCI') {
@@ -218,7 +300,7 @@ const MainPage: React.FC = () => {
     ];
     requiredOci.forEach(({ key, label }) => {
       if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-        validationErrors.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.` });
+        validationErrors.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
       }
     });
   }
@@ -268,14 +350,26 @@ const MainPage: React.FC = () => {
           setProjectDescription(data.result.description || '');
 
           const fetchedNodes = data.result.nodes || [];
-          const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => ({
-            id: n.nodeId || n.id.toString(), 
-            type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
-            name: n.nodeName,
-            x: n.positionX,
-            y: n.positionY,
-            settings: n.properties || {}
-          }));
+          
+          const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
+            const props = n.properties || {};
+            if (n.componentType === 'MYSQL' && props.env) {
+              props.databaseName = props.env.databaseName;
+              props.username = props.env.username;
+              props.userPassword = props.env.userPassword;
+              props.rootPassword = props.env.rootPassword;
+              delete props.env;
+            }
+
+            return {
+              id: n.nodeId || n.id.toString(), 
+              type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
+              name: n.nodeName,
+              x: n.positionX,
+              y: n.positionY,
+              settings: props
+            };
+          });
           setNodes(loadedNodes);
 
           if (fetchedNodes.length > 0) {
@@ -395,11 +489,6 @@ const MainPage: React.FC = () => {
   }, [projectName, projectDescription, nodes, includeLocal, cloudProvider, cloudSettings]);
 
   const processProperties = (n: NodeData, rawProperties: any) => {
-    if (n.type === 'Redis') {
-      if (!rawProperties.port) rawProperties.port = 6379;
-      if (!rawProperties.name) rawProperties.name = 'redis_service';
-      if (!rawProperties.containerName) rawProperties.containerName = 'redis_container';
-    }
     const finalProperties: Record<string, any> = {};
     for (const key in rawProperties) {
       if (rawProperties[key] !== undefined && rawProperties[key] !== null && rawProperties[key] !== '') {
@@ -409,6 +498,19 @@ const MainPage: React.FC = () => {
         else finalProperties[key] = String(rawProperties[key]).trim();
       }
     }
+
+    if (n.type === 'MySQL') {
+      const envKeys = ['databaseName', 'username', 'userPassword', 'rootPassword'];
+      const envObj: Record<string, string> = {};
+      envKeys.forEach(k => {
+        if (finalProperties[k]) {
+          envObj[k] = String(finalProperties[k]).trim();
+          delete finalProperties[k];
+        }
+      });
+      finalProperties.env = envObj;
+    }
+
     return finalProperties;
   };
 
@@ -445,7 +547,6 @@ const MainPage: React.FC = () => {
     const mappedEdges = edges.map(e => {
       let sNode = nodes.find(n => n.id === e.sourceId);
       let tNode = nodes.find(n => n.id === e.targetId);
-      // DB/Redis에서 Spring Boot 방향으로 강제 교정하여 전송
       if (sNode?.type === 'Spring Boot' && (tNode?.type === 'MySQL' || tNode?.type === 'Redis')) {
         const temp = sNode; sNode = tNode; tNode = temp;
       }
@@ -735,7 +836,32 @@ const MainPage: React.FC = () => {
     saveHistory(); markFilesAsModified();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
-    const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y };
+    
+    const defaultSettings: any = {};
+    if (type === 'MySQL') {
+      defaultSettings.name = 'mysql_service';
+      defaultSettings.imageVersion = 'mysql:8.0';
+      defaultSettings.containerName = 'mysql_container';
+      defaultSettings.port = '3306';
+      defaultSettings.volumeName = 'mysql_data';
+      defaultSettings.databaseName = 'appdb';
+      defaultSettings.username = 'dbuser';
+      defaultSettings.userPassword = 'dbpassword';
+      defaultSettings.rootPassword = 'rootpassword';
+    } else if (type === 'Spring Boot') {
+      defaultSettings.name = 'spring_service';
+      defaultSettings.javaVersion = '17';
+      defaultSettings.containerName = 'spring_container';
+      defaultSettings.port = '8080';
+    } else if (type === 'Redis') {
+      defaultSettings.name = 'redis_service';
+      defaultSettings.imageVersion = 'redis:7.0';
+      defaultSettings.containerName = 'redis_container';
+      defaultSettings.port = '6379';
+      defaultSettings.password = 'redispassword';
+    }
+
+    const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
     setNodes((prev) => [...prev, newNode]);
     setActivityLog(prev => [...prev, `[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`]);
   };
@@ -847,7 +973,7 @@ const MainPage: React.FC = () => {
 
           {showRightSidebar && (
             <RightSideBar 
-              nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} saveHistory={saveHistory}
+              nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} setActiveTab={setLeftActiveTab} saveHistory={saveHistory}
               files={files} setFiles={setFiles} targetFileIds={targetFileIds} setTargetFileIds={setTargetFileIds}
               markFilesAsModified={markFilesAsModified} deleteRightPanelItems={deleteRightPanelItems}
               selectedFileId={selectedFileId} setSelectedFileId={setSelectedFileId}
