@@ -63,9 +63,6 @@ interface ValidationError {
   isProjectTab?: boolean;
 }
 
-// ==========================================
-// ★ [핵심] 해시 생성기: 노드나 선의 내부 ID가 바뀌어도 내용(이름,타입,설정,연결)이 같으면 같은 문자열 반환
-// ==========================================
 const computeFileHash = (
   fileObj: FileGroup, 
   currentNodes: NodeData[], 
@@ -180,11 +177,6 @@ const MainPage: React.FC = () => {
   const hasUnsavedChanges = useRef(false);
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
-  // ==========================================
-  // ★ [핵심] 실시간 수정/원상복구(Dirty Check) 스캐너
-  // ==========================================
-  // 파일 구조, 노드, 엣지, 세팅이 바뀔 때마다 해시를 계산하여
-  // Generate 때의 상태와 동일한지(원상복구 되었는지) 자동으로 감지합니다.
   const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
 
   useEffect(() => {
@@ -775,7 +767,6 @@ const MainPage: React.FC = () => {
     setRedoStack([]); 
   }, [nodes, edges, selectedNodeIds, selection, files, targetFileIds]);
 
-  // ★ 빈 함수로 처리하여 컴포넌트 간 호환성 유지, 실질적인 상태 체크는 useEffect 해시 스캐너가 담당함
   const markFilesAsModified = useCallback(() => {}, []);
 
   const handleGenerateClick = () => {

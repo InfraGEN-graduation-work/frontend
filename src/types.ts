@@ -29,7 +29,7 @@ export interface FileGroup {
   isExpanded: boolean;
   generatedFiles?: { fileName: string; content: string }[]; 
   _isTarget?: boolean;
-  lastHash?: string; // ★ 마지막으로 생성 성공했을 때의 해시(Hash) 기억용
+  lastHash?: string;
 }
 
 export type CloudProvider = 'AWS' | 'OCI';

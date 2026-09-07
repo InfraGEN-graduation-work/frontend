@@ -62,6 +62,10 @@ export default function Home() {
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({ nickname: '', password: '', passwordConfirm: '' });
 
+  const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
+  const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -118,7 +122,7 @@ export default function Home() {
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return alert('프로젝트 이름을 입력해주세요.');
+    if (!newTitle.trim()) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름을 입력해주세요.' }));
 
     if (modalMode === 'create') {
       try {
@@ -156,6 +160,7 @@ export default function Home() {
               ? { ...p, title: newTitle, description: newDesc } 
               : p
           ));
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 정보가 수정되었습니다.' }));
         }
       } catch (err) {}
     }
@@ -180,15 +185,27 @@ export default function Home() {
     } catch (err) {}
   };
 
-  const handleDeleteSingle = async (e: React.MouseEvent, projectId: number) => {
+  const handleDeleteSingle = (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
-    if (!window.confirm('정말 이 프로젝트를 삭제하시겠습니까? 관련 데이터가 모두 삭제됩니다.')) return;
+    setProjectToDelete(projectId);
+  };
 
+  const confirmDeleteSingle = async () => {
+    if (!projectToDelete) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, { method: 'DELETE' });
-      if (res.ok) setProjects(projects.filter((p) => p.projectId !== projectId));
-    } catch (err) {}
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProjects(projects.filter((p) => p.projectId !== projectToDelete));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 삭제되었습니다.' }));
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+    } finally {
+      setProjectToDelete(null);
+    }
   };
 
   const handleOpenHistory = async (e: React.MouseEvent, projectId: number) => {
@@ -302,10 +319,12 @@ export default function Home() {
     saveAs(content, "infragen-export.zip");
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`선택한 ${selectedIds.length}개의 프로젝트를 삭제하시겠습니까?\n관련 데이터가 모두 삭제됩니다.`)) return;
+    setIsBulkDeleteConfirmOpen(true);
+  };
 
+  const confirmBulkDelete = async () => {
     try {
       await Promise.all(
         selectedIds.map(id => fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' }))
@@ -314,7 +333,11 @@ export default function Home() {
       setSelectedIds([]);
       setIsSelectMode(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: `${selectedIds.length}개의 프로젝트가 삭제되었습니다.` }));
-    } catch (err) {}
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+    } finally {
+      setIsBulkDeleteConfirmOpen(false);
+    }
   };
 
   const handleCardClick = (projectId: number) => {
@@ -340,7 +363,6 @@ export default function Home() {
     editProfileForm.nickname !== userInfo.nickname || 
     editProfileForm.password !== '';
 
-  // 회원정보수정
   const handleUpdateUserInfo = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -350,17 +372,18 @@ export default function Home() {
     }
 
     if (editProfileForm.password && editProfileForm.password.length < 8) {
-      alert('비밀번호는 8자 이상이어야 합니다.');
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
       return;
     }
 
     if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
-      alert('비밀번호가 일치하지 않습니다. 다시 확인해주세요.');
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
       return;
     }
 
     try {
       const payload: any = {
+        email: userInfo.email, 
         nickname: editProfileForm.nickname,
       };
       if (editProfileForm.password) {
@@ -369,7 +392,7 @@ export default function Home() {
       
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload)
       });
 
@@ -377,23 +400,19 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (!res.ok || !isSuccess) {
-        throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원정보 수정에 실패했습니다.'));
+        throw new Error('SERVER_ERROR');
       }
 
       setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
       setIsUserInfoModalOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
     } catch (err: any) {
-      alert(err.message || '서버 통신 중 오류가 발생했습니다.');
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
       console.error('Update User Info Error:', err);
     }
   };
 
-  // 탈퇴
-  const handleWithdraw = async () => {
-    if (!window.confirm('정말 탈퇴하시겠습니까?\n생성된 모든 프로젝트와 정보가 삭제되며 복구할 수 없습니다.')) {
-      return;
-    }
+  const executeWithdraw = async () => {
     try {
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       
@@ -401,14 +420,20 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (!res.ok || !isSuccess) {
-        throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원 탈퇴 처리에 실패했습니다.'));
+        throw new Error('SERVER_ERROR');
       }
 
-      alert('회원 탈퇴가 완료되었습니다.');
-      await logout(); 
+      setIsWithdrawConfirmOpen(false);
+      setIsUserInfoModalOpen(false);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 탈퇴가 완료되었습니다.' }));
+      
+      setTimeout(() => {
+        logout(); 
+      }, 1500);
 
     } catch (err: any) {
-      alert(err.message || '탈퇴 처리 중 서버 오류가 발생했습니다. (백엔드 DB 제약조건 문제일 수 있습니다)');
+      setIsWithdrawConfirmOpen(false);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
       console.error('Withdrawal Error:', err);
     }
   };
@@ -611,6 +636,38 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {projectToDelete !== null && (
+        <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>프로젝트 삭제</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              정말 이 프로젝트를 삭제하시겠습니까?<br />
+              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setProjectToDelete(null)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmDeleteSingle}>삭제하기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isBulkDeleteConfirmOpen && (
+        <ModalOverlay onClick={() => setIsBulkDeleteConfirmOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>다중 프로젝트 삭제</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              선택한 {selectedIds.length}개의 프로젝트를 정말 삭제하시겠습니까?<br />
+              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>삭제하기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
       {isUserInfoModalOpen && (
         <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -673,13 +730,28 @@ export default function Home() {
               )}
               
               <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: userInfo.provider === 'KAKAO' ? '30px' : '20px' }}>
-                <WithdrawBtn type="button" onClick={handleWithdraw}>회원 탈퇴</WithdrawBtn>
+                <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
                   <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
                 </div>
               </ModalActions>
             </form>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isWithdrawConfirmOpen && (
+        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>회원 탈퇴를 진행하시겠습니까?</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              탈퇴 시 생성된 모든 프로젝트와 계정 정보가 완전히 삭제되며, 삭제된 데이터는 다시 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw}>탈퇴 확인</SubmitBtn>
+            </ModalActions>
           </ModalContent>
         </ModalOverlay>
       )}
@@ -786,7 +858,9 @@ export default function Home() {
                     
                     return (
                       <CVFileItem 
-                        key={file.fileId} $selected={isSelected} $isViewing={isViewing}
+                        key={file.fileId} 
+                        $selected={isSelected}
+                        $isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
                           setDownloadSelection(prev => {
@@ -1716,4 +1790,8 @@ const ToastNotification = styled.div`
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   z-index: 9999;
   animation: ${toastAnimation} 3s ease forwards;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80vw;
 `;
