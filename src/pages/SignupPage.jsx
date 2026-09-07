@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
-// 환경변수 추가 및 fallback 세팅
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 export default function SignupPage() {
@@ -55,7 +54,6 @@ export default function SignupPage() {
         }),
       });
 
-      // JSON 파싱 방어 코드
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();

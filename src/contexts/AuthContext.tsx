@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-// 환경변수 기반 BASE_URL로 수정 (통일성 유지)
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 interface AuthContextType {

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { useAuth } from "../contexts/AuthContext";
 
-// 환경변수 추가 및 fallback 세팅
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 export default function KakaoCallback() {

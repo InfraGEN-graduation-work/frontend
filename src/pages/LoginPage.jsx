@@ -8,7 +8,6 @@ import { useAuth } from "../contexts/AuthContext";
 const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "";
 const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "http://localhost:5173/oauth/kakao/callback";
 
-// 환경변수가 없으면 명세서의 기본 URL 사용
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
 const KAKAO_AUTH_URL =
@@ -146,7 +145,6 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      // HTML 등 JSON이 아닌 응답(에러)이 올 경우를 대비한 안전망
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();

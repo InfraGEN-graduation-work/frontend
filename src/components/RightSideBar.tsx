@@ -290,7 +290,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     markFilesAsModified();
   };
 
-  // ★ 탭 자동 이동 및 스크롤 처리 로직
   const handleErrorClick = (err: any) => {
     if (err.targetNodeId) {
       setSelectedNodeIds([err.targetNodeId]);
@@ -299,8 +298,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     } else if (err.isGlobal) {
       setSelectedNodeIds([]);
     }
-    
-    // 대상 없음에러면 Project 탭으로, 그 외엔 Settings 탭으로 이동
+
     if (err.isProjectTab) {
       setActiveTab('Project');
     } else {
@@ -587,7 +585,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
             <div className="node-settings-section" style={{ marginBottom: '24px' }}>
               <div className="setting-section-title" style={{ color: cloudProvider === 'AWS' ? '#dd6b20' : '#c53030' }}>
-                <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}>☁️</span>
+                <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}></span>
                 {cloudProvider} 글로벌 배포 설정 (IaC)
               </div>
 

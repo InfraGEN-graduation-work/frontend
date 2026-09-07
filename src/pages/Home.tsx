@@ -340,7 +340,7 @@ export default function Home() {
     editProfileForm.nickname !== userInfo.nickname || 
     editProfileForm.password !== '';
 
-  // ★ 백엔드 DB 스펙에 완벽히 맞춘 JSON 회원정보 수정
+  // 회원정보수정
   const handleUpdateUserInfo = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -369,7 +369,7 @@ export default function Home() {
       
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' }, // DB 스펙인 JSON 전송으로 변경!
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
@@ -389,13 +389,12 @@ export default function Home() {
     }
   };
 
-  // ★ 확실한 회원 탈퇴 검증
+  // 탈퇴
   const handleWithdraw = async () => {
     if (!window.confirm('정말 탈퇴하시겠습니까?\n생성된 모든 프로젝트와 정보가 삭제되며 복구할 수 없습니다.')) {
       return;
     }
     try {
-      // 1. 탈퇴 요청
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       
       const data = await res.json().catch(() => ({}));
@@ -405,19 +404,16 @@ export default function Home() {
         throw new Error(data.message || (typeof data.result === 'string' ? data.result : '회원 탈퇴 처리에 실패했습니다.'));
       }
 
-      // 2. 완벽한 로그아웃(토큰 삭제) 처리
       alert('회원 탈퇴가 완료되었습니다.');
       await logout(); 
 
     } catch (err: any) {
-      // 만약 500에러가 난다면 백엔드의 DB 제약조건(FK) 문제일 확률이 높음!
       alert(err.message || '탈퇴 처리 중 서버 오류가 발생했습니다. (백엔드 DB 제약조건 문제일 수 있습니다)');
       console.error('Withdrawal Error:', err);
     }
   };
 
   const handleToggleAutoSave = async (checked: boolean) => {
-    // 자동 저장 기능은 프론트엔드 전용 기능이므로 상태만 변경
     setIsAutoSaveEnabled(checked);
   };
 

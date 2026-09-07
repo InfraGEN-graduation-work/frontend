@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
 import type { ViewportState } from '../MainPage';
 import mysqlIcon from '../assets/mysql.png';
-import redisIcon from '../assets/redis.png';
 import springbootIcon from '../assets/springboot.png';
+import redisIcon from '../assets/redis.png';
 
 interface CanvasProps {
   nodes: NodeData[];
@@ -188,7 +188,11 @@ const Canvas: React.FC<CanvasProps> = ({
           ? { ...n, x: state.initialPositions[n.id].x + clampedDx, y: state.initialPositions[n.id].y + clampedDy } 
           : n
       ));
-      setSelection(prev => ({ ...prev, x: state.initialSelectionPos.x + clampedDx, y: state.initialSelectionPos.y + clampedDy }));
+      
+      // 선택 박스가 활성화되어 있을 때만 같이 이동
+      if (selection.active) {
+         setSelection(prev => ({ ...prev, x: state.initialSelectionPos.x + clampedDx, y: state.initialSelectionPos.y + clampedDy }));
+      }
       
     } else if (state.draggingNodeId) {
       const pos = state.initialPositions[state.draggingNodeId];
@@ -245,12 +249,14 @@ const Canvas: React.FC<CanvasProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [isGroupDragging, draggingNodeId, isAreaSelecting, drawingEdgeSource]);
 
+  // ==========================================
+  // [강화] Ctrl(Cmd) 키를 통한 다중 선택 및 그룹 드래그 로직 
+  // ==========================================
   const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button === 2) return; 
     if (!viewportRef.current) return;
     
     setSelectedEdgeId(null);
-    
     e.currentTarget.setPointerCapture(e.pointerId);
     const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
 
@@ -258,6 +264,7 @@ const Canvas: React.FC<CanvasProps> = ({
       coords.x >= selection.x && coords.x <= selection.x + selection.width &&
       coords.y >= selection.y && coords.y <= selection.y + selection.height;
 
+    // 네모 영역 선택 모드 안쪽을 잡고 끌 때
     if (isSelectMode && isInsideSelection) {
       saveHistory();
       setIsGroupDragging(true);
@@ -273,30 +280,60 @@ const Canvas: React.FC<CanvasProps> = ({
 
     const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
 
+    // 노드를 눌렀을 때
     if (targetNode) {
       saveHistory();
-      const isAlreadySelected = selectedNodeIds.includes(targetNode.id);
       
-      if (isAlreadySelected && selectedNodeIds.length === 1) {
-        setSelectedNodeIds([]);
+      let currentSelected = selectedNodeIds;
+
+      // Ctrl / Cmd 누르고 클릭 시
+      if (e.ctrlKey || e.metaKey) {
+        if (selectedNodeIds.includes(targetNode.id)) {
+           currentSelected = selectedNodeIds.filter(id => id !== targetNode.id); // 빼기
+        } else {
+           currentSelected = [...selectedNodeIds, targetNode.id]; // 더하기
+        }
+        setSelectedNodeIds(currentSelected);
         setSelectedFileId(null);
-      } else {
-        setSelectedNodeIds([targetNode.id]);
-        setSelectedFileId(null);
-        scrollToNode(targetNode);
+      } 
+      // 일반 클릭
+      else {
+        // 이미 선택되어있던 그룹 중 하나를 클릭한 거라면 풀지 않고 냅둠 (이대로 그룹 드래그 할수도 있으니)
+        if (!selectedNodeIds.includes(targetNode.id)) {
+           currentSelected = [targetNode.id];
+           setSelectedNodeIds(currentSelected);
+           setSelectedFileId(null);
+           scrollToNode(targetNode);
+        }
       }
-      
-      setDraggingNodeId(targetNode.id);
+
       setStartMousePos(coords);
-      setInitialPositions({ [targetNode.id]: { x: targetNode.x, y: targetNode.y } });
+      const positions: Record<string, { x: number, y: number }> = {};
+      
+      // 다중 노드가 선택되어 있는 상태에서 클릭&드래그 하면 그룹으로 같이 묶여서 이동됨
+      if (currentSelected.length > 1 && currentSelected.includes(targetNode.id)) {
+        setIsGroupDragging(true);
+        setDraggingNodeId(null);
+        nodes.forEach(n => {
+          if (currentSelected.includes(n.id)) positions[n.id] = { x: n.x, y: n.y };
+        });
+      } else {
+        setIsGroupDragging(false);
+        setDraggingNodeId(targetNode.id);
+        positions[targetNode.id] = { x: targetNode.x, y: targetNode.y };
+      }
+
+      setInitialPositions(positions);
       setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
       return;
     }
 
+    // 빈 화면 클릭
     setSelectedNodeIds([]);
     setSelectedFileId(null);
 
-    if (isSelectMode) {
+    // 배경에서 드래그하여 영역 선택 (Ctrl 누르고 끌거나, SelectMode일 경우)
+    if (isSelectMode || e.ctrlKey || e.metaKey) {
       saveHistory();
       setIsAreaSelecting(true);
       setStartMousePos(coords);
@@ -395,8 +432,8 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const getNodeIcon = (type: string) => {
     if (type === 'MySQL') return mysqlIcon;
-    if (type === 'Redis') return redisIcon;
     if (type === 'Spring Boot') return springbootIcon;
+    if (type === 'Redis') return redisIcon;
     return null;
   };
 
@@ -538,8 +575,10 @@ const Canvas: React.FC<CanvasProps> = ({
             >
               <div className="node-header">
                 <div className="node-type-icon" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
-                  {getNodeIcon(node.type) && (
+                  {getNodeIcon(node.type) ? (
                     <img src={getNodeIcon(node.type)!} alt={node.type} style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+                  ) : (
+                    <span style={{ fontSize: '14px', fontWeight: 'bold' }}>{node.type.charAt(0)}</span>
                   )}
                 </div>
                 <div className="node-info">

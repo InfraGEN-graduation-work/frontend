@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, CloudProvider } from '../types';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
-import redisIcon from '../assets/redis.png'; // 👈 Redis 아이콘 추가
+import redisIcon from '../assets/redis.png';
 
 interface LeftPanelProps {
   projectName: string;
@@ -103,7 +103,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   const getNodeIconSrc = (type: string) => {
     if (type === 'MySQL') return mysqlIcon;
     if (type === 'Spring Boot') return springbootIcon;
-    if (type === 'Redis') return redisIcon; // 👈 Redis 매핑 추가
+    if (type === 'Redis') return redisIcon;
     return '';
   };
 

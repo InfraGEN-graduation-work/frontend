@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import './MainPage.css';
@@ -54,7 +54,6 @@ const ToastNotification = styled.div`
   animation: ${toastAnimation} 3s ease forwards;
 `;
 
-//오류추적
 interface ValidationError {
   name: string;
   desc: string;
@@ -63,6 +62,48 @@ interface ValidationError {
   targetField?: string;
   isProjectTab?: boolean;
 }
+
+// ==========================================
+// ★ [핵심] 해시 생성기: 노드나 선의 내부 ID가 바뀌어도 내용(이름,타입,설정,연결)이 같으면 같은 문자열 반환
+// ==========================================
+const computeFileHash = (
+  fileObj: FileGroup, 
+  currentNodes: NodeData[], 
+  currentEdges: Edge[], 
+  cProvider: string, 
+  cLocal: boolean, 
+  cSettings: any
+) => {
+  const fNodes = currentNodes.filter(n => fileObj.nodeIds.includes(n.id));
+  const sortedNodes = [...fNodes].sort((a, b) => a.name.localeCompare(b.name)).map(n => {
+    const sortedSet: any = {};
+    if (n.settings) {
+      Object.keys(n.settings).sort().forEach(k => { sortedSet[k] = n.settings![k]; });
+    }
+    return { type: n.type, name: n.name, settings: sortedSet };
+  });
+
+  const fEdges = currentEdges.filter(e => fileObj.nodeIds.includes(e.sourceId) && fileObj.nodeIds.includes(e.targetId));
+  const mappedEdges = fEdges.map(e => {
+    const s = currentNodes.find(n => n.id === e.sourceId);
+    const t = currentNodes.find(n => n.id === e.targetId);
+    return { source: s?.name || '', target: t?.name || '' };
+  }).sort((a, b) => (a.source + a.target).localeCompare(b.source + b.target));
+
+  const sortedCloudSettings: any = {};
+  if (cSettings) {
+    Object.keys(cSettings).sort().forEach(k => { sortedCloudSettings[k] = cSettings[k]; });
+  }
+
+  return JSON.stringify({
+    fileName: fileObj.name,
+    nodes: sortedNodes,
+    edges: mappedEdges,
+    cloudProvider: cProvider,
+    includeLocal: cLocal,
+    cloudSettings: sortedCloudSettings
+  });
+};
 
 const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
@@ -120,6 +161,8 @@ const MainPage: React.FC = () => {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
 
+  const [clipboard, setClipboard] = useState<NodeData[]>([]);
+
   const [viewport, setViewport] = useState<ViewportState>({
     scrollLeft: 0, scrollTop: 0, clientWidth: 100, clientHeight: 100, scrollWidth: 500, scrollHeight: 500
   });
@@ -137,13 +180,40 @@ const MainPage: React.FC = () => {
   const hasUnsavedChanges = useRef(false);
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
+  // ==========================================
+  // ★ [핵심] 실시간 수정/원상복구(Dirty Check) 스캐너
+  // ==========================================
+  // 파일 구조, 노드, 엣지, 세팅이 바뀔 때마다 해시를 계산하여
+  // Generate 때의 상태와 동일한지(원상복구 되었는지) 자동으로 감지합니다.
+  const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
+
+  useEffect(() => {
+    if (!isDataLoaded.current) return;
+    
+    setFiles(prevFiles => {
+      let changed = false;
+      const nextFiles = prevFiles.map(f => {
+        if (f.lastHash) {
+          const currentHash = computeFileHash(f, nodes, edges, cloudProvider, includeLocal, cloudSettings);
+          const isNowMatched = (currentHash === f.lastHash);
+          if (f.isGenerated !== isNowMatched) {
+            changed = true;
+            return { ...f, isGenerated: isNowMatched };
+          }
+        }
+        return f;
+      });
+      return changed ? nextFiles : prevFiles;
+    });
+  }, [nodes, edges, cloudProvider, includeLocal, cloudSettings, filesStructureDep]);
+
+
   const validationErrors: ValidationError[] = [];
   
   if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
   
-  //생성 대상 누락
   if (targetFileIds.length === 0) {
     validationErrors.push({ 
       name: '생성 대상 없음', 
@@ -351,6 +421,22 @@ const MainPage: React.FC = () => {
 
           const fetchedNodes = data.result.nodes || [];
           
+          let loadedCloudProvider: CloudProvider = 'AWS';
+          let loadedIncludeLocal = true;
+          let loadedCloudSettings: CloudSettings = { ...cloudSettings };
+
+          if (fetchedNodes.length > 0) {
+            const firstProps = fetchedNodes[0].properties || {};
+            if (firstProps.globalCloudProvider) loadedCloudProvider = firstProps.globalCloudProvider as CloudProvider;
+            if (firstProps.globalIncludeLocal !== undefined) loadedIncludeLocal = firstProps.globalIncludeLocal === 'true';
+            if (firstProps.globalCloudSettings) {
+              try { loadedCloudSettings = JSON.parse(firstProps.globalCloudSettings); } catch(e) {}
+            }
+            setCloudProvider(loadedCloudProvider);
+            setIncludeLocal(loadedIncludeLocal);
+            setCloudSettings(loadedCloudSettings);
+          }
+
           const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
             const props = n.properties || {};
             if (n.componentType === 'MYSQL' && props.env) {
@@ -371,15 +457,6 @@ const MainPage: React.FC = () => {
             };
           });
           setNodes(loadedNodes);
-
-          if (fetchedNodes.length > 0) {
-            const firstProps = fetchedNodes[0].properties || {};
-            if (firstProps.globalCloudProvider) setCloudProvider(firstProps.globalCloudProvider as CloudProvider);
-            if (firstProps.globalIncludeLocal !== undefined) setIncludeLocal(firstProps.globalIncludeLocal === 'true');
-            if (firstProps.globalCloudSettings) {
-              try { setCloudSettings(JSON.parse(firstProps.globalCloudSettings)); } catch(e) {}
-            }
-          }
 
           const fetchedEdges = data.result.edges || [];
           const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
@@ -410,7 +487,13 @@ const MainPage: React.FC = () => {
               reconstructedFiles[props.fileId].nodeIds.push(n.id);
             }
           });
-          const loadedFiles = Object.values(reconstructedFiles);
+          
+          const loadedFiles = Object.values(reconstructedFiles).map((f: any) => {
+            if (f.isGenerated) {
+              f.lastHash = computeFileHash(f, loadedNodes, loadedEdges, loadedCloudProvider, loadedIncludeLocal, loadedCloudSettings);
+            }
+            return f as FileGroup;
+          });
           setFiles(loadedFiles);
           
           const loadedTargetFileIds = loadedFiles.filter((f: any) => f._isTarget).map(f => f.id);
@@ -687,12 +770,13 @@ const MainPage: React.FC = () => {
     setLeftActiveTab('Project'); setShowRightSidebar(false); setUiResetTrigger(prev => prev + 1);
   };
 
-  const saveHistory = () => {
+  const saveHistory = useCallback(() => {
     setHistory((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
     setRedoStack([]); 
-  };
+  }, [nodes, edges, selectedNodeIds, selection, files, targetFileIds]);
 
-  const markFilesAsModified = () => setFiles((prev) => prev.map(f => ({ ...f, isGenerated: false })));
+  // ★ 빈 함수로 처리하여 컴포넌트 간 호환성 유지, 실질적인 상태 체크는 useEffect 해시 스캐너가 담당함
+  const markFilesAsModified = useCallback(() => {}, []);
 
   const handleGenerateClick = () => {
     if (validationErrors.length > 0) setIsErrorModalOpen(true);
@@ -774,7 +858,8 @@ const MainPage: React.FC = () => {
             const generatedFilesFromApi = generateData.result.files || [];
             const fileIdx = updatedFilesList.findIndex(f => f.id === tFileId);
             if (fileIdx > -1) {
-              updatedFilesList[fileIdx] = { ...updatedFilesList[fileIdx], isGenerated: true, generatedFiles: generatedFilesFromApi };
+              const newHash = computeFileHash(updatedFilesList[fileIdx], nodes, edges, cloudProvider, includeLocal, cloudSettings);
+              updatedFilesList[fileIdx] = { ...updatedFilesList[fileIdx], isGenerated: true, generatedFiles: generatedFilesFromApi, lastHash: newHash };
             }
           } else {
             hasError = true;
@@ -808,7 +893,7 @@ const MainPage: React.FC = () => {
     if (!showRightSidebar) setShowRightSidebar(true);
   };
 
-  const undo = () => {
+  const undo = useCallback(() => {
     if (history.length === 0) return;
     isUndoRedo.current = true; 
     const previousState = history[history.length - 1];
@@ -816,7 +901,7 @@ const MainPage: React.FC = () => {
     setNodes(previousState.nodes); setEdges(previousState.edges); setSelectedNodeIds(previousState.selectedNodeIds); setSelection(previousState.selection); setFiles(previousState.files); setTargetFileIds(previousState.targetFileIds);
     setHistory((prev) => prev.slice(0, -1));
     setTimeout(() => { isUndoRedo.current = false; }, 100); 
-  };
+  }, [history, nodes, edges, selectedNodeIds, selection, files, targetFileIds]);
 
   const redo = () => {
     if (redoStack.length === 0) return;
@@ -833,7 +918,7 @@ const MainPage: React.FC = () => {
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
 
   const addNode = (type: string, baseName: string, x: number, y: number) => {
-    saveHistory(); markFilesAsModified();
+    saveHistory();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
     
@@ -866,16 +951,16 @@ const MainPage: React.FC = () => {
     setActivityLog(prev => [...prev, `[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`]);
   };
 
-  const deleteSelected = () => {
+  const deleteSelected = useCallback(() => {
     if (selectedNodeIds.length === 0) return;
-    saveHistory(); markFilesAsModified();
+    saveHistory();
     const deletedNodes = nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.name);
     if (deletedNodes.length > 0) setActivityLog(prev => [...prev, `[삭제] 캔버스에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`]);
     setNodes((prev) => prev.filter(node => !selectedNodeIds.includes(node.id)));
     setEdges((prev) => prev.filter(edge => !selectedNodeIds.includes(edge.sourceId) && !selectedNodeIds.includes(edge.targetId)));
     setFiles((prev) => prev.map(f => ({ ...f, nodeIds: f.nodeIds.filter(id => !selectedNodeIds.includes(id)) })));
     setSelectedNodeIds([]); setSelectedFileId(null); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
-  };
+  }, [selectedNodeIds, nodes, saveHistory]);
 
   const onCancelSelection = () => {
     saveHistory(); setIsSelectMode(false); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
@@ -884,7 +969,7 @@ const MainPage: React.FC = () => {
 
   const deleteRightPanelItems = (fileIdsToDelete: string[], nodeIdsToDelete: string[]) => {
     if (fileIdsToDelete.length === 0 && nodeIdsToDelete.length === 0) return;
-    saveHistory(); markFilesAsModified();
+    saveHistory();
     if (selectedFileId && fileIdsToDelete.includes(selectedFileId)) setSelectedFileId(null);
     const deletedFiles = files.filter(f => fileIdsToDelete.includes(f.id)).map(f => f.name);
     const deletedNodes = nodes.filter(n => nodeIdsToDelete.includes(n.id)).map(n => n.name);
@@ -896,6 +981,74 @@ const MainPage: React.FC = () => {
     setEdges((prev) => prev.filter(e => !nodeIdsToDelete.includes(e.sourceId) && !nodeIdsToDelete.includes(e.targetId)));
     setTargetFileIds((prev) => prev.filter(id => !fileIdsToDelete.includes(id)));
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault(); undo();
+      }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        if (nodes.length > 0) { setSelectedNodeIds(nodes.map(n => n.id)); setSelectedFileId(null); }
+      }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          const nodesToCopy = nodes.filter(n => selectedNodeIds.includes(n.id));
+          setClipboard(JSON.parse(JSON.stringify(nodesToCopy))); 
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: `${nodesToCopy.length}개의 노드를 잘라냈습니다.` }));
+          deleteSelected();
+        }
+      }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          const nodesToCopy = nodes.filter(n => selectedNodeIds.includes(n.id));
+          setClipboard(JSON.parse(JSON.stringify(nodesToCopy))); 
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: `${nodesToCopy.length}개의 노드가 복사되었습니다.` }));
+        }
+      }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (clipboard.length > 0) {
+          e.preventDefault(); saveHistory();
+          
+          const newSelectedIds: string[] = [];
+          const newNodes: NodeData[] = [];
+          
+          clipboard.forEach((n, idx) => {
+            let baseName = n.name;
+            if (/\d+$/.test(baseName)) baseName = baseName.replace(/_\d+$/, ''); 
+            let finalName = baseName; let counter = 1;
+            const allCurrentNames = [...nodes.map(node => node.name), ...newNodes.map(node => node.name)];
+            
+            while (allCurrentNames.includes(finalName)) { finalName = `${baseName}_${counter}`; counter++; }
+            
+            const newNodeId = `node-${Date.now()}-${idx}`;
+            newSelectedIds.push(newNodeId);
+
+            const newSettings = { ...n.settings };
+            if (newSettings.name) newSettings.name = finalName;
+            if (newSettings.containerName) newSettings.containerName = `${finalName}_container`;
+
+            newNodes.push({ ...n, id: newNodeId, name: finalName, x: n.x + 30, y: n.y + 30, settings: newSettings });
+          });
+          
+          setNodes(prev => [...prev, ...newNodes]);
+          setSelectedNodeIds(newSelectedIds);
+          setActivityLog(prev => [...prev, `[붙여넣기] ${newNodes.length}개의 노드를 캔버스에 붙여넣었습니다.`]);
+        }
+      }
+      else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeIds.length > 0) { e.preventDefault(); deleteSelected(); }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory]);
 
   return (
     <div className="app-container">
