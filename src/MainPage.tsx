@@ -280,11 +280,13 @@ const MainPage: React.FC = () => {
 
   portMap.forEach((nodesInfo, port) => {
     if (nodesInfo.length > 1) {
-      validationErrors.push({ 
-        name: '포트 번호 중복', 
-        desc: `포트 번호 ${port}가 여러 노드(${nodesInfo.map(n => n.name).join(', ')})에서 중복 사용되고 있습니다.`, 
-        targetNodeId: nodesInfo[0].id, 
-        targetField: 'port' 
+      nodesInfo.forEach(nodeInfo => {
+        validationErrors.push({ 
+          name: '포트 번호 중복', 
+          desc: `포트 번호 ${port}가 여러 노드(${nodesInfo.map(n => n.name).join(', ')})에서 중복 사용되고 있습니다.`, 
+          targetNodeId: nodeInfo.id, 
+          targetField: 'port' 
+        });
       });
     }
   });
@@ -1136,7 +1138,7 @@ const MainPage: React.FC = () => {
           <style>{`
             .hide-scrollbar::-webkit-scrollbar { display: none; }
             .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
+            
             .modal-error-group { margin-bottom: 8px; border: 1px solid #fbd5d5; border-radius: 8px; background: #fafafa; overflow: hidden; }
             .modal-error-group-header { padding: 10px 12px; font-size: 13px; font-weight: bold; color: #9b2c2c; background: #fdf2f2; display: flex; align-items: center; }
             .modal-error-group-content { padding: 10px; display: flex; flex-direction: column; gap: 8px; background: white; border-top: 1px solid #fbd5d5; }

@@ -84,9 +84,14 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const handleNodeDragStart = (e: React.DragEvent, nodeId: string) => {
     e.stopPropagation();
     let dragIds = [nodeId];
+
     if (isMultiSelectMode && checkedItems.has(nodeId)) {
       dragIds = Array.from(checkedItems).filter(id => id.startsWith('node-'));
+    } 
+    else if (!isMultiSelectMode && selectedNodeIds.includes(nodeId) && selectedNodeIds.length > 1) {
+      dragIds = [...selectedNodeIds];
     }
+    
     e.dataTransfer.setData('rightBarNodeIds', JSON.stringify(dragIds));
   };
 
@@ -278,6 +283,29 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         toggleNodeCheck(nodeId);
         return;
       }
+
+      if (e.ctrlKey || e.metaKey) {
+        setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
+        setIsSelectMode(false);
+        
+        let currentSelected = [...selectedNodeIds];
+        if (currentSelected.includes(nodeId)) {
+          currentSelected = currentSelected.filter(id => id !== nodeId);
+        } else {
+          currentSelected.push(nodeId);
+        }
+        
+        setSelectedNodeIds(currentSelected);
+        setSelectedFileId(null);
+        
+        if (currentSelected.length === 1) {
+          setFocusNodeId(currentSelected[0]);
+        } else {
+          setFocusNodeId(null);
+        }
+        return;
+      }
+
       clearCanvasSelectionArea();
       if (selectedNodeIds.includes(nodeId) && selectedNodeIds.length === 1) {
         setSelectedNodeIds([]); setSelectedFileId(null);
