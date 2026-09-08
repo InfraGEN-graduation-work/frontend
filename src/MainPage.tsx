@@ -115,21 +115,22 @@ const MainPage: React.FC = () => {
 
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('AWS');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
+  
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
     region: 'ap-northeast-2',
-    vpcName: 'my-vpc',
-    subnetName: 'my-subnet',
-    internetGatewayName: 'my-igw',
-    routeTableName: 'my-rt',
-    securityGroupName: 'my-sg',
-    instanceName: 'my-instance',
+    vpcName: '',
+    subnetName: '',
+    internetGatewayName: '',
+    routeTableName: '',
+    securityGroupName: '',
+    instanceName: '',
     vpcCidr: '10.0.0.0/16',
     subnetCidr: '10.0.1.0/24',
-    amiId: 'ami-084e92d3e117f7692',
+    amiId: '',
     instanceType: 't3.micro',
-    adminCidr: '0.0.0.0/0',
-    appCidr: '0.0.0.0/0',
-    hostnameLabel: 'myhost',
+    adminCidr: '',
+    appCidr: '',
+    hostnameLabel: '',
     compartmentId: '',
     availabilityDomain: 'AD-1',
     sshAuthorizedKeys: ''
@@ -915,26 +916,14 @@ const MainPage: React.FC = () => {
     
     const defaultSettings: any = {};
     if (type === 'MySQL') {
-      defaultSettings.name = 'mysql_service';
       defaultSettings.imageVersion = 'mysql:8.0';
-      defaultSettings.containerName = 'mysql_container';
       defaultSettings.port = '3306';
-      defaultSettings.volumeName = 'mysql_data';
-      defaultSettings.databaseName = 'appdb';
-      defaultSettings.username = 'dbuser';
-      defaultSettings.userPassword = 'dbpassword';
-      defaultSettings.rootPassword = 'rootpassword';
     } else if (type === 'Spring Boot') {
-      defaultSettings.name = 'spring_service';
       defaultSettings.javaVersion = '17';
-      defaultSettings.containerName = 'spring_container';
       defaultSettings.port = '8080';
     } else if (type === 'Redis') {
-      defaultSettings.name = 'redis_service';
       defaultSettings.imageVersion = 'redis:7.0';
-      defaultSettings.containerName = 'redis_container';
       defaultSettings.port = '6379';
-      defaultSettings.password = 'redispassword';
     }
 
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
@@ -1022,8 +1011,7 @@ const MainPage: React.FC = () => {
 
             const newSettings = { ...n.settings };
             if (newSettings.name) newSettings.name = finalName;
-            if (newSettings.containerName) newSettings.containerName = `${finalName}_container`;
-
+            
             newNodes.push({ ...n, id: newNodeId, name: finalName, x: n.x + 30, y: n.y + 30, settings: newSettings });
           });
           
@@ -1040,6 +1028,16 @@ const MainPage: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory]);
+
+  const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
+  const nodeErrorsMap = new Map<string, typeof validationErrors>();
+  
+  validationErrors.forEach(e => {
+    if (!e.isGlobal && e.targetNodeId) {
+      if (!nodeErrorsMap.has(e.targetNodeId)) nodeErrorsMap.set(e.targetNodeId, []);
+      nodeErrorsMap.get(e.targetNodeId)!.push(e);
+    }
+  });
 
   return (
     <div className="app-container">
@@ -1135,16 +1133,49 @@ const MainPage: React.FC = () => {
 
       {isErrorModalOpen && (
         <div className="modal-overlay">
+          <style>{`
+            .hide-scrollbar::-webkit-scrollbar { display: none; }
+            .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+            .modal-error-group { margin-bottom: 8px; border: 1px solid #fbd5d5; border-radius: 8px; background: #fafafa; overflow: hidden; }
+            .modal-error-group-header { padding: 10px 12px; font-size: 13px; font-weight: bold; color: #9b2c2c; background: #fdf2f2; display: flex; align-items: center; }
+            .modal-error-group-content { padding: 10px; display: flex; flex-direction: column; gap: 8px; background: white; border-top: 1px solid #fbd5d5; }
+          `}</style>
           <div className="modal-content">
             <div className="modal-title error">프로젝트를 생성할 수 없습니다.</div>
-            <div className="modal-body" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div className="modal-body hide-scrollbar" style={{ maxHeight: '400px', overflowY: 'auto', padding: '12px' }}>
               <div style={{fontWeight: 'bold', marginBottom: '12px', color: '#e53e3e'}}>총 {validationErrors.length}개의 오류가 발견되었습니다.</div>
-              {validationErrors.map((err, idx) => (
-                <div key={idx} style={{ padding: '10px', background: '#fff5f5', borderLeft: '4px solid #fc8181', marginBottom: '10px', borderRadius: '4px' }}>
-                  <div style={{ fontWeight: 'bold', color: '#c53030', fontSize: '13px', marginBottom: '4px' }}>{err.name}</div>
-                  <div style={{ color: '#4a5568', fontSize: '12px' }}>{err.desc}</div>
+              
+              {globalErrors.length > 0 && (
+                <div className="modal-error-group">
+                  <div className="modal-error-group-header">프로젝트 & 클라우드 설정</div>
+                  <div className="modal-error-group-content">
+                    {globalErrors.map((err, idx) => (
+                      <div key={idx} style={{ padding: '10px', background: '#fff5f5', borderLeft: '4px solid #fc8181', borderRadius: '4px' }}>
+                        <div style={{ fontWeight: 'bold', color: '#c53030', fontSize: '13px', marginBottom: '4px' }}>{err.name}</div>
+                        <div style={{ color: '#4a5568', fontSize: '12px' }}>{err.desc}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
+              )}
+
+              {Array.from(nodeErrorsMap.entries()).map(([nodeId, errs]) => {
+                const nodeName = nodes.find(n => n.id === nodeId)?.name || '알 수 없는 노드';
+                return (
+                  <div key={nodeId} className="modal-error-group">
+                    <div className="modal-error-group-header">{nodeName} (노드)</div>
+                    <div className="modal-error-group-content">
+                      {errs.map((err, idx) => (
+                        <div key={idx} style={{ padding: '10px', background: '#fff5f5', borderLeft: '4px solid #fc8181', borderRadius: '4px' }}>
+                          <div style={{ fontWeight: 'bold', color: '#c53030', fontSize: '13px', marginBottom: '4px' }}>{err.name}</div>
+                          <div style={{ color: '#4a5568', fontSize: '12px' }}>{err.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div className="modal-actions">
               <button className="modal-btn confirm" onClick={closeErrorModalAndShowValidation}>확인</button>

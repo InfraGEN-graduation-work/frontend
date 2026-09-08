@@ -5,8 +5,9 @@ import logo from "../assets/mainlogo.png";
 import logo2 from "../assets/mainlogo-2.png";
 import { useAuth } from "../contexts/AuthContext";
 
-const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "";
-const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "http://localhost:5173/oauth/kakao/callback";
+const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "1d3c47d4d92cec1710ef19ae5625d985";
+
+const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "http://localhost:5173/";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
 
@@ -25,7 +26,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const [showLogin, setShowLogin] = useState(false);
-
+  
   const params = new URLSearchParams(window.location.search);
   const kakaoCode = params.get("code");
   const kakaoError = params.get("error");
@@ -34,8 +35,9 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (kakaoError) {
-      console.error("카카오 로그인 거부 또는 오류:", kakaoError);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '카카오 로그인 연동에 실패했습니다.' }));
       window.history.replaceState({}, "", "/");
+      setIsKakaoProcessing(false);
       return;
     }
 
@@ -43,7 +45,7 @@ export default function LoginPage() {
       hasExchanged.current = true;
       exchangeKakaoCode(kakaoCode);
     }
-  }, []);
+  }, [kakaoCode, kakaoError]);
 
   const exchangeKakaoCode = async (code) => {
     try {
@@ -54,28 +56,20 @@ export default function LoginPage() {
         body: JSON.stringify({ authorizationCode: code }),
       });
 
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await res.text();
-        console.error("카카오 로그인 응답이 JSON이 아닙니다:", text);
-        throw new Error(`CORS 문제 또는 백엔드 오류 (Status: ${res.status})`);
-      }
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
-      const data = await res.json();
-      const isSuccess = data.isSuccess ?? data.is_success;
-
-      if (!res.ok || !isSuccess) throw new Error(`로그인 실패: ${data.message || res.status}`);
+      if (!res.ok || !isSuccess) throw new Error('SERVER_ERROR');
 
       setAccessToken(data.result.accessToken);
       navigate("/dashboard");
     } catch (err) {
-      console.error("카카오 로그인 처리 오류:", err);
       window.history.replaceState({}, "", "/");
       setIsKakaoProcessing(false);
-      setError(err.message || "카카오 로그인에 실패했습니다.");
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     }
   };
-  
+
   const wheelTimeout = useRef(null);
   const touchStartY = useRef(0);
 
@@ -121,14 +115,6 @@ export default function LoginPage() {
     window.location.href = KAKAO_AUTH_URL;
   };
 
-  if (isKakaoProcessing) {
-    return (
-      <KakaoProcessingPage>
-        <KakaoProcessingMessage>로그인 처리 중...</KakaoProcessingMessage>
-      </KakaoProcessingPage>
-    );
-  }
-
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
@@ -147,9 +133,7 @@ export default function LoginPage() {
 
       const contentType = res.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        const text = await res.text();
-        console.error("Non-JSON Response:", text);
-        throw new Error(`CORS 설정 문제이거나 서버 에러입니다. (Status: ${res.status})`);
+        throw new Error('SERVER_ERROR');
       }
 
       const data = await res.json();
@@ -159,14 +143,21 @@ export default function LoginPage() {
         setAccessToken(data.result.accessToken);
         navigate("/dashboard");
       } else {
-        const errorMessage = typeof data.result === 'string' ? data.result : data.message;
-        setError(errorMessage || "이메일 또는 비밀번호가 올바르지 않습니다.");
+        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
       }
     } catch (error) {
       console.error("Login Request Failed:", error);
-      setError(error.message || "서버와 통신할 수 없습니다.");
+      setError("예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
   };
+
+  if (isKakaoProcessing) {
+    return (
+      <KakaoProcessingPage>
+        <KakaoProcessingMessage>카카오 로그인 처리 중...</KakaoProcessingMessage>
+      </KakaoProcessingPage>
+    );
+  }
 
   return (
     <Container onWheel={handleWheel} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}>

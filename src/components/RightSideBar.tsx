@@ -53,8 +53,9 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
 
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
-  
   const [highlightedField, setHighlightedField] = useState<string | null>(null);
+
+  const [collapsedErrorGroups, setCollapsedErrorGroups] = useState<string[]>([]);
 
   const clearCanvasSelectionArea = () => {
     setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
@@ -71,8 +72,9 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       setCollapsedTargetFiles([...targetFileIds]); 
       setOpenDropdownKey(null);
       setHighlightedField(null);
+      setCollapsedErrorGroups([]); 
     }
-  }, [resetTrigger]);
+  }, [resetTrigger, targetFileIds]);
 
   const wasDroppedInTarget = useRef(false);
   const unassignedNodes = nodes.filter((canvasNode) => !files.some((file) => file.nodeIds.includes(canvasNode.id)));
@@ -298,7 +300,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     } else if (err.isGlobal) {
       setSelectedNodeIds([]);
     }
-
+    
     if (err.isProjectTab) {
       setActiveTab('Project');
     } else {
@@ -396,6 +398,22 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     { value: 'AD-3', label: '가용성 도메인 3' }
   ];
 
+  const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
+  const nodeErrorsMap = new Map<string, typeof validationErrors>();
+  
+  validationErrors.forEach(e => {
+    if (!e.isGlobal && e.targetNodeId) {
+      if (!nodeErrorsMap.has(e.targetNodeId)) nodeErrorsMap.set(e.targetNodeId, []);
+      nodeErrorsMap.get(e.targetNodeId)!.push(e);
+    }
+  });
+
+  const toggleErrorGroup = (groupId: string) => {
+    setCollapsedErrorGroups(prev =>
+      prev.includes(groupId) ? prev.filter(id => id !== groupId) : [...prev, groupId]
+    );
+  };
+
   return (
     <aside className="right-sidebar" onClick={handleBackgroundClick}>
       <style>{`
@@ -414,6 +432,51 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           15% { box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.4); border-color: #e53e3e; background-color: #fff5f5; }
           80% { box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.4); border-color: #e53e3e; background-color: #fff5f5; }
           100% { box-shadow: 0 0 0 0px rgba(229, 62, 62, 0); border-color: #cbd5e0; background-color: white; }
+        }
+
+        .validation-content::-webkit-scrollbar { display: none; }
+        .validation-content { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .error-group {
+          margin-bottom: 8px;
+          border: 1px solid #fbd5d5;
+          border-radius: 8px;
+          background: #fafafa;
+          overflow: hidden;
+        }
+        .error-group-header {
+          padding: 10px 12px;
+          font-size: 13px;
+          font-weight: bold;
+          color: #9b2c2c;
+          background: #fdf2f2;
+          display: flex;
+          align-items: center;
+          cursor: pointer;
+          user-select: none;
+          transition: 0.2s;
+        }
+        .error-group-header:hover {
+          background: #fce8e8;
+        }
+        .error-group-content {
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          background: white;
+          border-top: 1px solid #fbd5d5;
+        }
+        .error-box {
+          background-color: #fff5f5;
+          border: 1px solid #fed7d7;
+          border-radius: 6px;
+          padding: 10px;
+          transition: 0.2s;
+        }
+        .error-box:hover {
+          background-color: #feebc8;
+          border-color: #fbd38d;
         }
       `}</style>
       <div className="minimap-area" onClick={(e) => e.stopPropagation()}>
@@ -870,15 +933,58 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           <div className="validation-content">
             {validationErrors.length > 0 ? (
               <div className="error-list">
-                {validationErrors.map((err, idx) => (
-                  <div key={idx} className="error-box" onClick={() => handleErrorClick(err)} style={{ cursor: 'pointer' }}>
-                    <div className="error-header">
-                      <div className="error-icon-circle">X</div>
-                      <span className="error-name">{err.name}</span>
+                {globalErrors.length > 0 && (
+                  <div className="error-group">
+                    <div className="error-group-header" onClick={() => toggleErrorGroup('global')}>
+                      <span className="toggle-icon" style={{ marginRight: '8px', fontSize: '10px', color: '#9b2c2c' }}>
+                        {collapsedErrorGroups.includes('global') ? '▶' : '▼'}
+                      </span>
+                      프로젝트 & 클라우드 설정
                     </div>
-                    <div className="error-desc">{err.desc}</div>
+                    {!collapsedErrorGroups.includes('global') && (
+                      <div className="error-group-content">
+                        {globalErrors.map((err, idx) => (
+                          <div key={idx} className="error-box" onClick={() => handleErrorClick(err)} style={{ cursor: 'pointer' }}>
+                            <div className="error-header">
+                              <div className="error-icon-circle">X</div>
+                              <span className="error-name">{err.name}</span>
+                            </div>
+                            <div className="error-desc">{err.desc}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
+                )}
+
+                {Array.from(nodeErrorsMap.entries()).map(([nodeId, errs]) => {
+                  const nodeName = nodes.find(n => n.id === nodeId)?.name || '알 수 없는 노드';
+                  const isCollapsed = collapsedErrorGroups.includes(nodeId);
+                  
+                  return (
+                    <div key={nodeId} className="error-group">
+                      <div className="error-group-header" onClick={() => toggleErrorGroup(nodeId)}>
+                        <span className="toggle-icon" style={{ marginRight: '8px', fontSize: '10px', color: '#9b2c2c' }}>
+                          {isCollapsed ? '▶' : '▼'}
+                        </span>
+                        {nodeName} (노드)
+                      </div>
+                      {!isCollapsed && (
+                        <div className="error-group-content">
+                          {errs.map((err, idx) => (
+                            <div key={idx} className="error-box" onClick={() => handleErrorClick(err)} style={{ cursor: 'pointer' }}>
+                              <div className="error-header">
+                                <div className="error-icon-circle">X</div>
+                                <span className="error-name">{err.name}</span>
+                              </div>
+                              <div className="error-desc">{err.desc}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="success-container">

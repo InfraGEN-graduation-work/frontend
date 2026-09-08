@@ -97,11 +97,13 @@ export default function Home() {
 
         const userData = await userRes.json();
         if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
+          const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
           setUserInfo({ 
             nickname: userData.result.nickname, 
             email: userData.result.email,
-            provider: userData.result.provider || 'LOCAL' 
+            provider: String(rawProvider).toUpperCase()
           });
+          
           if(userData.result.autoSaveEnabled !== undefined) {
             setIsAutoSaveEnabled(userData.result.autoSaveEnabled);
           }
@@ -361,7 +363,7 @@ export default function Home() {
 
   const hasProfileChanges = 
     editProfileForm.nickname !== userInfo.nickname || 
-    editProfileForm.password !== '';
+    (userInfo.provider !== 'KAKAO' && editProfileForm.password !== '');
 
   const handleUpdateUserInfo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -371,22 +373,23 @@ export default function Home() {
       return;
     }
 
-    if (editProfileForm.password && editProfileForm.password.length < 8) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
-      return;
-    }
-
-    if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
-      return;
+    if (userInfo.provider !== 'KAKAO') {
+      if (editProfileForm.password && editProfileForm.password.length < 8) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
+        return;
+      }
+      if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
+        return;
+      }
     }
 
     try {
-
       const payload: any = {
         nickname: editProfileForm.nickname,
       };
-      if (editProfileForm.password) {
+
+      if (userInfo.provider !== 'KAKAO' && editProfileForm.password) {
         payload.password = editProfileForm.password;
       }
       
@@ -400,14 +403,15 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (!res.ok || !isSuccess) {
-        throw new Error('SERVER_ERROR');
+        const errorMsg = data.message || (typeof data.result === 'string' ? data.result : `서버 연동 오류 (${res.status})`);
+        throw new Error(errorMsg);
       }
 
       setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
       setIsUserInfoModalOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
     } catch (err: any) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '예기치 않은 서버 오류가 발생했습니다.' }));
       console.error('Update User Info Error:', err);
     }
   };
@@ -420,7 +424,8 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (!res.ok || !isSuccess) {
-        throw new Error('SERVER_ERROR');
+        const errorMsg = data.message || (typeof data.result === 'string' ? data.result : `서버 연동 오류 (${res.status})`);
+        throw new Error(errorMsg);
       }
 
       setIsWithdrawConfirmOpen(false);
@@ -433,7 +438,7 @@ export default function Home() {
 
     } catch (err: any) {
       setIsWithdrawConfirmOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '예기치 않은 서버 오류가 발생했습니다.' }));
       console.error('Withdrawal Error:', err);
     }
   };
