@@ -199,10 +199,10 @@ export default function Home() {
         setProjects(projects.filter((p) => p.projectId !== projectToDelete));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 삭제되었습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     } finally {
       setProjectToDelete(null);
     }
@@ -334,7 +334,7 @@ export default function Home() {
       setIsSelectMode(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: `${selectedIds.length}개의 프로젝트가 삭제되었습니다.` }));
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     } finally {
       setIsBulkDeleteConfirmOpen(false);
     }
@@ -382,8 +382,8 @@ export default function Home() {
     }
 
     try {
+
       const payload: any = {
-        email: userInfo.email, 
         nickname: editProfileForm.nickname,
       };
       if (editProfileForm.password) {
@@ -391,7 +391,7 @@ export default function Home() {
       }
       
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload)
       });
@@ -407,7 +407,7 @@ export default function Home() {
       setIsUserInfoModalOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
     } catch (err: any) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
       console.error('Update User Info Error:', err);
     }
   };
@@ -433,7 +433,7 @@ export default function Home() {
 
     } catch (err: any) {
       setIsWithdrawConfirmOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
       console.error('Withdrawal Error:', err);
     }
   };
