@@ -136,7 +136,7 @@ const MainPage: React.FC = () => {
     sshAuthorizedKeys: ''
   });
 
-  const [, setSelectedCategory] = useState<string | null>(null);
+  //const [, setSelectedCategory] = useState<string | null>(null);
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
   const [zoomLevel, setZoomLevel] = useState(1);
   
