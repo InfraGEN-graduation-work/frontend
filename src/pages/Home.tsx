@@ -143,14 +143,36 @@ export default function Home() {
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
       try {
+        // 백엔드 스펙에 맞게 불필요한 id 값 제거 및 properties 파싱 처리
+        const cleanNodes = editNodes.map((n: any) => {
+          let props = n.properties || {};
+          if (typeof props === 'string') {
+            try { props = JSON.parse(props); } catch (e) {}
+          }
+          return {
+            nodeId: n.nodeId,
+            nodeName: n.nodeName,
+            componentType: n.componentType,
+            positionX: n.positionX,
+            positionY: n.positionY,
+            properties: props
+          };
+        });
+
+        const cleanEdges = editEdges.map((e: any) => ({
+          sourceNodeId: e.sourceNodeId,
+          targetNodeId: e.targetNodeId
+        }));
+
         const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: newTitle,
             description: newDesc,
-            nodes: editNodes,
-            edges: editEdges
+            nodes: cleanNodes,
+            edges: cleanEdges,
+            baseVersion: 0
           }),
         });
 
@@ -163,8 +185,12 @@ export default function Home() {
               : p
           ));
           window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 정보가 수정되었습니다.' }));
+        } else {
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '수정에 실패했습니다.' }));
         }
-      } catch (err) {}
+      } catch (err) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+      }
     }
   };
 
@@ -224,7 +250,14 @@ export default function Home() {
       const data = await res.json();
       
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setHistoryList(data.result?.historyList || []);
+        // 백엔드가 배열을 반환하든 객체로 반환하든 모두 파싱 가능하도록 예외 처리
+        let list = [];
+        if (Array.isArray(data.result)) {
+          list = data.result;
+        } else if (data.result?.historyList) {
+          list = data.result.historyList;
+        }
+        setHistoryList(list);
       } else {
         setHistoryList([]);
       }
@@ -266,14 +299,21 @@ export default function Home() {
       const allFiles: any[] = [];
       const folderMap = new Map();
 
+      // 1. 우선 노드의 properties에 생성된 코드가 남아있는지 검사
       nodes.forEach((n: any) => {
-        const props = n.properties || {};
-        if (props.fileId && String(props.fileIsGenerated) === 'true') {
+        let props = n.properties || {};
+        if (typeof props === 'string') {
+          try { props = JSON.parse(props); } catch (err) {}
+        }
+        
+        if (props.fileId && (String(props.fileIsGenerated) === 'true' || props.fileIsGenerated === true)) {
           if (!folderMap.has(props.fileId)) {
             let parsedFiles = [];
             try {
-              parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : [];
-            } catch(e) {}
+              parsedFiles = typeof props.fileGeneratedCodes === 'string' 
+                ? JSON.parse(props.fileGeneratedCodes) 
+                : (props.fileGeneratedCodes || []);
+            } catch(err) {}
             
             folderMap.set(props.fileId, true);
             
@@ -288,6 +328,38 @@ export default function Home() {
           }
         }
       });
+
+      // 2. 만약 백엔드에서 properties의 텍스트 길이를 잘라버려서 코드가 로드되지 않았다면, 
+      // 최근 저장된 활동 기록(History)을 직접 조회하여 생성된 코드 파일을 가져오는 강력한 폴백(Fallback) 로직 실행
+      if (allFiles.length === 0) {
+        try {
+          const histRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
+          const histData = await histRes.json();
+          let histList = Array.isArray(histData.result) ? histData.result : (histData.result?.historyList || []);
+          
+          // 최신순 정렬
+          histList = histList.sort((a: any, b: any) => b.historyId - a.historyId);
+          
+          for (const hist of histList) {
+            const detailRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories/${hist.historyId}`);
+            const detailData = await detailRes.json();
+            const detailResult = detailData.result || {};
+            const genFiles = detailResult.generatedFileList || detailResult.files || [];
+            
+            if (genFiles.length > 0) {
+              genFiles.forEach((gf: any, idx: number) => {
+                allFiles.push({
+                  fileId: `hist-${hist.historyId}-${idx}`,
+                  folderName: '생성된 인프라 코드',
+                  fileName: gf.fileName,
+                  content: gf.content
+                });
+              });
+              break; // 가장 최신 코드를 찾았으므로 탐색 종료
+            }
+          }
+        } catch(e) {}
+      }
 
       if (allFiles.length === 0) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 코드 내역이 없습니다. (에디터에서 Generate를 진행해주세요)' }));
@@ -785,12 +857,12 @@ export default function Home() {
                 
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#4a5568' }}>생성된 코드 파일 내역</div>
                 <FileListWrapper>
-                  {historyDetail.generatedFileList && historyDetail.generatedFileList.length > 0 ? (
-                    historyDetail.generatedFileList.map((file: any) => (
-                      <FileBlock key={file.fileId}>
+                  {((historyDetail.generatedFileList && historyDetail.generatedFileList.length > 0) || (historyDetail.files && historyDetail.files.length > 0)) ? (
+                    (historyDetail.generatedFileList || historyDetail.files).map((file: any, idx: number) => (
+                      <FileBlock key={file.fileId || idx}>
                         <FileHeader>
                           <span>{file.fileName}</span>
-                          <span style={{ color: '#a0aec0' }}>{file.fileSize} Bytes</span>
+                          {file.fileSize && <span style={{ color: '#a0aec0' }}>{file.fileSize} Bytes</span>}
                         </FileHeader>
                         <FileContent>{file.content}</FileContent>
                       </FileBlock>

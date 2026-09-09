@@ -136,7 +136,7 @@ const MainPage: React.FC = () => {
     sshAuthorizedKeys: ''
   });
 
-  //const [, setSelectedCategory] = useState<string | null>(null);
+  const [, setSelectedCategory] = useState<string | null>(null);
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
   const [zoomLevel, setZoomLevel] = useState(1);
   
@@ -651,7 +651,7 @@ const MainPage: React.FC = () => {
       rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []); rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
       return {
         nodeId: n.id, 
-        nodeName: n.name,
+        // nodeName 속성 백엔드 스펙에 없으므로 파싱 에러 방지를 위해 제외
         componentType: n.type.toUpperCase().replace(/ /g, '_'),
         positionX: Math.round(n.x),
         positionY: Math.round(n.y),
@@ -687,7 +687,8 @@ const MainPage: React.FC = () => {
           title: projectName,
           description: projectDescription,
           nodes: mappedNodes,
-          edges: mappedEdges
+          edges: mappedEdges,
+          baseVersion: 0 // 백엔드 필수 요구값 추가
         })
       });
 
@@ -739,7 +740,13 @@ const MainPage: React.FC = () => {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges })
+        body: JSON.stringify({ 
+          title: newName, 
+          description: projectDescription, 
+          nodes: mappedNodes, 
+          edges: mappedEdges, 
+          baseVersion: 0 // 백엔드 필수 요구값 추가
+        })
       });
       const data = await res.json();
       if (!res.ok || !(data.isSuccess ?? data.is_success)) {
@@ -789,7 +796,7 @@ const MainPage: React.FC = () => {
         await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges })
+          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: 0 })
         });
 
         const updatedFilesList = [...files];
@@ -804,6 +811,7 @@ const MainPage: React.FC = () => {
             deploymentOption: cloudProvider, 
             includeLocalSpec: includeLocal,
             deploymentTarget: cloudProvider === 'AWS' ? {
+              deploymentOption: 'AWS', // JSON 파싱용 필수 구분자 추가
               region: cloudSettings.region || 'ap-northeast-2',
               vpcName: cloudSettings.vpcName,
               subnetName: cloudSettings.subnetName,
@@ -818,6 +826,7 @@ const MainPage: React.FC = () => {
               adminCidr: cloudSettings.adminCidr,
               appCidr: cloudSettings.appCidr
             } : {
+              deploymentOption: 'OCI', // JSON 파싱용 필수 구분자 추가
               region: cloudSettings.region || 'ap-seoul-1',
               vcnName: cloudSettings.vpcName,
               subnetName: cloudSettings.subnetName,
@@ -875,7 +884,7 @@ const MainPage: React.FC = () => {
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges })
+            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: 0 })
           });
         } else { alert(errorMsg); setAppMode('editor'); }
       } catch (err) { alert('서버 오류가 발생했습니다.'); setAppMode('editor'); }
