@@ -7,9 +7,9 @@ import { useAuth } from "../contexts/AuthContext";
 
 const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "1d3c47d4d92cec1710ef19ae5625d985";
 
-const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "http://localhost:5173/";
+const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "https://infragen1.vercel.app/";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
 
 const KAKAO_AUTH_URL =
   `https://kauth.kakao.com/oauth/authorize` +

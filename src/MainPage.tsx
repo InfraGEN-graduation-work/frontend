@@ -11,7 +11,7 @@ import type { NodeData, SelectionArea, Edge, FileGroup, CloudProvider, CloudSett
 import Tutorial from './components/Tutorial';
 import { useAuth } from './contexts/AuthContext';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://infragen.kro.kr/api/v1';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
 
 interface HistoryState {
   nodes: NodeData[];
@@ -136,7 +136,7 @@ const MainPage: React.FC = () => {
     sshAuthorizedKeys: ''
   });
 
-  const [, setSelectedCategory] = useState<string | null>(null);
+  //const [, setSelectedCategory] = useState<string | null>(null);
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
   const [zoomLevel, setZoomLevel] = useState(1);
   

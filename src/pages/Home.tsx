@@ -6,7 +6,7 @@ import { saveAs } from 'file-saver';
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://infragen.kro.kr/api/v1';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
 
 interface Project {
   projectId: number;
