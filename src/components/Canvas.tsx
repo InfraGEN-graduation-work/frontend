@@ -24,12 +24,14 @@ interface CanvasProps {
   focusNodeId: string | null;
   setFocusNodeId: React.Dispatch<React.SetStateAction<string | null>>;
   resetTrigger: number;
+  setActiveTab: React.Dispatch<React.SetStateAction<'Project' | 'Settings' | 'Validation'>>;
+  setShowRightSidebar: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
-  focusNodeId, setFocusNodeId, resetTrigger
+  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -296,6 +298,11 @@ const Canvas: React.FC<CanvasProps> = ({
            setSelectedFileId(null);
            scrollToNode(targetNode);
         }
+        
+        if (!isSelectMode) {
+          setActiveTab('Settings');
+          setShowRightSidebar(true);
+        }
       }
 
       setStartMousePos(coords);
@@ -450,23 +457,30 @@ const Canvas: React.FC<CanvasProps> = ({
               const x2 = t.x + 90;
               const y2 = t.y + 40;
               
-              const midX = (x1 + x2) / 2;
-              const midY = (y1 + y2) / 2;
-              const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
-              const isSelected = selectedEdgeId === edge.id;
-
               const dx = x2 - x1;
               const dy = y2 - y1;
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
-              
+              const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+              const isSelected = selectedEdgeId === edge.id;
+
               const tx = 90 / Math.abs(dx || 0.001);
               const ty = 40 / Math.abs(dy || 0.001);
-              const tRatio = Math.min(tx, ty);
+              const tRatio = Math.min(tx, ty, 0.45);
 
-              const pullBack = Math.min(tRatio + (6 / len), 1); 
+              const startX = x1 + tRatio * dx;
+              const startY = y1 + tRatio * dy;
+
+              const endX = x2 - tRatio * dx;
+              const endY = y2 - tRatio * dy;
+
+              const arrowX = endX - (6 * dx / len);
+              const arrowY = endY - (6 * dy / len);
+
+              const lineEndX = endX - (10 * dx / len);
+              const lineEndY = endY - (10 * dy / len);
               
-              const arrowX = x2 - pullBack * dx;
-              const arrowY = y2 - pullBack * dy;
+              const midX = (startX + lineEndX) / 2;
+              const midY = (startY + lineEndY) / 2;
 
               return (
                 <g key={edge.id}>
@@ -482,7 +496,7 @@ const Canvas: React.FC<CanvasProps> = ({
                   />
                   
                   <line 
-                    x1={x1} y1={y1} x2={x2} y2={y2} 
+                    x1={startX} y1={startY} x2={lineEndX} y2={lineEndY} 
                     stroke={isSelected ? "#28b4ad" : "#cbd5e0"} 
                     strokeWidth={isSelected ? "3" : "2"} 
                     strokeDasharray="4" 
@@ -528,17 +542,26 @@ const Canvas: React.FC<CanvasProps> = ({
               const x2 = tempEdgeEnd.x;
               const y2 = tempEdgeEnd.y;
               
-              const angle = Math.atan2(y2 - y1, x2 - x1) * (180 / Math.PI);
-
               const dx = x2 - x1;
               const dy = y2 - y1;
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
-              const arrowX = x2 - (6 / len) * dx;
-              const arrowY = y2 - (6 / len) * dy;
+              const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+              const tx = 90 / Math.abs(dx || 0.001);
+              const ty = 40 / Math.abs(dy || 0.001);
+              const tRatio = Math.min(tx, ty, 0.9); 
+
+              const startX = x1 + tRatio * dx;
+              const startY = y1 + tRatio * dy;
+
+              const arrowX = x2 - (6 * dx / len);
+              const arrowY = y2 - (6 * dy / len);
+              const lineEndX = x2 - (10 * dx / len);
+              const lineEndY = y2 - (10 * dy / len);
 
               return (
                 <g>
-                  <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" style={{ pointerEvents: 'none' }} />
+                  <line x1={startX} y1={startY} x2={lineEndX} y2={lineEndY} stroke="#28b4ad" strokeWidth="2" strokeDasharray="4" style={{ pointerEvents: 'none' }} />
                   <polygon
                     points="-6,-6 6,0 -6,6"
                     fill="#28b4ad"

@@ -145,9 +145,14 @@ export default function Home() {
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
       try {
-        const fetchRes = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`);
-        const currentData = await fetchRes.json();
-        const currentVersion = currentData.result?.baseVersion ?? currentData.result?.graphVersion ?? currentData.result?.version ?? 0;
+        let currentVersion = 0;
+        try {
+          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}/collaboration`);
+          if (collabRes.ok) {
+            const collabData = await collabRes.json();
+            currentVersion = collabData.result?.graphVersion ?? 0;
+          }
+        } catch (e) {}
 
         const cleanNodes = editNodes.map((n: any) => {
           let props = n.properties || {};
@@ -458,10 +463,6 @@ export default function Home() {
     }
 
     if (userInfo.provider !== 'KAKAO') {
-      if (editProfileForm.password && editProfileForm.password.length < 8) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
-        return;
-      }
       if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
         return;
@@ -724,7 +725,7 @@ export default function Home() {
                   onChange={(e) => setNewDesc(e.target.value)}
                 />
               </InputGroup>
-              <ModalActions style={{ justifyContent: 'flex-end' }}>
+              <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
                 <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
                 <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
               </ModalActions>
@@ -741,7 +742,7 @@ export default function Home() {
               정말 이 프로젝트를 삭제하시겠습니까?<br />
               삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
             </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setProjectToDelete(null)}>취소</CancelBtn>
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmDeleteSingle}>삭제하기</SubmitBtn>
             </ModalActions>
@@ -757,7 +758,7 @@ export default function Home() {
               선택한 {selectedIds.length}개의 프로젝트를 정말 삭제하시겠습니까?<br />
               삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
             </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>삭제하기</SubmitBtn>
             </ModalActions>
@@ -803,7 +804,7 @@ export default function Home() {
                     <label>새 비밀번호</label>
                     <Input
                       type="password"
-                      placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
+                      placeholder="변경할 비밀번호를 입력하세요 (선택사항)"
                       value={editProfileForm.password}
                       onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
                     />
@@ -828,7 +829,7 @@ export default function Home() {
               
               <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: userInfo.provider === 'KAKAO' ? '30px' : '20px' }}>
                 <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
                   <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
                 </div>
@@ -845,7 +846,7 @@ export default function Home() {
             <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
               탈퇴 시 생성된 모든 프로젝트와 계정 정보가 완전히 삭제되며, 삭제된 데이터는 다시 복구할 수 없습니다.
             </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '8px', marginTop: 0 }}>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw}>탈퇴 확인</SubmitBtn>
             </ModalActions>
@@ -1471,18 +1472,20 @@ const Input = styled.input`
 `;
 
 const Select = styled.select`
-  width: 120px;
-  padding: 12px;
+  width: 90px;
+  padding: 10px 12px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  font-size: 14px;
-  color: #1a1a1a;
-  background: #fafafa;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  background: #f8f9fa;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.15s, background 0.15s;
-  font-family: inherit;
+  transition: 0.2s;
   cursor: pointer;
+  appearance: auto;
+  &:hover { background: #edf2f7; }
   &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
 `;
 

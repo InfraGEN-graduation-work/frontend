@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, FileGroup, Edge, SelectionArea, CloudProvider, CloudSettings } from '../types';
 import type { ViewportState } from '../MainPage';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 interface RightSideBarProps {
   nodes: NodeData[];
@@ -230,27 +232,33 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const handleDownloadItems = () => {
+    const hasFileSelected = files.some(f => checkedItems.has(f.id));
+    const hasNodeSelected = nodes.some(n => checkedItems.has(n.id));
+
+    if (!hasFileSelected && hasNodeSelected) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드가 생성된 파일 단위로만 다운로드 할 수 있습니다.' }));
+      return;
+    }
+
     const selectedFiles = files.filter(f => checkedItems.has(f.id));
     const filesWithCode = selectedFiles.filter(f => f.generatedFiles && f.generatedFiles.length > 0);
 
     if (filesWithCode.length > 0) {
+      const zip = new JSZip();
       filesWithCode.forEach(fileGroup => {
         const gFiles = fileGroup.generatedFiles || [];
-        if (gFiles.length > 0) {
-          gFiles.forEach(gf => {
-            const blob = new Blob([gf.content], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${fileGroup.name}_${gf.fileName}`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-          });
-        }
+        gFiles.forEach(gf => {
+          zip.file(`${fileGroup.name}_${gf.fileName}`, gf.content);
+        });
       });
-    } else alert("다운로드 할 수 없습니다. (먼저 코드를 Generate 해주세요)");
+
+      zip.generateAsync({ type: "blob" }).then(content => {
+        saveAs(content, "infragen-export.zip");
+        cancelSelectionMode(); 
+      });
+    } else {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 코드가 없습니다. (먼저 코드를 Generate 해주세요)' }));
+    }
   };
 
   const cancelSelectionMode = () => {
@@ -311,6 +319,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         setSelectedNodeIds([]); setSelectedFileId(null);
       } else {
         setSelectedNodeIds([nodeId]); setSelectedFileId(null); setFocusNodeId(nodeId);
+        setActiveTab('Settings');
       }
   };
 
@@ -503,7 +512,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           transition: 0.2s;
         }
         .error-box:hover {
-          background-color: #feebc8;
+          background: #feebc8;
           border-color: #fbd38d;
         }
       `}</style>

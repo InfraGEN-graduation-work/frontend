@@ -114,12 +114,12 @@ const MainPage: React.FC = () => {
 
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
-  
+
   const [baseVersion, setBaseVersion] = useState(0);
 
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('AWS');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
-
+  
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
     region: 'ap-northeast-2',
     vpcName: 'infragen-vpc',
@@ -203,7 +203,6 @@ const MainPage: React.FC = () => {
     });
   }, [nodes, edges, cloudProvider, includeLocal, cloudSettings, filesStructureDep]);
 
-
   const validationErrors: ValidationError[] = [];
   
   if (nodes.length === 0) {
@@ -263,17 +262,14 @@ const MainPage: React.FC = () => {
       else checkNameFormat(settings.username, '사용자 이름', 'username');
 
       if (!settings.userPassword) validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-      else if (settings.userPassword.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'userPassword' });
 
       if (!settings.rootPassword) validationErrors.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
-      else if (settings.rootPassword.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'rootPassword' });
     }
     
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
       
       if (!settings.password) validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
-      else if (settings.password.length < 8) validationErrors.push({ name: '비밀번호 길이 오류', desc: `'${node.name}' 노드의 [비밀번호]는 8자 이상이어야 합니다.`, targetNodeId: node.id, targetField: 'password' });
     }
     
     if (node.type === 'Spring Boot') {
@@ -361,7 +357,7 @@ const MainPage: React.FC = () => {
     const requiredOci = [
       { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
       { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-      { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
+      { key: 'securityListName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
       { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
       { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
       { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
@@ -416,7 +412,7 @@ const MainPage: React.FC = () => {
         if (isSuccess && data.result) {
           setProjectName(data.result.title);
           setProjectDescription(data.result.description || '');
-          
+
           setBaseVersion(data.result.baseVersion ?? data.result.graphVersion ?? data.result.version ?? 0);
 
           const fetchedNodes = data.result.nodes || [];
@@ -439,7 +435,6 @@ const MainPage: React.FC = () => {
             setIncludeLocal(loadedIncludeLocal);
             setCloudSettings(loadedCloudSettings);
           } else {
-
             if (navState?.initialProvider) {
               setCloudProvider(navState.initialProvider);
               if (navState.initialProvider === 'OCI') {
@@ -447,7 +442,7 @@ const MainPage: React.FC = () => {
                   ...prev,
                   region: 'ap-seoul-1',
                   instanceType: 'VM.Standard.E2.1.Micro',
-                  amiId: ''
+                  amiId: '' 
                 }));
               }
             }
@@ -697,6 +692,15 @@ const MainPage: React.FC = () => {
     if (!projectId) return;
     if (isAutoSave && !hasUnsavedChanges.current) return;
 
+    let currentVersion = 0;
+    try {
+      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+      if (collabRes.ok) {
+        const collabData = await collabRes.json();
+        currentVersion = collabData.result?.graphVersion ?? 0;
+      }
+    } catch (e) {}
+
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     try {
@@ -708,7 +712,7 @@ const MainPage: React.FC = () => {
           description: projectDescription,
           nodes: mappedNodes,
           edges: mappedEdges,
-          baseVersion: baseVersion 
+          baseVersion: currentVersion 
         })
       });
 
@@ -716,7 +720,7 @@ const MainPage: React.FC = () => {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
-        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? baseVersion + 1);
+        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? currentVersion + 1);
 
         if (activityLog.length > 0) {
           const combinedLogString = activityLog.join('\n');
@@ -758,6 +762,15 @@ const MainPage: React.FC = () => {
     setActivityLog(prev => [...prev, `[수정] 프로젝트 이름이 '${newName}'(으)로 변경되었습니다.`]);
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
+    let currentVersion = 0;
+    try {
+      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+      if (collabRes.ok) {
+        const collabData = await collabRes.json();
+        currentVersion = collabData.result?.graphVersion ?? 0;
+      }
+    } catch (e) {}
+
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'PUT',
@@ -767,13 +780,13 @@ const MainPage: React.FC = () => {
           description: projectDescription, 
           nodes: mappedNodes, 
           edges: mappedEdges, 
-          baseVersion: baseVersion 
+          baseVersion: currentVersion 
         })
       });
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
         hasUnsavedChanges.current = false;
-        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? baseVersion + 1);
+        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? currentVersion + 1);
       } else {
         alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
         setProjectName(previousName);
@@ -819,18 +832,25 @@ const MainPage: React.FC = () => {
 
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
         
-        let currentBaseVersion = baseVersion;
+        let currentVersion = 0;
+        try {
+          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+          if (collabRes.ok) {
+            const collabData = await collabRes.json();
+            currentVersion = collabData.result?.graphVersion ?? 0;
+          }
+        } catch (e) {}
 
         const preSaveRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentBaseVersion })
+          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentVersion })
         });
         
         const preSaveData = await preSaveRes.json();
         if (preSaveRes.ok && (preSaveData.isSuccess ?? preSaveData.is_success)) {
-           currentBaseVersion = preSaveData.result?.baseVersion ?? preSaveData.result?.graphVersion ?? preSaveData.result?.version ?? currentBaseVersion + 1;
-           setBaseVersion(currentBaseVersion);
+           currentVersion = preSaveData.result?.baseVersion ?? preSaveData.result?.graphVersion ?? preSaveData.result?.version ?? currentVersion + 1;
+           setBaseVersion(currentVersion);
         }
 
         const updatedFilesList = [...files];
@@ -918,12 +938,12 @@ const MainPage: React.FC = () => {
           const finalPutRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentBaseVersion })
+            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentVersion })
           });
 
           const finalPutData = await finalPutRes.json();
           if (finalPutRes.ok && (finalPutData.isSuccess ?? finalPutData.is_success)) {
-             setBaseVersion(finalPutData.result?.baseVersion ?? finalPutData.result?.graphVersion ?? finalPutData.result?.version ?? currentBaseVersion + 1);
+             setBaseVersion(finalPutData.result?.baseVersion ?? finalPutData.result?.graphVersion ?? finalPutData.result?.version ?? currentVersion + 1);
           }
         } else { alert(errorMsg); setAppMode('editor'); }
       } catch (err) { alert('서버 오류가 발생했습니다.'); setAppMode('editor'); }
@@ -1118,6 +1138,7 @@ const MainPage: React.FC = () => {
             selection={selection} setSelection={setSelection} saveHistory={saveHistory}
             markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
             setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
+            setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
           />
           
           {selectedFileId && (
@@ -1246,7 +1267,7 @@ const MainPage: React.FC = () => {
                 <div style={{color: '#718096'}}>- 생성할 폴더가 없습니다.</div>
               )}
             </div>
-            <div className="modal-actions">
+            <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsConfirmModalOpen(false)}>취소</button>
               <button className="modal-btn confirm" onClick={confirmGenerate}>생성</button>
             </div>
