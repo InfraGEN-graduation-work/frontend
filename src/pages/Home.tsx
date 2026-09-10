@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
+import type { CloudProvider } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
 
@@ -33,6 +34,7 @@ export default function Home() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [modalProvider, setModalProvider] = useState<CloudProvider>('AWS');
   
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
   const [editNodes, setEditNodes] = useState<any[]>([]);
@@ -137,18 +139,22 @@ export default function Home() {
         const data = await res.json();
         if (res.ok && (data.isSuccess ?? data.is_success)) {
           setModalMode(null);
-          navigate(`/project/${data.result.projectId}`);
+          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider } });
         }
       } catch (err) {}
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
       try {
-        // 백엔드 스펙에 맞게 불필요한 id 값 제거 및 properties 파싱 처리
+        const fetchRes = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`);
+        const currentData = await fetchRes.json();
+        const currentVersion = currentData.result?.baseVersion ?? currentData.result?.graphVersion ?? currentData.result?.version ?? 0;
+
         const cleanNodes = editNodes.map((n: any) => {
           let props = n.properties || {};
           if (typeof props === 'string') {
             try { props = JSON.parse(props); } catch (e) {}
           }
+          props.globalCloudProvider = modalProvider;
           return {
             nodeId: n.nodeId,
             nodeName: n.nodeName,
@@ -172,7 +178,7 @@ export default function Home() {
             description: newDesc,
             nodes: cleanNodes,
             edges: cleanEdges,
-            baseVersion: 0
+            baseVersion: currentVersion 
           }),
         });
 
@@ -208,6 +214,17 @@ export default function Home() {
         setEditNodes(data.result.nodes || []);
         setEditEdges(data.result.edges || []);
         setEditTargetId(proj.projectId);
+
+        const fetchedNodes = data.result.nodes || [];
+        let provider: CloudProvider = 'AWS';
+        if (fetchedNodes.length > 0) {
+          let props = fetchedNodes[0].properties || {};
+          if (typeof props === 'string') {
+            try { props = JSON.parse(props); } catch (e) {}
+          }
+          provider = props.globalCloudProvider || 'AWS';
+        }
+        setModalProvider(provider);
         setModalMode('edit');
       }
     } catch (err) {}
@@ -250,7 +267,6 @@ export default function Home() {
       const data = await res.json();
       
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        // 백엔드가 배열을 반환하든 객체로 반환하든 모두 파싱 가능하도록 예외 처리
         let list = [];
         if (Array.isArray(data.result)) {
           list = data.result;
@@ -299,7 +315,6 @@ export default function Home() {
       const allFiles: any[] = [];
       const folderMap = new Map();
 
-      // 1. 우선 노드의 properties에 생성된 코드가 남아있는지 검사
       nodes.forEach((n: any) => {
         let props = n.properties || {};
         if (typeof props === 'string') {
@@ -329,15 +344,12 @@ export default function Home() {
         }
       });
 
-      // 2. 만약 백엔드에서 properties의 텍스트 길이를 잘라버려서 코드가 로드되지 않았다면, 
-      // 최근 저장된 활동 기록(History)을 직접 조회하여 생성된 코드 파일을 가져오는 강력한 폴백(Fallback) 로직 실행
       if (allFiles.length === 0) {
         try {
           const histRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
           const histData = await histRes.json();
           let histList = Array.isArray(histData.result) ? histData.result : (histData.result?.historyList || []);
           
-          // 최신순 정렬
           histList = histList.sort((a: any, b: any) => b.historyId - a.historyId);
           
           for (const hist of histList) {
@@ -355,7 +367,7 @@ export default function Home() {
                   content: gf.content
                 });
               });
-              break; // 가장 최신 코드를 찾았으므로 탐색 종료
+              break; 
             }
           }
         } catch(e) {}
@@ -612,6 +624,7 @@ export default function Home() {
               <CreateBtn onClick={() => {
                 setNewTitle('');
                 setNewDesc('');
+                setModalProvider('AWS');
                 setModalMode('create');
               }}>+ 새 프로젝트</CreateBtn>
             </HeaderActions>
@@ -688,13 +701,20 @@ export default function Home() {
             <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
             <form onSubmit={handleSubmitProject}>
               <InputGroup>
-                <label>프로젝트 이름</label>
-                <Input
-                  autoFocus
-                  placeholder="예: My E-commerce Infra"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                />
+                <label>프로젝트 이름 및 클라우드 환경</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <Input
+                    autoFocus
+                    placeholder="예: My E-commerce Infra"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <Select value={modalProvider} onChange={(e) => setModalProvider(e.target.value as CloudProvider)}>
+                    <option value="AWS">AWS</option>
+                    <option value="OCI">OCI</option>
+                  </Select>
+                </div>
               </InputGroup>
               <InputGroup>
                 <label>설명 (선택)</label>
@@ -1448,6 +1468,22 @@ const Input = styled.input`
   box-sizing: border-box;
   &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
   &:disabled { background: #f8f9fa; cursor: not-allowed; }
+`;
+
+const Select = styled.select`
+  width: 120px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: #fafafa;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+  font-family: inherit;
+  cursor: pointer;
+  &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
 `;
 
 const TextArea = styled.textarea`

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import './MainPage.css';
 import Header from './components/Header';
@@ -105,6 +105,8 @@ const computeFileHash = (
 const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
+  const location = useLocation();
+  const navState = location.state as { initialProvider?: CloudProvider } | null;
   const { fetchWithAuth, isAutoSaveEnabled } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
@@ -112,31 +114,32 @@ const MainPage: React.FC = () => {
 
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
+  
+  const [baseVersion, setBaseVersion] = useState(0);
 
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('AWS');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
-  
+
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
     region: 'ap-northeast-2',
-    vpcName: '',
-    subnetName: '',
-    internetGatewayName: '',
-    routeTableName: '',
-    securityGroupName: '',
-    instanceName: '',
+    vpcName: 'infragen-vpc',
+    subnetName: 'infragen-subnet',
+    internetGatewayName: 'infragen-igw',
+    routeTableName: 'infragen-rt',
+    securityGroupName: 'infragen-sg',
+    instanceName: 'infragen-instance',
     vpcCidr: '10.0.0.0/16',
     subnetCidr: '10.0.1.0/24',
-    amiId: '',
+    amiId: 'ami-084e92d3e117f7692',
     instanceType: 't3.micro',
-    adminCidr: '',
-    appCidr: '',
-    hostnameLabel: '',
+    adminCidr: '0.0.0.0/0',
+    appCidr: '0.0.0.0/0',
+    hostnameLabel: 'infragenhost',
     compartmentId: '',
     availabilityDomain: 'AD-1',
     sshAuthorizedKeys: ''
   });
 
-  //const [, setSelectedCategory] = useState<string | null>(null);
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
   const [zoomLevel, setZoomLevel] = useState(1);
   
@@ -413,6 +416,8 @@ const MainPage: React.FC = () => {
         if (isSuccess && data.result) {
           setProjectName(data.result.title);
           setProjectDescription(data.result.description || '');
+          
+          setBaseVersion(data.result.baseVersion ?? data.result.graphVersion ?? data.result.version ?? 0);
 
           const fetchedNodes = data.result.nodes || [];
           
@@ -425,11 +430,27 @@ const MainPage: React.FC = () => {
             if (firstProps.globalCloudProvider) loadedCloudProvider = firstProps.globalCloudProvider as CloudProvider;
             if (firstProps.globalIncludeLocal !== undefined) loadedIncludeLocal = firstProps.globalIncludeLocal === 'true';
             if (firstProps.globalCloudSettings) {
-              try { loadedCloudSettings = JSON.parse(firstProps.globalCloudSettings); } catch(e) {}
+              try { 
+                const parsed = JSON.parse(firstProps.globalCloudSettings); 
+                loadedCloudSettings = { ...loadedCloudSettings, ...parsed }; 
+              } catch(e) {}
             }
             setCloudProvider(loadedCloudProvider);
             setIncludeLocal(loadedIncludeLocal);
             setCloudSettings(loadedCloudSettings);
+          } else {
+
+            if (navState?.initialProvider) {
+              setCloudProvider(navState.initialProvider);
+              if (navState.initialProvider === 'OCI') {
+                setCloudSettings(prev => ({
+                  ...prev,
+                  region: 'ap-seoul-1',
+                  instanceType: 'VM.Standard.E2.1.Micro',
+                  amiId: ''
+                }));
+              }
+            }
           }
 
           const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
@@ -651,7 +672,6 @@ const MainPage: React.FC = () => {
       rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []); rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
       return {
         nodeId: n.id, 
-        // nodeName 속성 백엔드 스펙에 없으므로 파싱 에러 방지를 위해 제외
         componentType: n.type.toUpperCase().replace(/ /g, '_'),
         positionX: Math.round(n.x),
         positionY: Math.round(n.y),
@@ -688,7 +708,7 @@ const MainPage: React.FC = () => {
           description: projectDescription,
           nodes: mappedNodes,
           edges: mappedEdges,
-          baseVersion: 0 // 백엔드 필수 요구값 추가
+          baseVersion: baseVersion 
         })
       });
 
@@ -696,6 +716,8 @@ const MainPage: React.FC = () => {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
+        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? baseVersion + 1);
+
         if (activityLog.length > 0) {
           const combinedLogString = activityLog.join('\n');
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`, {
@@ -745,14 +767,17 @@ const MainPage: React.FC = () => {
           description: projectDescription, 
           nodes: mappedNodes, 
           edges: mappedEdges, 
-          baseVersion: 0 // 백엔드 필수 요구값 추가
+          baseVersion: baseVersion 
         })
       });
       const data = await res.json();
-      if (!res.ok || !(data.isSuccess ?? data.is_success)) {
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        hasUnsavedChanges.current = false;
+        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? baseVersion + 1);
+      } else {
         alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
         setProjectName(previousName);
-      } else hasUnsavedChanges.current = false;
+      } 
     } catch (err) {
       alert('서버 오류가 발생했습니다.');
       setProjectName(previousName);
@@ -793,11 +818,20 @@ const MainPage: React.FC = () => {
         const progressInterval = setInterval(() => setGenProgress(prev => (prev >= 90 ? 90 : prev + 5)), 100);
 
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
-        await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+        
+        let currentBaseVersion = baseVersion;
+
+        const preSaveRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: 0 })
+          body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentBaseVersion })
         });
+        
+        const preSaveData = await preSaveRes.json();
+        if (preSaveRes.ok && (preSaveData.isSuccess ?? preSaveData.is_success)) {
+           currentBaseVersion = preSaveData.result?.baseVersion ?? preSaveData.result?.graphVersion ?? preSaveData.result?.version ?? currentBaseVersion + 1;
+           setBaseVersion(currentBaseVersion);
+        }
 
         const updatedFilesList = [...files];
         let hasError = false;
@@ -811,7 +845,7 @@ const MainPage: React.FC = () => {
             deploymentOption: cloudProvider, 
             includeLocalSpec: includeLocal,
             deploymentTarget: cloudProvider === 'AWS' ? {
-              deploymentOption: 'AWS', // JSON 파싱용 필수 구분자 추가
+              deploymentOption: 'AWS', 
               region: cloudSettings.region || 'ap-northeast-2',
               vpcName: cloudSettings.vpcName,
               subnetName: cloudSettings.subnetName,
@@ -826,7 +860,7 @@ const MainPage: React.FC = () => {
               adminCidr: cloudSettings.adminCidr,
               appCidr: cloudSettings.appCidr
             } : {
-              deploymentOption: 'OCI', // JSON 파싱용 필수 구분자 추가
+              deploymentOption: 'OCI', 
               region: cloudSettings.region || 'ap-seoul-1',
               vcnName: cloudSettings.vpcName,
               subnetName: cloudSettings.subnetName,
@@ -881,11 +915,16 @@ const MainPage: React.FC = () => {
           
           const finalMapped = getMappedCanvasData(updatedFilesList); 
           
-          await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+          const finalPutRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: 0 })
+            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentBaseVersion })
           });
+
+          const finalPutData = await finalPutRes.json();
+          if (finalPutRes.ok && (finalPutData.isSuccess ?? finalPutData.is_success)) {
+             setBaseVersion(finalPutData.result?.baseVersion ?? finalPutData.result?.graphVersion ?? finalPutData.result?.version ?? currentBaseVersion + 1);
+          }
         } else { alert(errorMsg); setAppMode('editor'); }
       } catch (err) { alert('서버 오류가 발생했습니다.'); setAppMode('editor'); }
     } else setAppMode('editor');
