@@ -355,9 +355,7 @@ const MainPage: React.FC = () => {
     const requiredOci = [
       { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
       { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-      // 에러의 원인이었던 securityListName 검사를 securityGroupName으로 수정 완료!
-      { key: 'securityGroupName', label: 'Security List Name' }, 
-      { key: 'instanceName', label: 'Instance Name' },
+      { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
       { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
       { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
       { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
@@ -834,16 +832,11 @@ const MainPage: React.FC = () => {
           }
         } catch (e) {}
 
-        const preSaveRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+        await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentVersion })
         });
-        
-        const preSaveData = await preSaveRes.json();
-        if (preSaveRes.ok && (preSaveData.isSuccess ?? preSaveData.is_success)) {
-           currentVersion = preSaveData.result?.baseVersion ?? preSaveData.result?.graphVersion ?? preSaveData.result?.version ?? currentVersion + 1;
-        }
 
         const updatedFilesList = [...files];
         let hasError = false;
