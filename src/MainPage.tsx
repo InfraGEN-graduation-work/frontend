@@ -115,8 +115,6 @@ const MainPage: React.FC = () => {
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
 
-  const [baseVersion, setBaseVersion] = useState(0);
-
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('AWS');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
   
@@ -202,6 +200,7 @@ const MainPage: React.FC = () => {
       return changed ? nextFiles : prevFiles;
     });
   }, [nodes, edges, cloudProvider, includeLocal, cloudSettings, filesStructureDep]);
+
 
   const validationErrors: ValidationError[] = [];
   
@@ -412,8 +411,6 @@ const MainPage: React.FC = () => {
         if (isSuccess && data.result) {
           setProjectName(data.result.title);
           setProjectDescription(data.result.description || '');
-
-          setBaseVersion(data.result.baseVersion ?? data.result.graphVersion ?? data.result.version ?? 0);
 
           const fetchedNodes = data.result.nodes || [];
           
@@ -720,8 +717,6 @@ const MainPage: React.FC = () => {
       const isSuccess = data.isSuccess ?? data.is_success;
 
       if (res.ok && isSuccess) {
-        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? currentVersion + 1);
-
         if (activityLog.length > 0) {
           const combinedLogString = activityLog.join('\n');
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`, {
@@ -784,13 +779,10 @@ const MainPage: React.FC = () => {
         })
       });
       const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        hasUnsavedChanges.current = false;
-        setBaseVersion(data.result?.baseVersion ?? data.result?.graphVersion ?? data.result?.version ?? currentVersion + 1);
-      } else {
+      if (!res.ok || !(data.isSuccess ?? data.is_success)) {
         alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
         setProjectName(previousName);
-      } 
+      } else hasUnsavedChanges.current = false;
     } catch (err) {
       alert('서버 오류가 발생했습니다.');
       setProjectName(previousName);
@@ -841,17 +833,11 @@ const MainPage: React.FC = () => {
           }
         } catch (e) {}
 
-        const preSaveRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+        await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentVersion })
         });
-        
-        const preSaveData = await preSaveRes.json();
-        if (preSaveRes.ok && (preSaveData.isSuccess ?? preSaveData.is_success)) {
-           currentVersion = preSaveData.result?.baseVersion ?? preSaveData.result?.graphVersion ?? preSaveData.result?.version ?? currentVersion + 1;
-           setBaseVersion(currentVersion);
-        }
 
         const updatedFilesList = [...files];
         let hasError = false;
@@ -935,16 +921,20 @@ const MainPage: React.FC = () => {
           
           const finalMapped = getMappedCanvasData(updatedFilesList); 
           
-          const finalPutRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+          let finalVersion = 0;
+          try {
+            const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+            if (collabRes.ok) {
+              const collabData = await collabRes.json();
+              finalVersion = collabData.result?.graphVersion ?? 0;
+            }
+          } catch (e) {}
+
+          await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentVersion })
+            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: finalVersion })
           });
-
-          const finalPutData = await finalPutRes.json();
-          if (finalPutRes.ok && (finalPutData.isSuccess ?? finalPutData.is_success)) {
-             setBaseVersion(finalPutData.result?.baseVersion ?? finalPutData.result?.graphVersion ?? finalPutData.result?.version ?? currentVersion + 1);
-          }
         } else { alert(errorMsg); setAppMode('editor'); }
       } catch (err) { alert('서버 오류가 발생했습니다.'); setAppMode('editor'); }
     } else setAppMode('editor');
