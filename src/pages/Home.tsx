@@ -244,17 +244,59 @@ export default function Home() {
   const confirmDeleteSingle = async () => {
     if (!projectToDelete) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { method: 'DELETE' });
-      if (res.ok) {
-        setProjects(projects.filter((p) => p.projectId !== projectToDelete));
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { 
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
+        setProjects(prev => prev.filter((p) => p.projectId !== projectToDelete));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 삭제되었습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 삭제에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     } finally {
       setProjectToDelete(null);
+    }
+  };
+
+  const confirmBulkDelete = async () => {
+    try {
+      const results = await Promise.all(
+        selectedIds.map(async (id) => {
+          try {
+            const res = await fetchWithAuth(`${BASE_URL}/projects/${id}`, { 
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json().catch(() => ({}));
+            const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+            return { id, isSuccess };
+          } catch(e) {
+            return { id, isSuccess: false };
+          }
+        })
+      );
+      
+      const successIds = results.filter(r => r.isSuccess).map(r => r.id);
+      
+      if (successIds.length > 0) {
+        setProjects(prev => prev.filter(p => !successIds.includes(p.projectId)));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${successIds.length}개의 프로젝트가 삭제되었습니다.` }));
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 삭제에 실패했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+    } finally {
+      setSelectedIds([]);
+      setIsSelectMode(false);
+      setIsBulkDeleteConfirmOpen(false);
     }
   };
 
@@ -415,22 +457,6 @@ export default function Home() {
     setIsBulkDeleteConfirmOpen(true);
   };
 
-  const confirmBulkDelete = async () => {
-    try {
-      await Promise.all(
-        selectedIds.map(id => fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' }))
-      );
-      setProjects(projects.filter(p => !selectedIds.includes(p.projectId)));
-      setSelectedIds([]);
-      setIsSelectMode(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: `${selectedIds.length}개의 프로젝트가 삭제되었습니다.` }));
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
-    } finally {
-      setIsBulkDeleteConfirmOpen(false);
-    }
-  };
-
   const handleCardClick = (projectId: number) => {
     if (isSelectMode) {
       setSelectedIds(prev => prev.includes(projectId) ? prev.filter(id => id !== projectId) : [...prev, projectId]);
@@ -463,6 +489,10 @@ export default function Home() {
     }
 
     if (userInfo.provider !== 'KAKAO') {
+      if (editProfileForm.password && editProfileForm.password.length < 8) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
+        return;
+      }
       if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
         return;
@@ -804,7 +834,7 @@ export default function Home() {
                     <label>새 비밀번호</label>
                     <Input
                       type="password"
-                      placeholder="변경할 비밀번호를 입력하세요 (선택사항)"
+                      placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
                       value={editProfileForm.password}
                       onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
                     />
