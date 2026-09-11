@@ -49,6 +49,11 @@ const Canvas: React.FC<CanvasProps> = ({
   const viewportRef = useRef<HTMLElement>(null);
   const lastPointerRef = useRef<{ clientX: number, clientY: number } | null>(null);
 
+  const NODE_W = 210;
+  const NODE_H = 66;
+  const HW = NODE_W / 2;
+  const HH = NODE_H / 2;
+
   const stateRef = useRef({
     startMousePos, initialPositions, initialSelectionPos, nodes, zoomLevel,
     isGroupDragging, draggingNodeId, isAreaSelecting, drawingEdgeSource
@@ -96,8 +101,8 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const scrollToNode = (node: NodeData) => {
     if (viewportRef.current) {
-      const nodeCenterX = (node.x + 90) * zoomLevel;
-      const nodeCenterY = (node.y + 40) * zoomLevel;
+      const nodeCenterX = (node.x + HW) * zoomLevel;
+      const nodeCenterY = (node.y + HH) * zoomLevel;
       const x = nodeCenterX - (viewportRef.current.clientWidth / 2);
       const y = nodeCenterY - (viewportRef.current.clientHeight / 2);
       viewportRef.current.scrollTo({ left: x, top: y, behavior: 'smooth' });
@@ -173,8 +178,8 @@ const Canvas: React.FC<CanvasProps> = ({
         const pos = state.initialPositions[id];
         minGroupX = Math.min(minGroupX, pos.x);
         minGroupY = Math.min(minGroupY, pos.y);
-        maxGroupX = Math.max(maxGroupX, pos.x + 180);
-        maxGroupY = Math.max(maxGroupY, pos.y + 80);
+        maxGroupX = Math.max(maxGroupX, pos.x + NODE_W);
+        maxGroupY = Math.max(maxGroupY, pos.y + NODE_H);
       });
 
       const minDx = -minGroupX;
@@ -199,9 +204,9 @@ const Canvas: React.FC<CanvasProps> = ({
       const pos = state.initialPositions[state.draggingNodeId];
       if (pos) {
         const minDx = -pos.x;
-        const maxDx = maxW - (pos.x + 180);
+        const maxDx = maxW - (pos.x + NODE_W);
         const minDy = -pos.y;
-        const maxDy = maxH - (pos.y + 80);
+        const maxDy = maxH - (pos.y + NODE_H);
 
         const clampedDx = Math.max(minDx, Math.min(dx, maxDx));
         const clampedDy = Math.max(minDy, Math.min(dy, maxDy));
@@ -223,7 +228,7 @@ const Canvas: React.FC<CanvasProps> = ({
       
       setSelection({ x: newX, y: newY, width: newW, height: newH, active: true });
 
-      const idsInside = state.nodes.filter(n => n.x >= newX && n.x + 180 <= newX + newW && n.y >= newY && n.y + 80 <= newY + newH).map(n => n.id);
+      const idsInside = state.nodes.filter(n => n.x >= newX && n.x + NODE_W <= newX + newW && n.y >= newY && n.y + NODE_H <= newY + newH).map(n => n.id);
       setSelectedNodeIds(idsInside);
     }
     
@@ -275,7 +280,7 @@ const Canvas: React.FC<CanvasProps> = ({
       return;
     }
 
-    const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
+    const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + NODE_W && coords.y >= n.y && coords.y <= n.y + NODE_H);
 
     if (targetNode) {
       saveHistory();
@@ -348,7 +353,7 @@ const Canvas: React.FC<CanvasProps> = ({
     const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
     
     if (drawingEdgeSource && e.button !== 2) {
-      const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
+      const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + NODE_W && coords.y >= n.y && coords.y <= n.y + NODE_H);
       if (targetNode && targetNode.id !== drawingEdgeSource) {
         
         const exists = edges.some(edge => 
@@ -377,7 +382,7 @@ const Canvas: React.FC<CanvasProps> = ({
     e.preventDefault();
     if (!viewportRef.current) return;
     const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
-    const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + 180 && coords.y >= n.y && coords.y <= n.y + 80);
+    const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + NODE_W && coords.y >= n.y && coords.y <= n.y + NODE_H);
     
     if (drawingEdgeSource) {
       if (targetNode && targetNode.id !== drawingEdgeSource) {
@@ -415,10 +420,10 @@ const Canvas: React.FC<CanvasProps> = ({
       const maxW = contentEl ? contentEl.offsetWidth : 5000;
       const maxH = contentEl ? contentEl.offsetHeight : 5000;
       
-      const rawX = coords.x - 90;
-      const rawY = coords.y - 40;
-      const clampedX = Math.max(0, Math.min(rawX, maxW - 180));
-      const clampedY = Math.max(0, Math.min(rawY, maxH - 80));
+      const rawX = coords.x - HW;
+      const rawY = coords.y - HH;
+      const clampedX = Math.max(0, Math.min(rawX, maxW - NODE_W));
+      const clampedY = Math.max(0, Math.min(rawY, maxH - NODE_H));
 
       addNode(nodeType, nodeType, clampedX, clampedY);
     }
@@ -452,10 +457,10 @@ const Canvas: React.FC<CanvasProps> = ({
               const t = nodes.find(n => n.id === edge.targetId);
               if (!s || !t) return null;
               
-              const x1 = s.x + 90;
-              const y1 = s.y + 40;
-              const x2 = t.x + 90;
-              const y2 = t.y + 40;
+              const x1 = s.x + HW;
+              const y1 = s.y + HH;
+              const x2 = t.x + HW;
+              const y2 = t.y + HH;
               
               const dx = x2 - x1;
               const dy = y2 - y1;
@@ -463,9 +468,9 @@ const Canvas: React.FC<CanvasProps> = ({
               const angle = Math.atan2(dy, dx) * (180 / Math.PI);
               const isSelected = selectedEdgeId === edge.id;
 
-              const tx = 90 / Math.abs(dx || 0.001);
-              const ty = 40 / Math.abs(dy || 0.001);
-              const tRatio = Math.min(tx, ty, 0.45);
+              const tx = HW / Math.abs(dx || 0.001);
+              const ty = HH / Math.abs(dy || 0.001);
+              const tRatio = Math.min(tx, ty);
 
               const startX = x1 + tRatio * dx;
               const startY = y1 + tRatio * dy;
@@ -476,8 +481,8 @@ const Canvas: React.FC<CanvasProps> = ({
               const arrowX = endX - (6 * dx / len);
               const arrowY = endY - (6 * dy / len);
 
-              const lineEndX = endX - (10 * dx / len);
-              const lineEndY = endY - (10 * dy / len);
+              const lineEndX = endX - (12 * dx / len);
+              const lineEndY = endY - (12 * dy / len);
               
               const midX = (startX + lineEndX) / 2;
               const midY = (startY + lineEndY) / 2;
@@ -537,8 +542,8 @@ const Canvas: React.FC<CanvasProps> = ({
               const s = nodes.find(n => n.id === drawingEdgeSource);
               if (!s) return null;
               
-              const x1 = s.x + 90;
-              const y1 = s.y + 40;
+              const x1 = s.x + HW;
+              const y1 = s.y + HH;
               const x2 = tempEdgeEnd.x;
               const y2 = tempEdgeEnd.y;
               
@@ -547,17 +552,17 @@ const Canvas: React.FC<CanvasProps> = ({
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
               const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-              const tx = 90 / Math.abs(dx || 0.001);
-              const ty = 40 / Math.abs(dy || 0.001);
-              const tRatio = Math.min(tx, ty, 0.9); 
+              const tx = HW / Math.abs(dx || 0.001);
+              const ty = HH / Math.abs(dy || 0.001);
+              const tRatio = Math.min(tx, ty, 0.95); 
 
               const startX = x1 + tRatio * dx;
               const startY = y1 + tRatio * dy;
 
               const arrowX = x2 - (6 * dx / len);
               const arrowY = y2 - (6 * dy / len);
-              const lineEndX = x2 - (10 * dx / len);
-              const lineEndY = y2 - (10 * dy / len);
+              const lineEndX = x2 - (12 * dx / len);
+              const lineEndY = y2 - (12 * dy / len);
 
               return (
                 <g>
