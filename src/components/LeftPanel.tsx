@@ -160,8 +160,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           onClick={() => setIsCloudDropdownOpen(!isCloudDropdownOpen)}
           style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor:'pointer', transition: '0.2s' }}
         >
-          <span>{cloudProvider}</span>
-          <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : cloudProvider}
+          </span>
+          <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', flexShrink: 0, marginLeft: '8px' }}>▼</span>
         </div>
         
         {isCloudDropdownOpen && (

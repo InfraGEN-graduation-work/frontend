@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -34,7 +34,9 @@ export default function Home() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [modalProvider, setModalProvider] = useState<CloudProvider>('AWS');
+
+  const [modalProvider, setModalProvider] = useState<CloudProvider | ''>('');
+  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
   
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
   const [editNodes, setEditNodes] = useState<any[]>([]);
@@ -74,6 +76,7 @@ export default function Home() {
     const handleClickOutside = () => {
       setMenuOpenId(null);
       setIsProfileMenuOpen(false);
+      setIsProviderDropdownOpen(false);
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
@@ -127,6 +130,7 @@ export default function Home() {
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름을 입력해주세요.' }));
+    if (modalMode === 'create' && !modalProvider) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경을 선택해주세요.' }));
 
     if (modalMode === 'create') {
       try {
@@ -139,7 +143,7 @@ export default function Home() {
         const data = await res.json();
         if (res.ok && (data.isSuccess ?? data.is_success)) {
           setModalMode(null);
-          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider } });
+          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider as CloudProvider } });
         }
       } catch (err) {}
     } 
@@ -663,7 +667,7 @@ export default function Home() {
               <CreateBtn onClick={() => {
                 setNewTitle('');
                 setNewDesc('');
-                setModalProvider('AWS');
+                setModalProvider(''); 
                 setModalMode('create');
               }}>+ 새 프로젝트</CreateBtn>
             </HeaderActions>
@@ -735,7 +739,7 @@ export default function Home() {
       </ContentArea>
 
       {modalMode !== null && (
-        <ModalOverlay onClick={() => setModalMode(null)}>
+        <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
             <form onSubmit={handleSubmitProject}>
@@ -749,10 +753,40 @@ export default function Home() {
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
                   />
-                  <Select value={modalProvider} onChange={(e) => setModalProvider(e.target.value as CloudProvider)}>
-                    <option value="AWS">AWS</option>
-                    <option value="OCI">OCI</option>
-                  </Select>
+                  
+                  {/* 커스텀 셀렉트 박스 교체 */}
+                  <div style={{ position: 'relative', width: '200px' }}>
+                    <div
+                      onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
+                      style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {modalProvider === 'AWS' ? 'AWS (Amazon Web Services)' : modalProvider === 'OCI' ? 'OCI (Oracle Cloud)' : '선택'}
+                      </span>
+                      <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
+                    </div>
+                    
+                    {isProviderDropdownOpen && (
+                      <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
+                        <div 
+                          onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
+                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                        >
+                          AWS (Amazon Web Services)
+                        </div>
+                        <div 
+                          onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
+                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
+                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                        >
+                          OCI (Oracle Cloud)
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </InputGroup>
               <InputGroup>
@@ -1507,24 +1541,6 @@ const Input = styled.input`
   box-sizing: border-box;
   &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
   &:disabled { background: #f8f9fa; cursor: not-allowed; }
-`;
-
-const Select = styled.select`
-  width: 90px;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #4a5568;
-  background: #f8f9fa;
-  box-sizing: border-box;
-  outline: none;
-  transition: 0.2s;
-  cursor: pointer;
-  appearance: auto;
-  &:hover { background: #edf2f7; }
-  &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
 `;
 
 const TextArea = styled.textarea`
