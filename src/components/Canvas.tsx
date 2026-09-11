@@ -508,14 +508,12 @@ const Canvas: React.FC<CanvasProps> = ({
                     style={{ pointerEvents: 'none' }} 
                   />
 
-                  {!isSelected && (
-                    <polygon
-                      points="-6,-6 6,0 -6,6"
-                      fill="#a0aec0"
-                      transform={`translate(${arrowX}, ${arrowY}) rotate(${angle})`}
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  )}
+                  <polygon
+                    points="-6,-6 6,0 -6,6"
+                    fill={isSelected ? "#28b4ad" : "#a0aec0"}
+                    transform={`translate(${arrowX}, ${arrowY}) rotate(${angle})`}
+                    style={{ pointerEvents: 'none' }}
+                  />
 
                   {isSelected && (
                     <g
