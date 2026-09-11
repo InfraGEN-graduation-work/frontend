@@ -245,11 +245,15 @@ export default function Home() {
     if (!projectToDelete) return;
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { 
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
+        method: 'DELETE'
       });
       
-      const data = await res.json().catch(() => ({}));
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch(e) {}
+      
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (res.ok && isSuccess) {
@@ -271,10 +275,14 @@ export default function Home() {
         selectedIds.map(async (id) => {
           try {
             const res = await fetchWithAuth(`${BASE_URL}/projects/${id}`, { 
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' }
+              method: 'DELETE'
             });
-            const data = await res.json().catch(() => ({}));
+            const text = await res.text();
+            let data: any = {};
+            try {
+              data = text ? JSON.parse(text) : {};
+            } catch(e) {}
+            
             const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
             return { id, isSuccess };
           } catch(e) {
