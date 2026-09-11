@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -34,7 +34,6 @@ export default function Home() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
-
   const [modalProvider, setModalProvider] = useState<CloudProvider | ''>('');
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
   
@@ -754,14 +753,14 @@ export default function Home() {
                     style={{ flex: 1 }}
                   />
                   
-                  {/* 커스텀 셀렉트 박스 교체 */}
-                  <div style={{ position: 'relative', width: '200px' }}>
+                  {/* 심플한 텍스트로 축소된 커스텀 셀렉트 박스 */}
+                  <div style={{ position: 'relative', width: '110px' }}>
                     <div
                       onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
                       style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {modalProvider === 'AWS' ? 'AWS (Amazon Web Services)' : modalProvider === 'OCI' ? 'OCI (Oracle Cloud)' : '선택'}
+                        {modalProvider || '선택'}
                       </span>
                       <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
                     </div>
@@ -774,7 +773,7 @@ export default function Home() {
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                         >
-                          AWS (Amazon Web Services)
+                          AWS
                         </div>
                         <div 
                           onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
@@ -782,7 +781,7 @@ export default function Home() {
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                         >
-                          OCI (Oracle Cloud)
+                          OCI
                         </div>
                       </div>
                     )}
