@@ -33,12 +33,13 @@ interface RightSideBarProps {
   setIncludeLocal: React.Dispatch<React.SetStateAction<boolean>>;
   cloudSettings: CloudSettings;
   setCloudSettings: React.Dispatch<React.SetStateAction<CloudSettings>>;
+  width: number;
 }
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
   nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, setTargetFileIds, markFilesAsModified, deleteRightPanelItems,
   selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, validationErrors, resetTrigger,
-  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings
+  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width
 }) => {
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
@@ -380,7 +381,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
             onClick={(e) => { e.stopPropagation(); setOpenDropdownKey(isOpen ? null : key); }}
             style={{ width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa', borderLeft: '1px solid #cbd5e0', cursor: 'pointer', color: '#4a5568', fontSize: '10px' }}
           >
-            ▼
+            <span style={{ margin: 'auto' }}>▼</span>
           </div>
         </div>
         {isOpen && (
@@ -452,7 +453,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   return (
-    <aside className="right-sidebar" onClick={handleBackgroundClick}>
+    <aside className="right-sidebar" onClick={handleBackgroundClick} style={{ width: `${width}px`, flexShrink: 0 }}>
       <style>{`
         .right-sidebar input::placeholder, .right-sidebar textarea::placeholder, .custom-input::placeholder {
           color: #a0aec0 !important;

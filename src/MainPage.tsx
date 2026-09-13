@@ -174,12 +174,51 @@ const MainPage: React.FC = () => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [leftWidth, setLeftWidth] = useState(280);
+  const [rightWidth, setRightWidth] = useState(280);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+
   const isDataLoaded = useRef(false);
   const isUndoRedo = useRef(false);
   const hasUnsavedChanges = useRef(false);
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
   const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = Math.max(200, Math.min(e.clientX - 10, window.innerWidth / 2));
+        setLeftWidth(newWidth);
+      } else if (isResizingRight) {
+        const newWidth = Math.max(200, Math.min(window.innerWidth - e.clientX - 10, window.innerWidth / 2));
+        setRightWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false);
+      setIsResizingRight(false);
+    };
+
+    if (isResizingLeft || isResizingRight) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingLeft, isResizingRight]);
 
   useEffect(() => {
     if (!isDataLoaded.current) return;
@@ -1118,7 +1157,14 @@ const MainPage: React.FC = () => {
             onUndo={undo} onRedo={redo} canUndo={history.length > 0} canRedo={redoStack.length > 0}
             isSelectMode={isSelectMode} resetTrigger={uiResetTrigger} userInfo={userInfo}
             onGoHome={handleGoHome} cloudProvider={cloudProvider} setCloudProvider={setCloudProvider}
+            width={leftWidth}
           />
+
+          <div 
+            className={`resizer ${isResizingLeft ? 'active' : ''}`} 
+            onMouseDown={(e) => { e.preventDefault(); setIsResizingLeft(true); }} 
+          />
+
           <Canvas 
             nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges}
             selectedNodeIds={selectedNodeIds} setSelectedNodeIds={setSelectedNodeIds}
@@ -1173,17 +1219,24 @@ const MainPage: React.FC = () => {
           )}
 
           {showRightSidebar && (
-            <RightSideBar 
-              nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} setActiveTab={setLeftActiveTab} saveHistory={saveHistory}
-              files={files} setFiles={setFiles} targetFileIds={targetFileIds} setTargetFileIds={setTargetFileIds}
-              markFilesAsModified={markFilesAsModified} deleteRightPanelItems={deleteRightPanelItems}
-              selectedFileId={selectedFileId} setSelectedFileId={setSelectedFileId}
-              setSelectedNodeIds={setSelectedNodeIds} selectedNodeIds={selectedNodeIds} viewport={viewport} zoomLevel={zoomLevel}
-              setFocusNodeId={setFocusNodeId} validationErrors={validationErrors} resetTrigger={uiResetTrigger}
-              setSelection={setSelection} setIsSelectMode={setIsSelectMode}
-              cloudProvider={cloudProvider} includeLocal={includeLocal} setIncludeLocal={setIncludeLocal}
-              cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
-            />
+            <>
+              <div 
+                className={`resizer ${isResizingRight ? 'active' : ''}`} 
+                onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }} 
+              />
+              <RightSideBar 
+                nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} setActiveTab={setLeftActiveTab} saveHistory={saveHistory}
+                files={files} setFiles={setFiles} targetFileIds={targetFileIds} setTargetFileIds={setTargetFileIds}
+                markFilesAsModified={markFilesAsModified} deleteRightPanelItems={deleteRightPanelItems}
+                selectedFileId={selectedFileId} setSelectedFileId={setSelectedFileId}
+                setSelectedNodeIds={setSelectedNodeIds} selectedNodeIds={selectedNodeIds} viewport={viewport} zoomLevel={zoomLevel}
+                setFocusNodeId={setFocusNodeId} validationErrors={validationErrors} resetTrigger={uiResetTrigger}
+                setSelection={setSelection} setIsSelectMode={setIsSelectMode}
+                cloudProvider={cloudProvider} includeLocal={includeLocal} setIncludeLocal={setIncludeLocal}
+                cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
+                width={rightWidth}
+              />
+            </>
           )}
         </div>
       ) : (

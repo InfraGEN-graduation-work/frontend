@@ -1,4 +1,6 @@
 import React from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import type { FileGroup } from '../types';
 
 interface GenerateProps {
@@ -17,6 +19,28 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
   }, 0);
   
   const estimatedSize = (totalNodes * 0.1).toFixed(1);
+
+  const handleDownload = async () => {
+    const zip = new JSZip();
+    let hasFiles = false;
+
+    targetFileIds.forEach(id => {
+      const file = files.find(f => f.id === id);
+      if (file && file.generatedFiles && file.generatedFiles.length > 0) {
+        hasFiles = true;
+        file.generatedFiles.forEach(gf => {
+          zip.file(`${file.name}_${gf.fileName}`, gf.content);
+        });
+      }
+    });
+
+    if (hasFiles) {
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, `${projectName}-infragen-export.zip`);
+    } else {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 코드가 없습니다.' }));
+    }
+  };
 
   return (
     <div className="gen-screen">
@@ -72,8 +96,11 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
         ) : (
           <div className="gen-complete-container">
             <div className="gen-complete-title">코드 생성이 완료되었습니다!</div>
-            <div className="gen-complete-desc">좌측 패널에서 생성한 파일 상세 정보를 확인하거나 다시 프로젝트로 돌아갈 수 있습니다.</div>
-            <button className="gen-action-btn" onClick={onBack}>BACK</button>
+            <div className="gen-complete-desc">좌측 패널에서 생성한 파일 상세 정보를 확인하거나 다운로드 받을 수 있습니다.</div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button className="gen-action-btn" onClick={handleDownload} style={{ background: '#4a5568' }}>다운로드</button>
+              <button className="gen-action-btn" onClick={onBack}>돌아가기</button>
+            </div>
           </div>
         )}
       </main>

@@ -29,6 +29,7 @@ interface LeftPanelProps {
   onGoHome: () => void;
   cloudProvider: CloudProvider;
   setCloudProvider: React.Dispatch<React.SetStateAction<CloudProvider>>;
+  width: number;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({ 
@@ -36,7 +37,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   showRightSidebar, setShowRightSidebar,
   onZoomIn, onZoomOut, onSelectMode, onCancelSelection, onDelete, onUndo, onRedo, 
   canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onGoHome,
-  cloudProvider, setCloudProvider
+  cloudProvider, setCloudProvider, width
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
@@ -58,9 +59,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const nodeTemplates: Record<string, string[]> = {
     Server: ['Spring Boot'],
-    Database: ['MySQL', 'Redis'], 
-    Storage: ['S3 Bucket', 'EFS', 'Block Storage'],
-    Network: ['VPC', 'Subnet', 'Load Balancer']
+    Database: ['MySQL', 'Redis'] 
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;
@@ -134,7 +133,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   };
 
   return (
-    <aside className="left-panel">
+    <aside className="left-panel" style={{ width: `${width}px`, flexShrink: 0 }}>
       <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: '4px', marginBottom: '12px', borderBottom: '1px solid #e9ecef', minHeight: '32px' }}>
         {isEditing ? (
           <>
