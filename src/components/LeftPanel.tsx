@@ -59,7 +59,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const nodeTemplates: Record<string, string[]> = {
     Server: ['Spring Boot'],
-    Database: ['MySQL', 'Redis']
+    Database: ['MySQL', 'Redis'] 
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;
@@ -134,7 +134,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   return (
     <aside className="left-panel" style={{ width: `${width}px`, flexShrink: 0 }}>
-      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: '4px', marginBottom: '12px', borderBottom: '1px solid #e9ecef', minHeight: '32px' }}>
+      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', marginBottom: '12px', borderBottom: '1px solid #e9ecef', minHeight: '32px' }}>
         {isEditing ? (
           <>
             <input
@@ -142,14 +142,16 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               onChange={(e) => setTempName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveClick(); }}
               onBlur={handleSaveClick}
-              style={{ flex: 1, padding: 0, margin: 0, border: 'none', background: 'transparent', outline: 'none', fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, width: '100%', fontFamily: 'inherit' }}
+              style={{ flex: 1, padding: 0, margin: 0, border: 'none', background: 'transparent', outline: 'none', fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, width: '100%', fontFamily: 'inherit', minWidth: 0 }}
             />
-            <button onMouseDown={(e) => e.preventDefault()} onClick={handleSaveClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad' }}>✔</button>
+            <button onMouseDown={(e) => e.preventDefault()} onClick={handleSaveClick} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '14px', color: '#28b4ad', flexShrink: 0 }}>✔</button>
           </>
         ) : (
           <>
-            <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', lineHeight: 1, marginBottom: '2px' }}>{projectName}</span>
-            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, marginBottom: '6px' }}>✏️</button>
+            <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
+              {projectName}
+            </span>
+            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, fontSize: '14px' }}>✏️</button>
           </>
         )}
       </div>
@@ -159,10 +161,10 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           onClick={() => setIsCloudDropdownOpen(!isCloudDropdownOpen)}
           style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor:'pointer', transition: '0.2s' }}
         >
-          <span style={{ whiteSpace: 'normal', wordBreak: 'keep-all', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
+          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
             {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : cloudProvider}
           </span>
-          <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', flexShrink: 0, marginLeft: '8px' }}>▼</span>
+          <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', flexShrink: 0 }}>▼</span>
         </div>
         
         {isCloudDropdownOpen && (
@@ -174,18 +176,18 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div className="toolbar">
-        <button onClick={onToggleRightSidebar}>田</button>
+        <button onClick={onToggleRightSidebar} title="패널 열기/닫기">田</button>
         <div className="divider"></div>
-        <button onClick={onZoomIn}>+</button>
-        <button onClick={onZoomOut}>-</button>
+        <button onClick={onZoomIn} title="확대">+</button>
+        <button onClick={onZoomOut} title="축소">-</button>
         <div className="divider"></div>
-        <button onClick={onSelectMode} style={{ color: isSelectMode ? '#28b4ad' : '#555' }}>▢</button>
-        <button onClick={onCancelSelection}>×</button>
+        <button onClick={onSelectMode} style={{ color: isSelectMode ? '#28b4ad' : '#555' }} title="선택 모드">▢</button>
+        <button onClick={onCancelSelection} title="선택 취소">×</button>
         <div className="divider"></div>
-        <button onClick={onUndo} disabled={!canUndo} style={{ color: canUndo ? '#555' : '#ccc', cursor: canUndo ? 'pointer' : 'default' }}>◀</button>
-        <button onClick={onRedo} disabled={!canRedo} style={{ color: canRedo ? '#555' : '#ccc', cursor: canRedo ? 'pointer' : 'default' }}>▶</button>
+        <button onClick={onUndo} disabled={!canUndo} style={{ color: canUndo ? '#555' : '#ccc', cursor: canUndo ? 'pointer' : 'default' }} title="실행 취소">◀</button>
+        <button onClick={onRedo} disabled={!canRedo} style={{ color: canRedo ? '#555' : '#ccc', cursor: canRedo ? 'pointer' : 'default' }} title="다시 실행">▶</button>
         <div className="divider"></div>
-        <button onClick={onDelete} className="delete-btn">🗑️</button>
+        <button onClick={onDelete} className="delete-btn" title="삭제">🗑️</button>
       </div>
 
       <div className="tabs">
@@ -212,11 +214,11 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               const iconSrc = getNodeIconSrc(node);
               return (
                 <div key={node} className="draggable-node-item" draggable onDragStart={(e) => handleDragStart(e, node)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
-                    <div className="node-icon-small" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
+                    <div className="node-icon-small" style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
                       {iconSrc ? <img src={iconSrc} alt={node} style={{ width: '80%', height: '80%', objectFit: 'contain' }} /> : <span style={{fontSize:'10px', fontWeight:'bold'}}>{node.charAt(0)}</span>}
                     </div>
-                    <span>{node}</span>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{node}</span>
                   </div>
                   {count > 0 && <span className="badge">{count}</span>}
                 </div>
@@ -231,7 +233,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               return (
                 <div key={cat} className="category-item" onClick={() => { setActiveCategory(cat); onSelectCategory(cat); setSearchTerm(''); }}>
                   <div className="item-info">
-                    <span className="box-icon">●</span>
+                    <span className="box-icon" style={{ flexShrink: 0 }}>●</span>
                     <span className="item-name">{cat}</span>
                   </div>
                   {count > 0 && <span className="badge">{count}</span>}
@@ -243,14 +245,14 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div className="user-profile-section">
-        <div className="user-info-wrapper">
-          <div className="user-avatar">{userInfo.nickname ? userInfo.nickname.charAt(0).toUpperCase() : '?'}</div>
-          <div className="user-details">
-            <span className="user-nickname">{userInfo.nickname}</span>
-            <span className="user-email">{userInfo.email}</span>
+        <div className="user-info-wrapper" style={{ minWidth: 0 }}>
+          <div className="user-avatar" style={{ flexShrink: 0 }}>{userInfo.nickname ? userInfo.nickname.charAt(0).toUpperCase() : '?'}</div>
+          <div className="user-details" style={{ overflow: 'hidden' }}>
+            <span className="user-nickname" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{userInfo.nickname}</span>
+            <span className="user-email" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{userInfo.email}</span>
           </div>
         </div>
-        <button className="home-icon-btn" onClick={onGoHome} title="홈으로 돌아가기">
+        <button className="home-icon-btn" onClick={onGoHome} title="홈으로 돌아가기" style={{ flexShrink: 0 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
