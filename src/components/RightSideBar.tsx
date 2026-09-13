@@ -381,7 +381,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
             onClick={(e) => { e.stopPropagation(); setOpenDropdownKey(isOpen ? null : key); }}
             style={{ width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa', borderLeft: '1px solid #cbd5e0', cursor: 'pointer', color: '#4a5568', fontSize: '10px' }}
           >
-            <span style={{ margin: 'auto' }}>▼</span>
+            ▼
           </div>
         </div>
         {isOpen && (
@@ -394,8 +394,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 onMouseOver={(e) => e.currentTarget.style.background = '#f0fdfc'}
                 onMouseOut={(e) => e.currentTarget.style.background = 'white'}
               >
-                <strong style={{ display: 'block', color: '#28b4ad', fontSize: '12px', marginBottom: '2px' }}>{opt.value}</strong>
-                <span style={{ fontSize: '11px', color: '#718096' }}>{opt.label}</span>
+                <strong style={{ display: 'block', color: '#28b4ad', fontSize: '12px', marginBottom: '2px', whiteSpace: 'normal', wordBreak: 'keep-all' }}>{opt.value}</strong>
+                <span style={{ fontSize: '11px', color: '#718096', whiteSpace: 'normal', wordBreak: 'keep-all' }}>{opt.label}</span>
               </div>
             ))}
           </div>

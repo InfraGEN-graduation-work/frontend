@@ -174,8 +174,8 @@ const MainPage: React.FC = () => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const [leftWidth, setLeftWidth] = useState(280);
-  const [rightWidth, setRightWidth] = useState(280);
+  const [leftWidth, setLeftWidth] = useState(320);
+  const [rightWidth, setRightWidth] = useState(320);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
 
@@ -206,7 +206,7 @@ const MainPage: React.FC = () => {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
+      document.body.style.userSelect = 'none'; 
     } else {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';

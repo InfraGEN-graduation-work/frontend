@@ -132,6 +132,9 @@ body {
   color: #555; 
   flex: 1; 
   transition: 0.2s; 
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toolbar button:hover {
@@ -258,6 +261,9 @@ body {
   color: #718096;
   transition: 0.2s;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab:hover:not(.active) {
@@ -690,6 +696,9 @@ body {
   font-size: 14px;
   padding: 2px 6px;
   color: #4a5568;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .select-mode-btn:hover {
@@ -711,7 +720,7 @@ body {
 
 .action-btn {
   flex: 1;
-  padding: 8px;
+  padding: 8px 4px;
   background: #cbd5e0;
   color: #2c3e50;
   border: none;
@@ -719,6 +728,9 @@ body {
   font-weight: bold;
   cursor: pointer;
   transition: 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .action-btn:hover {
