@@ -134,7 +134,7 @@ export default function Home() {
       const projData = await projRes.json();
       
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
-        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: 'OWNER' }));
+        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: p.role || 'OWNER' }));
         setProjects(mappedProjects);
       }
     } catch (err) {}
@@ -1098,7 +1098,9 @@ export default function Home() {
                               {member.nickname.charAt(0).toUpperCase()}
                             </span>
                             <div className="details">
-                              <span className="name">{member.nickname}</span>
+                              <span className="name-wrapper">
+                                <span className="name-text">{member.nickname}</span>
+                              </span>
                               <span className="email">{member.email || `ID: ${member.memberId}`}</span>
                             </div>
                           </div>
@@ -1107,33 +1109,37 @@ export default function Home() {
                               <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
                             ) : (
                               <>
-                                <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>👑 위임</button>
-                                <div style={{ position: 'relative', width: '90px' }}>
-                                  <div
-                                    onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
-                                  >
-                                    <span>{member.role}</span>
-                                    <span style={{ fontSize: '8px' }}>▼</span>
-                                  </div>
-                                  {openRoleDropdownId === member.memberId && (
-                                    <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
-                                      <div 
-                                        onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                      >EDITOR</div>
-                                      <div 
-                                        onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                      >VIEWER</div>
+                                <div className="action-row-top">
+                                  <div style={{ position: 'relative', width: '90px' }}>
+                                    <div
+                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                                    >
+                                      <span>{member.role}</span>
+                                      <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
-                                  )}
+                                    {openRoleDropdownId === member.memberId && (
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >EDITOR</div>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >VIEWER</div>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                                <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                <div className="action-row-bottom">
+                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                </div>
                               </>
                             )}
                           </div>
@@ -1935,27 +1941,65 @@ const CollabListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 350px;
+  height: 260px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `;
 
 const CollabItem = styled.div<{ $isMe?: boolean }>`
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 12px;
   border: 1px solid ${({ $isMe }) => $isMe ? '#28b4ad' : '#e2e8f0'};
   background: ${({ $isMe }) => $isMe ? '#f0fdfc' : 'white'};
   border-radius: 8px;
 
-  .user-info { display: flex; align-items: center; gap: 12px; }
-  .avatar { width: 36px; height: 36px; background: #edf2f7; color: #4a5568; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
-  .details { display: flex; flex-direction: column; gap: 2px; }
-  .name { font-weight: bold; color: #2d3748; font-size: 14px; display: flex; align-items: center; gap: 4px; }
-  .email { color: #a0aec0; font-size: 12px; }
+  .user-info { 
+    display: flex; 
+    align-items: center; 
+    gap: 12px; 
+    flex: 1; 
+    min-width: 0; 
+    margin-right: 12px; 
+  }
+  .avatar { 
+    width: 36px; height: 36px; 
+    background: #edf2f7; color: #4a5568; 
+    border-radius: 50%; 
+    display: flex; align-items: center; justify-content: center; 
+    font-weight: bold; font-size: 14px; 
+    flex-shrink: 0;
+  }
+  .details { 
+    display: flex; flex-direction: column; gap: 2px; 
+    flex: 1; min-width: 0; 
+  }
+  .name-wrapper { 
+    display: flex; align-items: center; gap: 4px; 
+    width: 100%; min-width: 0; 
+  }
+  .name-text { 
+    font-weight: bold; color: #2d3748; font-size: 14px; 
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+  }
+  .email { 
+    color: #a0aec0; font-size: 12px; 
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+  }
   
-  .actions { display: flex; align-items: center; gap: 8px; }
-  .role-text { font-size: 12px; font-weight: 700; }
+  .actions { 
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px; 
+    flex-shrink: 0; 
+  }
+  
+  .action-row-top { display: flex; justify-content: flex-end; width: 100%; }
+  .action-row-bottom { display: flex; gap: 4px; justify-content: flex-end; width: 100%; }
+
+  .role-text { font-size: 12px; font-weight: 700; margin-top: 4px; }
   .role-text.owner { color: #c05621; }
   .role-text.editor { color: #553c9a; }
   .role-text.viewer { color: #718096; }
