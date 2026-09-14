@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -22,6 +22,12 @@ interface Collaborator {
   memberId: number;
   nickname: string;
   role: 'EDITOR' | 'VIEWER';
+}
+
+interface Invitation {
+  inviteId: number;
+  projectName: string;
+  ownerName: string;
 }
 
 export default function Home() {
@@ -78,10 +84,7 @@ export default function Home() {
   const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
 
   const [isInviteListOpen, setIsInviteListOpen] = useState(false);
-  const [mockInvitations, setMockInvitations] = useState([
-    { inviteId: 101, projectName: '사이드 프로젝트 인프라', ownerName: 'DevKing' },
-    { inviteId: 102, projectName: 'AWS 마이그레이션', ownerName: 'CloudMaster' }
-  ]);
+  const [mockInvitations, setMockInvitations] = useState<Invitation[]>([]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -144,7 +147,6 @@ export default function Home() {
     navigator.clipboard.writeText(text);
     window.dispatchEvent(new CustomEvent('global-toast', { detail: '고유 식별 ID가 복사되었습니다.' }));
   };
-
   const handleOpenCollabModal = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
@@ -234,7 +236,7 @@ export default function Home() {
     const invite = mockInvitations.find(i => i.inviteId === inviteId);
     setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
     window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invite?.projectName}' 프로젝트에 참여되었습니다.` }));
-
+    
     if (invite) {
       setProjects(prev => [{
         projectId: Date.now(),
@@ -726,7 +728,7 @@ export default function Home() {
             <SectionTitle>내 프로젝트</SectionTitle>
             <HeaderActions>
               <JoinRequestBtn onClick={() => setIsInviteListOpen(true)}>
-                <span className="icon">✉️</span> 참여 알림
+                참여
                 {mockInvitations.length > 0 && <BadgeDot />}
               </JoinRequestBtn>
 
@@ -1528,7 +1530,6 @@ const JoinRequestBtn = styled.button`
   gap: 6px;
   position: relative;
   &:hover { background: #f8f9fa; border-color: #a0aec0; }
-  .icon { font-size: 16px; }
 `;
 
 const BadgeDot = styled.span`
