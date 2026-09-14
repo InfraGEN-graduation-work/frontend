@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import styled, { keyframes, css } from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -212,7 +212,6 @@ const MainPage: React.FC = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-
           if (data.type === 'CURSOR_MOVE' && data.memberId !== userInfo.id) {
             setOtherCursors(prev => {
               const existing = prev.find(c => c.memberId === data.memberId);

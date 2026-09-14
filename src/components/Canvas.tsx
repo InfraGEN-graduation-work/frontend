@@ -164,7 +164,7 @@ const Canvas: React.FC<CanvasProps> = ({
     if (!viewportRef.current) return;
     const state = stateRef.current;
     const coords = getCoords(clientX, clientY, viewportRef.current, state.zoomLevel);
-
+    
     if (onCursorMove) {
       onCursorMove(coords.x, coords.y);
     }

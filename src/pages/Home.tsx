@@ -252,7 +252,6 @@ export default function Home() {
     window.dispatchEvent(new CustomEvent('global-toast', { detail: `참여 요청을 거절했습니다.` }));
   };
 
-
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름을 입력해주세요.' }));
