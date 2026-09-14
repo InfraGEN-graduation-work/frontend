@@ -21,7 +21,7 @@ interface Project {
 interface Collaborator {
   memberId: number;
   nickname: string;
-  role: 'EDITOR' | 'VIEWER';
+  role: 'EDITOR' | 'VIEWER' | 'OWNER';
 }
 
 interface Invitation {
@@ -36,6 +36,8 @@ export default function Home() {
 
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
+  
+  const [filterMode, setFilterMode] = useState<'ALL' | 'OWNER' | 'PARTICIPANT'>('ALL');
   
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
@@ -57,12 +59,19 @@ export default function Home() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [inviteMemberId, setInviteMemberId] = useState('');
   const [inviteRole, setInviteRole] = useState<'EDITOR' | 'VIEWER'>('VIEWER');
+  
+  const [collabSearchTerm, setCollabSearchTerm] = useState('');
+  const [isCollabEditMode, setIsCollabEditMode] = useState(false);
+  
+  const [openRoleDropdownId, setOpenRoleDropdownId] = useState<number | null>(null);
+  const [openInviteRoleDropdown, setOpenInviteRoleDropdown] = useState(false);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({ nickname: '', password: '', passwordConfirm: '' });
 
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
+  const [projectToLeave, setProjectToLeave] = useState<number | null>(null);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
@@ -91,6 +100,8 @@ export default function Home() {
       setMenuOpenId(null);
       setIsProfileMenuOpen(false);
       setIsProviderDropdownOpen(false);
+      setOpenRoleDropdownId(null);
+      setOpenInviteRoleDropdown(false);
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
@@ -135,8 +146,7 @@ export default function Home() {
         const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: 'OWNER' }));
         setProjects(mappedProjects);
       }
-    } catch (err) {
-    }
+    } catch (err) {}
   };
 
   useEffect(() => {
@@ -147,6 +157,7 @@ export default function Home() {
     navigator.clipboard.writeText(text);
     window.dispatchEvent(new CustomEvent('global-toast', { detail: '고유 식별 ID가 복사되었습니다.' }));
   };
+
   const handleOpenCollabModal = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
@@ -154,6 +165,9 @@ export default function Home() {
     setCollabTab('list');
     setInviteMemberId('');
     setInviteRole('VIEWER');
+    setCollabSearchTerm('');
+    setIsCollabEditMode(false);
+    setOpenRoleDropdownId(null);
     setIsCollabModalOpen(true);
     fetchCollaborators(projectId);
   };
@@ -204,7 +218,7 @@ export default function Home() {
 
   const handleRemoveCollaborator = async (memberId: number) => {
     if (!collabProjectId) return;
-    if (!window.confirm('정말 이 참여자를 제외하시겠습니까?')) return;
+    if (!window.confirm('정말 이 참여자를 퇴출하시겠습니까?')) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
@@ -212,7 +226,7 @@ export default function Home() {
       });
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 제외되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 퇴출되었습니다.' }));
       }
     } catch (err) {}
   };
@@ -230,6 +244,28 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
       }
     } catch (err) {}
+  };
+
+  const handleDelegateOwner = async (memberId: number) => {
+    if (!collabProjectId) return;
+    if (!window.confirm('정말 이 참여자에게 OWNER 권한을 위임하시겠습니까?\n위임 후 본인은 EDITOR로 변경됩니다.')) return;
+
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'OWNER' })
+      });
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: 'OWNER 권한이 위임되었습니다.' }));
+        setIsCollabModalOpen(false);
+        fetchDashboardData();
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한 위임에 실패했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+    }
   };
 
   const handleAcceptInvite = (inviteId: number) => {
@@ -400,12 +436,41 @@ export default function Home() {
     }
   };
 
+  const handleLeaveSingle = (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+    setProjectToLeave(projectId);
+  };
+
+  const confirmLeaveSingle = async () => {
+    if (!projectToLeave) return;
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트에서 나갔습니다.' }));
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 나가기에 실패했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다.' }));
+    } finally {
+      setProjectToLeave(null);
+    }
+  };
+
   const confirmBulkDelete = async () => {
     try {
       const results = await Promise.all(
         selectedIds.map(async (id) => {
           try {
-            const res = await fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' });
+            const proj = projects.find(p => p.projectId === id);
+            const isOwner = proj?.myRole === 'OWNER';
+            const endpoint = isOwner 
+              ? `${BASE_URL}/projects/${id}`
+              : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
+            
+            const res = await fetchWithAuth(endpoint, { method: 'DELETE' });
             const text = await res.text();
             let data: any = {};
             try { data = text ? JSON.parse(text) : {}; } catch(e) {}
@@ -419,9 +484,9 @@ export default function Home() {
       
       if (successIds.length > 0) {
         setProjects(prev => prev.filter(p => !successIds.includes(p.projectId)));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${successIds.length}개의 프로젝트가 삭제되었습니다.` }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${successIds.length}개의 프로젝트가 정리되었습니다.` }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 삭제에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 정리에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
@@ -674,8 +739,32 @@ export default function Home() {
       : a.historyId - b.historyId; 
   });
 
+  const handleFilterToggle = () => {
+    if (filterMode === 'ALL') setFilterMode('OWNER');
+    else if (filterMode === 'OWNER') setFilterMode('PARTICIPANT');
+    else setFilterMode('ALL');
+  };
+
+  const filteredProjects = projects.filter(p => {
+    if (filterMode === 'ALL') return true;
+    if (filterMode === 'OWNER') return p.myRole === 'OWNER';
+    if (filterMode === 'PARTICIPANT') return p.myRole === 'EDITOR' || p.myRole === 'VIEWER';
+    return true;
+  });
+
   const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
+  const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
+
+  const allMembers = [
+    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
+    ...collaborators.map(c => ({ isMe: false, email: '', ...c }))
+  ];
+
+  const filteredMembers = allMembers.filter(m => 
+    m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase()) || 
+    m.email.toLowerCase().includes(collabSearchTerm.toLowerCase())
+  );
 
   return (
     <PageContainer>
@@ -727,6 +816,9 @@ export default function Home() {
           <SectionHeader>
             <SectionTitle>내 프로젝트</SectionTitle>
             <HeaderActions>
+              <FilterBtn onClick={handleFilterToggle}>
+                {filterMode === 'ALL' ? '전체' : filterMode === 'OWNER' ? '방장' : '참여'}
+              </FilterBtn>
               <JoinRequestBtn onClick={() => setIsInviteListOpen(true)}>
                 참여
                 {mockInvitations.length > 0 && <BadgeDot />}
@@ -746,7 +838,7 @@ export default function Home() {
               )}
               {isSelectMode && selectedIds.length > 0 && (
                 <BulkDeleteBtn onClick={() => setIsBulkDeleteConfirmOpen(true)}>
-                  {selectedIds.length}개 삭제
+                  {selectedIds.length}개 처리
                 </BulkDeleteBtn>
               )}
               <CreateBtn onClick={() => {
@@ -760,10 +852,16 @@ export default function Home() {
               <p>아직 생성된 프로젝트가 없습니다.</p>
               <span>새 프로젝트를 생성하여 인프라 설계를 시작해보세요!</span>
             </EmptyState>
+          ) : filteredProjects.length === 0 ? (
+            <EmptyState>
+              <p>해당 조건에 맞는 프로젝트가 없습니다.</p>
+            </EmptyState>
           ) : (
             <Grid>
-              {projects.map((proj) => {
+              {filteredProjects.map((proj) => {
                 const isSelected = selectedIds.includes(proj.projectId);
+                const isProjOwner = proj.myRole === 'OWNER';
+                
                 return (
                   <ProjectCard 
                     key={proj.projectId} 
@@ -776,7 +874,7 @@ export default function Home() {
                   >
                     <CardHeader>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <RoleBadge role={proj.myRole || 'OWNER'}>{proj.myRole || 'OWNER'}</RoleBadge>
+                        <RoleBadge role={proj.myRole || 'VIEWER'}>{proj.myRole || 'VIEWER'}</RoleBadge>
                         <ProjectStatus status={proj.status}>{proj.status}</ProjectStatus>
                       </div>
                       
@@ -807,7 +905,11 @@ export default function Home() {
                               <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
-                              <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
+                              {isProjOwner ? (
+                                <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
+                              ) : (
+                                <DropdownItem className="danger" onClick={(e) => handleLeaveSingle(e, proj.projectId)}>나가기</DropdownItem>
+                              )}
                             </DropdownMenu>
                           )}
                         </KebabMenuWrapper>
@@ -827,7 +929,6 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* 프로젝트 생성/수정 모달 */}
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -842,6 +943,7 @@ export default function Home() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
+                    disabled={!isEditTargetOwner && modalMode === 'edit'}
                   />
                   
                   <div style={{ position: 'relative', width: '110px' }}>
@@ -876,7 +978,12 @@ export default function Home() {
               </InputGroup>
               <InputGroup>
                 <label>설명 (선택)</label>
-                <TextArea placeholder="간단한 설명을 적어주세요." value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
+                <TextArea 
+                  placeholder="간단한 설명을 적어주세요." 
+                  value={newDesc} 
+                  onChange={(e) => setNewDesc(e.target.value)} 
+                  disabled={!isEditTargetOwner && modalMode === 'edit'}
+                />
               </InputGroup>
               <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
                 <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
@@ -887,7 +994,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 회원정보 수정 모달 */}
       {isUserInfoModalOpen && (
         <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -942,7 +1048,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 참여자 관리 모달 */}
       {isCollabModalOpen && (
         <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
@@ -967,14 +1072,31 @@ export default function Home() {
                   </InputGroup>
                   <InputGroup>
                     <label>부여할 권한</label>
-                    <select 
-                      value={inviteRole} 
-                      onChange={(e) => setInviteRole(e.target.value as 'EDITOR' | 'VIEWER')}
-                      style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', background: 'white' }}
-                    >
-                      <option value="VIEWER">VIEWER (조회 가능)</option>
-                      <option value="EDITOR">EDITOR (수정 가능)</option>
-                    </select>
+                    <div style={{ position: 'relative', width: '100%' }}>
+                      <div
+                        onClick={(e) => { e.stopPropagation(); setOpenInviteRoleDropdown(!openInviteRoleDropdown); }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                      >
+                        <span>{inviteRole === 'EDITOR' ? 'EDITOR (수정 가능)' : 'VIEWER (조회 가능)'}</span>
+                        <span style={{ fontSize: '10px', transform: openInviteRoleDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
+                      </div>
+                      {openInviteRoleDropdown && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', overflow: 'hidden' }}>
+                          <div 
+                            onClick={() => { setInviteRole('EDITOR'); setOpenInviteRoleDropdown(false); }} 
+                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >EDITOR (수정 가능)</div>
+                          <div 
+                            onClick={() => { setInviteRole('VIEWER'); setOpenInviteRoleDropdown(false); }} 
+                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >VIEWER (조회 가능)</div>
+                        </div>
+                      )}
+                    </div>
                   </InputGroup>
                   
                   <ModalActions style={{ marginTop: '30px' }}>
@@ -982,61 +1104,85 @@ export default function Home() {
                   </ModalActions>
                 </form>
               ) : (
-                <CollabListWrapper>
-                  {/* 나 (현재 로그인한 유저) */}
-                  <CollabItem $isMe={true}>
-                    <div className="user-info">
-                      <span className="avatar" style={{ background: '#28b4ad', color: 'white' }}>{userInfo.nickname.charAt(0).toUpperCase()}</span>
-                      <div className="details">
-                        <span className="name">
-                          {userInfo.nickname} 
-                          {isCollabOwner && <span title="프로젝트 생성자">👑</span>} 
-                          <span className="me-badge">나</span>
-                        </span>
-                        <span className="email">{userInfo.email}</span>
-                      </div>
-                    </div>
-                    <span className={`role-text ${isCollabOwner ? 'owner' : ''}`}>
-                      {currentCollabProject?.myRole || 'VIEWER'}
-                    </span>
-                  </CollabItem>
-
-                  {collaborators.filter(c => c.memberId !== userInfo.id).map(member => (
-                    <CollabItem key={member.memberId}>
-                      <div className="user-info">
-                        <span className="avatar">{member.nickname.charAt(0)}</span>
-                        <div className="details">
-                          <span className="name">{member.nickname}</span>
-                          <span className="email">ID: {member.memberId}</span>
-                        </div>
-                      </div>
-                      <div className="actions">
-                        {isCollabOwner ? (
-                          <>
-                            <select 
-                              className="role-select" 
-                              value={member.role} 
-                              onChange={(e) => handleRoleChange(member.memberId, e.target.value)}
-                            >
-                              <option value="EDITOR">EDITOR</option>
-                              <option value="VIEWER">VIEWER</option>
-                            </select>
-                            <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>✕</button>
-                          </>
-                        ) : (
-                          <span className="role-text">{member.role}</span>
-                        )}
-                      </div>
-                    </CollabItem>
-                  ))}
-                </CollabListWrapper>
+                <>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    <Input 
+                      type="text" 
+                      placeholder="닉네임 또는 이메일 검색" 
+                      value={collabSearchTerm} 
+                      onChange={(e) => setCollabSearchTerm(e.target.value)} 
+                      style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
+                    />
+                    {isCollabOwner && (
+                      <FilterBtn onClick={() => setIsCollabEditMode(!isCollabEditMode)} style={{ padding: '8px 16px' }}>
+                        {isCollabEditMode ? '완료' : '편집'}
+                      </FilterBtn>
+                    )}
+                  </div>
+                  
+                  <CollabListWrapper>
+                    {filteredMembers.length === 0 ? (
+                      <EmptyState style={{ padding: '30px 0', border: 'none', background: 'transparent' }}>
+                        <p style={{ fontSize: '14px' }}>검색 결과가 없습니다.</p>
+                      </EmptyState>
+                    ) : (
+                      filteredMembers.map(member => (
+                        <CollabItem key={member.memberId} $isMe={member.isMe}>
+                          <div className="user-info">
+                            <span className="avatar" style={member.isMe ? { background: '#28b4ad', color: 'white' } : {}}>
+                              {member.nickname.charAt(0).toUpperCase()}
+                            </span>
+                            <div className="details">
+                              <span className="name">{member.nickname}</span>
+                              <span className="email">{member.email || `ID: ${member.memberId}`}</span>
+                            </div>
+                          </div>
+                          <div className="actions">
+                            {!isCollabEditMode || member.isMe ? (
+                              <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
+                            ) : (
+                              <>
+                                <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>👑 위임</button>
+                                <div style={{ position: 'relative', width: '90px' }}>
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                                  >
+                                    <span>{member.role}</span>
+                                    <span style={{ fontSize: '8px' }}>▼</span>
+                                  </div>
+                                  {openRoleDropdownId === member.memberId && (
+                                    <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
+                                      <div 
+                                        onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                        style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                      >EDITOR</div>
+                                      <div 
+                                        onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                        style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                      >VIEWER</div>
+                                    </div>
+                                  )}
+                                </div>
+                                <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                              </>
+                            )}
+                          </div>
+                        </CollabItem>
+                      ))
+                    )}
+                  </CollabListWrapper>
+                </>
               )}
             </div>
           </ModalContent>
         </ModalOverlay>
       )}
 
-      {/* 참여 요청(초대된 목록) 모달 */}
       {isInviteListOpen && (
         <ModalOverlay onClick={() => setIsInviteListOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
@@ -1068,7 +1214,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 활동 기록 모달 */}
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -1150,7 +1295,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 코드 뷰어 모달 */}
       {isCodeViewerOpen && (
         <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
           <CodeViewerModal onClick={(e) => e.stopPropagation()}>
@@ -1234,7 +1378,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 다중/단일 삭제, 회원탈퇴 모달 */}
       {projectToDelete !== null && (
         <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1251,17 +1394,33 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {projectToLeave !== null && (
+        <ModalOverlay onClick={() => setProjectToLeave(null)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>프로젝트 나가기</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              정말 이 프로젝트에서 나가시겠습니까?<br />
+              다시 참여하려면 권한자의 초대가 필요합니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setProjectToLeave(null)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmLeaveSingle}>나가기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
       {isBulkDeleteConfirmOpen && (
         <ModalOverlay onClick={() => setIsBulkDeleteConfirmOpen(false)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>다중 프로젝트 삭제</ModalTitle>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>선택 항목 처리</ModalTitle>
             <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              선택한 {selectedIds.length}개의 프로젝트를 정말 삭제하시겠습니까?<br />
-              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
+              선택한 {selectedIds.length}개의 프로젝트를 처리하시겠습니까?<br />
+              (생성한 프로젝트는 삭제되고, 참여 중인 프로젝트는 나가기 처리됩니다.)
             </p>
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>삭제하기</SubmitBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>확인</SubmitBtn>
             </ModalActions>
           </ModalContent>
         </ModalOverlay>
@@ -1515,6 +1674,21 @@ const HeaderActions = styled.div`
   align-items: center;
 `;
 
+const FilterBtn = styled.button`
+  background: white;
+  color: #4a5568;
+  border: 1px solid #cbd5e0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  &:hover { background: #f8f9fa; border-color: #a0aec0; }
+`;
+
 const JoinRequestBtn = styled.button`
   background: white;
   color: #4a5568;
@@ -1530,6 +1704,7 @@ const JoinRequestBtn = styled.button`
   gap: 6px;
   position: relative;
   &:hover { background: #f8f9fa; border-color: #a0aec0; }
+  .icon { font-size: 16px; }
 `;
 
 const BadgeDot = styled.span`
@@ -1786,6 +1961,7 @@ const TextArea = styled.textarea`
   box-sizing: border-box;
   font-family: inherit;
   &:focus { outline: none; border-color: #28b4ad; box-shadow: 0 0 0 3px rgba(40,180,173,0.1); }
+  &:disabled { background: #f8f9fa; cursor: not-allowed; }
 `;
 
 const ModalActions = styled.div`
@@ -1872,31 +2048,38 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .details { display: flex; flex-direction: column; gap: 2px; }
   .name { font-weight: bold; color: #2d3748; font-size: 14px; display: flex; align-items: center; gap: 4px; }
   .email { color: #a0aec0; font-size: 12px; }
-  .me-badge { background: #e2e8f0; color: #4a5568; font-size: 10px; padding: 2px 6px; border-radius: 10px; }
   
   .actions { display: flex; align-items: center; gap: 8px; }
-  .role-text { font-size: 12px; font-weight: 700; color: #718096; }
+  .role-text { font-size: 12px; font-weight: 700; }
   .role-text.owner { color: #c05621; }
-  
-  .role-select {
-    padding: 4px 8px;
-    border: 1px solid #cbd5e0;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #4a5568;
-    outline: none;
-    cursor: pointer;
-  }
+  .role-text.editor { color: #553c9a; }
+  .role-text.viewer { color: #718096; }
   
   .remove-btn {
     background: none;
     border: none;
-    color: #a0aec0;
-    font-size: 16px;
+    color: #e53e3e;
+    font-size: 12px;
+    font-weight: bold;
     cursor: pointer;
-    padding: 4px;
-    &:hover { color: #e53e3e; }
+    padding: 4px 8px;
+    background: #fff5f5;
+    border-radius: 4px;
+    &:hover { background: #fed7d7; }
+  }
+    
+  .delegate-btn {
+    background: none;
+    border: 1px solid #ecc94b;
+    color: #d69e2e;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: 0.2s;
+    white-space: nowrap;
+    &:hover { background: #fefcbf; }
   }
 `;
 
