@@ -1018,56 +1018,54 @@ export default function Home() {
         <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
             <TabContainer>
-              <CollabTab $active={collabTab === 'list'} onClick={() => setCollabTab('list')}>참여자 목록</CollabTab>
+              <CollabTab $active={collabTab === 'list'} onClick={() => setCollabTab('list')}>목록</CollabTab>
               {isCollabOwner && (
-                <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>직접 초대하기</CollabTab>
+                <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>초대</CollabTab>
               )}
             </TabContainer>
             
-            <div style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '24px' }}>
               {collabTab === 'invite' && isCollabOwner ? (
-                <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ flex: 1 }}>
-                    <InputGroup>
-                      <label>초대할 회원의 고유 식별 ID</label>
-                      <Input 
-                        type="text" 
-                        placeholder="예: 104" 
-                        value={inviteMemberId} 
-                        onChange={(e) => setInviteMemberId(e.target.value)} 
-                      />
-                    </InputGroup>
-                    <InputGroup>
-                      <label>부여할 권한</label>
-                      <div style={{ position: 'relative', width: '100%' }}>
-                        <div
-                          onClick={(e) => { e.stopPropagation(); setOpenInviteRoleDropdown(!openInviteRoleDropdown); }}
-                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
-                        >
-                          <span>{inviteRole === 'EDITOR' ? 'EDITOR (수정 가능)' : 'VIEWER (조회 가능)'}</span>
-                          <span style={{ fontSize: '10px', transform: openInviteRoleDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
-                        </div>
-                        {openInviteRoleDropdown && (
-                          <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', overflow: 'hidden' }}>
-                            <div 
-                              onClick={() => { setInviteRole('EDITOR'); setOpenInviteRoleDropdown(false); }} 
-                              style={{ padding: '12px', fontSize: '14px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                              onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                              onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                            >EDITOR (수정 가능)</div>
-                            <div 
-                              onClick={() => { setInviteRole('VIEWER'); setOpenInviteRoleDropdown(false); }} 
-                              style={{ padding: '12px', fontSize: '14px', cursor: 'pointer' }}
-                              onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                              onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                            >VIEWER (조회 가능)</div>
-                          </div>
-                        )}
+                <form onSubmit={handleInviteMember}>
+                  <InputGroup>
+                    <label>초대할 회원의 고유 식별 ID</label>
+                    <Input 
+                      type="text" 
+                      placeholder="예: 104" 
+                      value={inviteMemberId} 
+                      onChange={(e) => setInviteMemberId(e.target.value)} 
+                    />
+                  </InputGroup>
+                  <InputGroup>
+                    <label>부여할 권한</label>
+                    <div style={{ position: 'relative', width: '100%' }}>
+                      <div
+                        onClick={(e) => { e.stopPropagation(); setOpenInviteRoleDropdown(!openInviteRoleDropdown); }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                      >
+                        <span>{inviteRole === 'EDITOR' ? 'EDITOR (수정 가능)' : 'VIEWER (조회 가능)'}</span>
+                        <span style={{ fontSize: '10px', transform: openInviteRoleDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
                       </div>
-                    </InputGroup>
-                  </div>
+                      {openInviteRoleDropdown && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', overflow: 'hidden' }}>
+                          <div 
+                            onClick={() => { setInviteRole('EDITOR'); setOpenInviteRoleDropdown(false); }} 
+                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >EDITOR (수정 가능)</div>
+                          <div 
+                            onClick={() => { setInviteRole('VIEWER'); setOpenInviteRoleDropdown(false); }} 
+                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >VIEWER (조회 가능)</div>
+                        </div>
+                      )}
+                    </div>
+                  </InputGroup>
                   
-                  <ModalActions style={{ marginTop: 'auto' }}>
+                  <ModalActions style={{ marginTop: '30px' }}>
                     <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
                   </ModalActions>
                 </form>
@@ -1104,7 +1102,7 @@ export default function Home() {
                               <span className="name-wrapper">
                                 <span className="name-text">{member.nickname}</span>
                               </span>
-                              <span className="email">{member.email || `ID: ${member.memberId}`}</span>
+                              <span className="email">{member.email || '이메일 정보 없음'}</span>
                             </div>
                           </div>
                           <div className="actions">
@@ -1944,7 +1942,7 @@ const CollabListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1; 
+  max-height: 220px;
   overflow-y: auto;
   overflow-x: hidden;
   -ms-overflow-style: none;
