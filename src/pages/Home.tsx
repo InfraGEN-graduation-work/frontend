@@ -25,12 +25,6 @@ interface Collaborator {
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
 }
 
-interface Invitation {
-  inviteId: number;
-  projectName: string;
-  ownerName: string;
-}
-
 export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
@@ -92,9 +86,6 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
   const [historyDetail, setHistoryDetail] = useState<any>(null);
   const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
-
-  const [isInviteListOpen, setIsInviteListOpen] = useState(false);
-  const [mockInvitations, setMockInvitations] = useState<Invitation[]>([]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -267,28 +258,6 @@ export default function Home() {
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
     }
-  };
-
-  const handleAcceptInvite = (inviteId: number) => {
-    const invite = mockInvitations.find(i => i.inviteId === inviteId);
-    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
-    window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invite?.projectName}' 프로젝트에 참여되었습니다.` }));
-    
-    if (invite) {
-      setProjects(prev => [{
-        projectId: Date.now(),
-        title: invite.projectName,
-        description: `${invite.ownerName}님이 초대한 프로젝트입니다.`,
-        status: 'DRAFT',
-        createdAt: new Date().toISOString(),
-        myRole: 'VIEWER'
-      }, ...prev]);
-    }
-  };
-
-  const handleRejectInvite = (inviteId: number) => {
-    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
-    window.dispatchEvent(new CustomEvent('global-toast', { detail: `참여 요청을 거절했습니다.` }));
   };
 
   const handleSubmitProject = async (e: React.FormEvent) => {
@@ -820,10 +789,6 @@ export default function Home() {
               <FilterBtn onClick={handleFilterToggle}>
                 {filterMode === 'ALL' ? '전체' : filterMode === 'OWNER' ? '방장' : '참여'}
               </FilterBtn>
-              <JoinRequestBtn onClick={() => setIsInviteListOpen(true)}>
-                참여 알림
-                {mockInvitations.length > 0 && <BadgeDot />}
-              </JoinRequestBtn>
 
               {projects.length > 0 && (
                 <SelectModeBtn 
@@ -1059,54 +1024,56 @@ export default function Home() {
               )}
             </TabContainer>
             
-            <div style={{ padding: '24px' }}>
+            <div style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}>
               {collabTab === 'invite' && isCollabOwner ? (
-                <form onSubmit={handleInviteMember}>
-                  <InputGroup>
-                    <label>초대할 회원의 고유 식별 ID</label>
-                    <Input 
-                      type="text" 
-                      placeholder="예: 104" 
-                      value={inviteMemberId} 
-                      onChange={(e) => setInviteMemberId(e.target.value)} 
-                    />
-                  </InputGroup>
-                  <InputGroup>
-                    <label>부여할 권한</label>
-                    <div style={{ position: 'relative', width: '100%' }}>
-                      <div
-                        onClick={(e) => { e.stopPropagation(); setOpenInviteRoleDropdown(!openInviteRoleDropdown); }}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
-                      >
-                        <span>{inviteRole === 'EDITOR' ? 'EDITOR (수정 가능)' : 'VIEWER (조회 가능)'}</span>
-                        <span style={{ fontSize: '10px', transform: openInviteRoleDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
-                      </div>
-                      {openInviteRoleDropdown && (
-                        <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', overflow: 'hidden' }}>
-                          <div 
-                            onClick={() => { setInviteRole('EDITOR'); setOpenInviteRoleDropdown(false); }} 
-                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                          >EDITOR (수정 가능)</div>
-                          <div 
-                            onClick={() => { setInviteRole('VIEWER'); setOpenInviteRoleDropdown(false); }} 
-                            style={{ padding: '12px', fontSize: '14px', cursor: 'pointer' }}
-                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                          >VIEWER (조회 가능)</div>
+                <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div style={{ flex: 1 }}>
+                    <InputGroup>
+                      <label>초대할 회원의 고유 식별 ID</label>
+                      <Input 
+                        type="text" 
+                        placeholder="예: 104" 
+                        value={inviteMemberId} 
+                        onChange={(e) => setInviteMemberId(e.target.value)} 
+                      />
+                    </InputGroup>
+                    <InputGroup>
+                      <label>부여할 권한</label>
+                      <div style={{ position: 'relative', width: '100%' }}>
+                        <div
+                          onClick={(e) => { e.stopPropagation(); setOpenInviteRoleDropdown(!openInviteRoleDropdown); }}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                        >
+                          <span>{inviteRole === 'EDITOR' ? 'EDITOR (수정 가능)' : 'VIEWER (조회 가능)'}</span>
+                          <span style={{ fontSize: '10px', transform: openInviteRoleDropdown ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }}>▼</span>
                         </div>
-                      )}
-                    </div>
-                  </InputGroup>
+                        {openInviteRoleDropdown && (
+                          <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', overflow: 'hidden' }}>
+                            <div 
+                              onClick={() => { setInviteRole('EDITOR'); setOpenInviteRoleDropdown(false); }} 
+                              style={{ padding: '12px', fontSize: '14px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                              onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                              onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                            >EDITOR (수정 가능)</div>
+                            <div 
+                              onClick={() => { setInviteRole('VIEWER'); setOpenInviteRoleDropdown(false); }} 
+                              style={{ padding: '12px', fontSize: '14px', cursor: 'pointer' }}
+                              onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                              onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                            >VIEWER (조회 가능)</div>
+                          </div>
+                        )}
+                      </div>
+                    </InputGroup>
+                  </div>
                   
-                  <ModalActions style={{ marginTop: '30px' }}>
+                  <ModalActions style={{ marginTop: 'auto' }}>
                     <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
                   </ModalActions>
                 </form>
               ) : (
                 <>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
                     <Input 
                       type="text" 
                       placeholder="닉네임 또는 이메일 검색" 
@@ -1186,37 +1153,6 @@ export default function Home() {
                 </>
               )}
             </div>
-          </ModalContent>
-        </ModalOverlay>
-      )}
-
-      {isInviteListOpen && (
-        <ModalOverlay onClick={() => setIsInviteListOpen(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
-            <ModalTitle>받은 참여 요청</ModalTitle>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto' }}>
-              {mockInvitations.length === 0 ? (
-                <EmptyState style={{ padding: '30px 0', border: 'none' }}>
-                  <p style={{ fontSize: '14px', margin: 0 }}>새로 들어온 초대 요청이 없습니다.</p>
-                </EmptyState>
-              ) : (
-                mockInvitations.map(inv => (
-                  <InviteCard key={inv.inviteId}>
-                    <div className="info">
-                      <div className="proj">{inv.projectName}</div>
-                      <div className="owner">{inv.ownerName}님이 초대했습니다.</div>
-                    </div>
-                    <div className="actions">
-                      <button className="reject" onClick={() => handleRejectInvite(inv.inviteId)}>거절</button>
-                      <button className="accept" onClick={() => handleAcceptInvite(inv.inviteId)}>참여</button>
-                    </div>
-                  </InviteCard>
-                ))
-              )}
-            </div>
-            <ModalActions style={{ marginTop: '20px' }}>
-              <CancelBtn style={{ width: '100%' }} onClick={() => setIsInviteListOpen(false)}>닫기</CancelBtn>
-            </ModalActions>
           </ModalContent>
         </ModalOverlay>
       )}
@@ -1696,35 +1632,6 @@ const FilterBtn = styled.button`
   &:hover { background: #f8f9fa; border-color: #a0aec0; }
 `;
 
-const JoinRequestBtn = styled.button`
-  background: white;
-  color: #4a5568;
-  border: 1px solid #cbd5e0;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  position: relative;
-  &:hover { background: #f8f9fa; border-color: #a0aec0; }
-  .icon { font-size: 16px; }
-`;
-
-const BadgeDot = styled.span`
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 10px;
-  height: 10px;
-  background-color: #e53e3e;
-  border-radius: 50%;
-  border: 2px solid white;
-`;
-
 const SelectModeBtn = styled.button<{ active: boolean }>`
   background: ${({ active }) => active ? '#edf2f7' : 'white'};
   color: #4a5568;
@@ -2037,7 +1944,7 @@ const CollabListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 350px;
+  flex: 1; 
   overflow-y: auto;
   overflow-x: hidden;
   -ms-overflow-style: none;
@@ -2088,14 +1995,14 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   }
   
   .actions { 
-    display: flex; flex-direction: column; align-items: flex-end; gap: 6px; 
+    display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; 
     flex-shrink: 0; 
   }
   
   .action-row-top { display: flex; justify-content: flex-end; width: 100%; }
   .action-row-bottom { display: flex; gap: 4px; justify-content: flex-end; width: 100%; }
 
-  .role-text { font-size: 12px; font-weight: 700; margin-top: 4px; }
+  .role-text { font-size: 12px; font-weight: 700; margin-top: 0; }
   .role-text.owner { color: #c05621; }
   .role-text.editor { color: #553c9a; }
   .role-text.viewer { color: #718096; }
@@ -2135,32 +2042,6 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     box-sizing: border-box;
   }
   .delegate-btn:hover { background: #fefcbf; }
-`;
-
-const InviteCard = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: white;
-
-  .info { display: flex; flex-direction: column; gap: 4px; }
-  .proj { font-weight: bold; color: #2d3748; font-size: 14px; }
-  .owner { color: #718096; font-size: 12px; }
-  
-  .actions { display: flex; gap: 8px; }
-  button {
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-  }
-  .reject { background: #edf2f7; color: #4a5568; &:hover { background: #e2e8f0; } }
-  .accept { background: #28b4ad; color: white; &:hover { background: #219992; } }
 `;
 
 const HistoryModalContent = styled(ModalContent)`
