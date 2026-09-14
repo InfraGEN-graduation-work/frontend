@@ -21,7 +21,14 @@ interface Project {
 interface Collaborator {
   memberId: number;
   nickname: string;
+  email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
+}
+
+interface Invitation {
+  inviteId: number;
+  projectName: string;
+  ownerName: string;
 }
 
 export default function Home() {
@@ -85,6 +92,9 @@ export default function Home() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
   const [historyDetail, setHistoryDetail] = useState<any>(null);
   const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
+
+  const [isInviteListOpen, setIsInviteListOpen] = useState(false);
+  const [mockInvitations, setMockInvitations] = useState<Invitation[]>([]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -257,6 +267,28 @@ export default function Home() {
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
     }
+  };
+
+  const handleAcceptInvite = (inviteId: number) => {
+    const invite = mockInvitations.find(i => i.inviteId === inviteId);
+    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invite?.projectName}' 프로젝트에 참여되었습니다.` }));
+    
+    if (invite) {
+      setProjects(prev => [{
+        projectId: Date.now(),
+        title: invite.projectName,
+        description: `${invite.ownerName}님이 초대한 프로젝트입니다.`,
+        status: 'DRAFT',
+        createdAt: new Date().toISOString(),
+        myRole: 'VIEWER'
+      }, ...prev]);
+    }
+  };
+
+  const handleRejectInvite = (inviteId: number) => {
+    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: `참여 요청을 거절했습니다.` }));
   };
 
   const handleSubmitProject = async (e: React.FormEvent) => {
@@ -727,12 +759,12 @@ export default function Home() {
 
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
-    ...collaborators.map(c => ({ isMe: false, email: '', ...c }))
+    ...collaborators.map(c => ({ isMe: false, email: c.email, ...c }))
   ];
 
   const filteredMembers = allMembers.filter(m => 
     m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase()) || 
-    m.email.toLowerCase().includes(collabSearchTerm.toLowerCase())
+    (m.email && m.email.toLowerCase().includes(collabSearchTerm.toLowerCase()))
   );
 
   return (
@@ -788,6 +820,10 @@ export default function Home() {
               <FilterBtn onClick={handleFilterToggle}>
                 {filterMode === 'ALL' ? '전체' : filterMode === 'OWNER' ? '방장' : '참여'}
               </FilterBtn>
+              <JoinRequestBtn onClick={() => setIsInviteListOpen(true)}>
+                참여 알림
+                {mockInvitations.length > 0 && <BadgeDot />}
+              </JoinRequestBtn>
 
               {projects.length > 0 && (
                 <SelectModeBtn 
@@ -1108,18 +1144,18 @@ export default function Home() {
                             {!isCollabEditMode || member.isMe ? (
                               <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
                             ) : (
-                              <>
+                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div className="action-row-top">
-                                  <div style={{ position: 'relative', width: '90px' }}>
+                                  <div style={{ position: 'relative', width: '100%' }}>
                                     <div
                                       onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer' }}
+                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
                                     >
                                       <span>{member.role}</span>
                                       <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
                                     {openRoleDropdownId === member.memberId && (
-                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
                                         <div 
                                           onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
                                           style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
@@ -1140,7 +1176,7 @@ export default function Home() {
                                   <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
                                   <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
                                 </div>
-                              </>
+                              </div>
                             )}
                           </div>
                         </CollabItem>
@@ -1150,6 +1186,37 @@ export default function Home() {
                 </>
               )}
             </div>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isInviteListOpen && (
+        <ModalOverlay onClick={() => setIsInviteListOpen(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
+            <ModalTitle>받은 참여 요청</ModalTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto' }}>
+              {mockInvitations.length === 0 ? (
+                <EmptyState style={{ padding: '30px 0', border: 'none' }}>
+                  <p style={{ fontSize: '14px', margin: 0 }}>새로 들어온 초대 요청이 없습니다.</p>
+                </EmptyState>
+              ) : (
+                mockInvitations.map(inv => (
+                  <InviteCard key={inv.inviteId}>
+                    <div className="info">
+                      <div className="proj">{inv.projectName}</div>
+                      <div className="owner">{inv.ownerName}님이 초대했습니다.</div>
+                    </div>
+                    <div className="actions">
+                      <button className="reject" onClick={() => handleRejectInvite(inv.inviteId)}>거절</button>
+                      <button className="accept" onClick={() => handleAcceptInvite(inv.inviteId)}>참여</button>
+                    </div>
+                  </InviteCard>
+                ))
+              )}
+            </div>
+            <ModalActions style={{ marginTop: '20px' }}>
+              <CancelBtn style={{ width: '100%' }} onClick={() => setIsInviteListOpen(false)}>닫기</CancelBtn>
+            </ModalActions>
           </ModalContent>
         </ModalOverlay>
       )}
@@ -1629,6 +1696,35 @@ const FilterBtn = styled.button`
   &:hover { background: #f8f9fa; border-color: #a0aec0; }
 `;
 
+const JoinRequestBtn = styled.button`
+  background: white;
+  color: #4a5568;
+  border: 1px solid #cbd5e0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  &:hover { background: #f8f9fa; border-color: #a0aec0; }
+  .icon { font-size: 16px; }
+`;
+
+const BadgeDot = styled.span`
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background-color: #e53e3e;
+  border-radius: 50%;
+  border: 2px solid white;
+`;
+
 const SelectModeBtn = styled.button<{ active: boolean }>`
   background: ${({ active }) => active ? '#edf2f7' : 'white'};
   color: #4a5568;
@@ -1941,7 +2037,7 @@ const CollabListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 260px;
+  max-height: 350px;
   overflow-y: auto;
   overflow-x: hidden;
   -ms-overflow-style: none;
@@ -1952,7 +2048,7 @@ const CollabListWrapper = styled.div`
 const CollabItem = styled.div<{ $isMe?: boolean }>`
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   padding: 12px;
   border: 1px solid ${({ $isMe }) => $isMe ? '#28b4ad' : '#e2e8f0'};
   background: ${({ $isMe }) => $isMe ? '#f0fdfc' : 'white'};
@@ -2005,31 +2101,66 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .role-text.viewer { color: #718096; }
   
   .remove-btn {
-    background: none;
-    border: none;
-    color: #e53e3e;
-    font-size: 12px;
-    font-weight: bold;
-    cursor: pointer;
-    padding: 4px 8px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: #fff5f5;
+    border: 1px solid #fc8181;
+    color: #e53e3e;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 4px 0;
     border-radius: 4px;
-    &:hover { background: #fed7d7; }
+    transition: 0.2s;
+    box-sizing: border-box;
   }
+  .remove-btn:hover { background: #fed7d7; }
     
   .delegate-btn {
-    background: none;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
     border: 1px solid #ecc94b;
     color: #d69e2e;
     font-size: 11px;
     font-weight: 700;
-    padding: 4px 8px;
+    padding: 4px 0;
     border-radius: 4px;
     cursor: pointer;
     transition: 0.2s;
-    white-space: nowrap;
-    &:hover { background: #fefcbf; }
+    box-sizing: border-box;
   }
+  .delegate-btn:hover { background: #fefcbf; }
+`;
+
+const InviteCard = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+
+  .info { display: flex; flex-direction: column; gap: 4px; }
+  .proj { font-weight: bold; color: #2d3748; font-size: 14px; }
+  .owner { color: #718096; font-size: 12px; }
+  
+  .actions { display: flex; gap: 8px; }
+  button {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .reject { background: #edf2f7; color: #4a5568; &:hover { background: #e2e8f0; } }
+  .accept { background: #28b4ad; color: white; &:hover { background: #219992; } }
 `;
 
 const HistoryModalContent = styled(ModalContent)`
