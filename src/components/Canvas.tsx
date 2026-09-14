@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
-import type { ViewportState } from '../MainPage';
+import type { ViewportState, RemoteCursor } from '../MainPage';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
@@ -26,12 +26,14 @@ interface CanvasProps {
   resetTrigger: number;
   setActiveTab: React.Dispatch<React.SetStateAction<'Project' | 'Settings' | 'Validation'>>;
   setShowRightSidebar: React.Dispatch<React.SetStateAction<boolean>>;
+  otherCursors?: RemoteCursor[];
+  onCursorMove?: (x: number, y: number) => void;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
-  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar
+  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -162,7 +164,11 @@ const Canvas: React.FC<CanvasProps> = ({
     if (!viewportRef.current) return;
     const state = stateRef.current;
     const coords = getCoords(clientX, clientY, viewportRef.current, state.zoomLevel);
-    
+
+    if (onCursorMove) {
+      onCursorMove(coords.x, coords.y);
+    }
+
     const dx = coords.x - state.startMousePos.x;
     const dy = coords.y - state.startMousePos.y;
 
@@ -598,6 +604,29 @@ const Canvas: React.FC<CanvasProps> = ({
                   <div className="node-name">{node.name}</div>
                   <div className="node-sub">메인 {node.type} 서비스</div>
                 </div>
+              </div>
+            </div>
+          ))}
+
+          {otherCursors.map(cursor => (
+            <div key={cursor.memberId} style={{
+              position: 'absolute',
+              left: cursor.x,
+              top: cursor.y,
+              zIndex: 9999,
+              pointerEvents: 'none',
+              transition: 'left 0.1s linear, top 0.1s linear'
+            }}>
+              <svg width="24" height="36" viewBox="0 0 24 36" fill="none" style={{ transform: 'translate(-4px, -4px)' }}>
+                <path d="M5.65376 2.15376C5.40128 1.64883 4.64883 1.64883 4.39635 2.15376L0.26046 10.4256C0.0336043 10.8793 0.443135 11.3703 0.916892 11.2124L4.05389 10.1668C4.36446 10.0632 4.70014 10.0632 5.01071 10.1668L8.14771 11.2124C8.62147 11.3703 9.031 10.8793 8.80414 10.4256L5.65376 2.15376Z" fill={cursor.color} stroke="white" strokeWidth="1"/>
+              </svg>
+              <div style={{
+                background: cursor.color, color: 'white', padding: '2px 8px',
+                borderRadius: '12px', fontSize: '12px', fontWeight: 'bold',
+                whiteSpace: 'nowrap', position: 'absolute', top: '16px', left: '16px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}>
+                {cursor.nickname}
               </div>
             </div>
           ))}

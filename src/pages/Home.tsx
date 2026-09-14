@@ -15,20 +15,20 @@ interface Project {
   description: string;
   status: string;
   createdAt: string;
+  myRole?: string;
 }
 
-interface ProjectHistory {
-  historyId: number;
-  versionName: string;
-  description: string;
-  createdAt: string;
+interface Collaborator {
+  memberId: number;
+  nickname: string;
+  role: 'EDITOR' | 'VIEWER';
 }
 
 export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
+  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
   
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
@@ -45,21 +45,12 @@ export default function Home() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
 
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-  const [activeHistoryProjectId, setActiveHistoryProjectId] = useState<number | null>(null);
-  const [historyList, setHistoryList] = useState<ProjectHistory[]>([]);
-  const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-
-  const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
-  const [historyDetail, setHistoryDetail] = useState<any>(null);
-  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
-
-  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
-  const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
-  const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
-  const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
-  const [downloadSelection, setDownloadSelection] = useState<Set<string>>(new Set());
+  const [isCollabModalOpen, setIsCollabModalOpen] = useState(false);
+  const [collabProjectId, setCollabProjectId] = useState<number | null>(null);
+  const [collabTab, setCollabTab] = useState<'list' | 'invite'>('list');
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [inviteMemberId, setInviteMemberId] = useState('');
+  const [inviteRole, setInviteRole] = useState<'EDITOR' | 'VIEWER'>('VIEWER');
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
@@ -70,6 +61,27 @@ export default function Home() {
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
+  const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
+  const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
+  const [downloadSelection, setDownloadSelection] = useState<Set<string>>(new Set());
+
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [activeHistoryProjectId, setActiveHistoryProjectId] = useState<number | null>(null);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
+  const [historyDetail, setHistoryDetail] = useState<any>(null);
+  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
+
+  const [isInviteListOpen, setIsInviteListOpen] = useState(false);
+  const [mockInvitations, setMockInvitations] = useState([
+    { inviteId: 101, projectName: '사이드 프로젝트 인프라', ownerName: 'DevKing' },
+    { inviteId: 102, projectName: 'AWS 마이그레이션', ownerName: 'CloudMaster' }
+  ]);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -90,41 +102,156 @@ export default function Home() {
     return () => window.removeEventListener('global-toast', handleGlobalToast);
   }, []);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const userRes = await fetchWithAuth(`${BASE_URL}/members/me`);
-        if (userRes.status === 401) {
-          navigate('/login');
-          return;
-        }
-
-        const userData = await userRes.json();
-        if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
-          const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
-          setUserInfo({ 
-            nickname: userData.result.nickname, 
-            email: userData.result.email,
-            provider: String(rawProvider).toUpperCase()
-          });
-          
-          if(userData.result.autoSaveEnabled !== undefined) {
-            setIsAutoSaveEnabled(userData.result.autoSaveEnabled);
-          }
-        }
-
-        const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
-        const projData = await projRes.json();
-        
-        if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
-          setProjects(projData.result.projectList || []);
-        }
-      } catch (err) {
+  const fetchDashboardData = async () => {
+    try {
+      const userRes = await fetchWithAuth(`${BASE_URL}/members/me`);
+      if (userRes.status === 401) {
+        navigate('/login');
+        return;
       }
-    };
 
+      const userData = await userRes.json();
+      if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
+        const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
+        setUserInfo({ 
+          id: userData.result.id, 
+          nickname: userData.result.nickname, 
+          email: userData.result.email,
+          provider: String(rawProvider).toUpperCase()
+        });
+        
+        if(userData.result.autoSaveEnabled !== undefined) {
+          setIsAutoSaveEnabled(userData.result.autoSaveEnabled);
+        }
+      }
+
+      const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
+      const projData = await projRes.json();
+      
+      if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
+        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: 'OWNER' }));
+        setProjects(mappedProjects);
+      }
+    } catch (err) {
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, [navigate, fetchWithAuth, setIsAutoSaveEnabled]);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: '고유 식별 ID가 복사되었습니다.' }));
+  };
+
+  const handleOpenCollabModal = async (e: React.MouseEvent, projectId: number) => {
+    e.stopPropagation();
+    setMenuOpenId(null);
+    setCollabProjectId(projectId);
+    setCollabTab('list');
+    setInviteMemberId('');
+    setInviteRole('VIEWER');
+    setIsCollabModalOpen(true);
+    fetchCollaborators(projectId);
+  };
+
+  const fetchCollaborators = async (projectId: number) => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
+      const data = await res.json();
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        setCollaborators(data.result.collaborators || []);
+      }
+    } catch (err) {}
+  };
+
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collabProjectId || !inviteMemberId.trim()) return;
+    
+    const parsedId = parseInt(inviteMemberId, 10);
+    if (isNaN(parsedId)) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '숫자로 된 식별 ID를 입력해주세요.' }));
+      return;
+    }
+    if (parsedId === userInfo.id) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
+      return;
+    }
+    
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: parsedId, role: inviteRole })
+      });
+      const data = await res.json();
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 초대(추가)되었습니다.' }));
+        setInviteMemberId('');
+        setCollabTab('list');
+        fetchCollaborators(collabProjectId);
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대에 실패했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleRemoveCollaborator = async (memberId: number) => {
+    if (!collabProjectId) return;
+    if (!window.confirm('정말 이 참여자를 제외하시겠습니까?')) return;
+
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 제외되었습니다.' }));
+      }
+    } catch (err) {}
+  };
+
+  const handleRoleChange = async (memberId: number, newRole: string) => {
+    if (!collabProjectId) return;
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+      });
+      if (res.ok) {
+        setCollaborators(prev => prev.map(c => c.memberId === memberId ? { ...c, role: newRole as 'EDITOR' | 'VIEWER' } : c));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
+      }
+    } catch (err) {}
+  };
+
+  const handleAcceptInvite = (inviteId: number) => {
+    const invite = mockInvitations.find(i => i.inviteId === inviteId);
+    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invite?.projectName}' 프로젝트에 참여되었습니다.` }));
+
+    if (invite) {
+      setProjects(prev => [{
+        projectId: Date.now(),
+        title: invite.projectName,
+        description: `${invite.ownerName}님이 초대한 프로젝트입니다.`,
+        status: 'DRAFT',
+        createdAt: new Date().toISOString(),
+        myRole: 'VIEWER'
+      }, ...prev]);
+    }
+  };
+
+  const handleRejectInvite = (inviteId: number) => {
+    setMockInvitations(prev => prev.filter(i => i.inviteId !== inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: `참여 요청을 거절했습니다.` }));
+  };
+
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -277,20 +404,13 @@ export default function Home() {
       const results = await Promise.all(
         selectedIds.map(async (id) => {
           try {
-            const res = await fetchWithAuth(`${BASE_URL}/projects/${id}`, { 
-              method: 'DELETE'
-            });
+            const res = await fetchWithAuth(`${BASE_URL}/projects/${id}`, { method: 'DELETE' });
             const text = await res.text();
             let data: any = {};
-            try {
-              data = text ? JSON.parse(text) : {};
-            } catch(e) {}
-            
+            try { data = text ? JSON.parse(text) : {}; } catch(e) {}
             const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
             return { id, isSuccess };
-          } catch(e) {
-            return { id, isSuccess: false };
-          }
+          } catch(e) { return { id, isSuccess: false }; }
         })
       );
       
@@ -303,11 +423,78 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 삭제에 실패했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
     } finally {
       setSelectedIds([]);
       setIsSelectMode(false);
       setIsBulkDeleteConfirmOpen(false);
+    }
+  };
+
+  const handleOpenUserInfo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditProfileForm({ nickname: userInfo.nickname, password: '', passwordConfirm: '' });
+    setIsUserInfoModalOpen(true);
+    setIsProfileMenuOpen(false);
+  };
+
+  const hasProfileChanges = 
+    editProfileForm.nickname !== userInfo.nickname || 
+    (userInfo.provider !== 'KAKAO' && editProfileForm.password !== '');
+
+  const handleUpdateUserInfo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hasProfileChanges) { setIsUserInfoModalOpen(false); return; }
+
+    if (userInfo.provider !== 'KAKAO') {
+      if (editProfileForm.password && editProfileForm.password.length < 8) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
+        return;
+      }
+      if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다.' }));
+        return;
+      }
+    }
+
+    try {
+      const payload: any = { nickname: editProfileForm.nickname };
+      if (userInfo.provider !== 'KAKAO' && editProfileForm.password) payload.password = editProfileForm.password;
+      
+      const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (!res.ok || !isSuccess) throw new Error(data.message || `서버 연동 오류 (${res.status})`);
+
+      setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
+      setIsUserInfoModalOpen(false);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
+    } catch (err: any) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '오류가 발생했습니다.' }));
+    }
+  };
+
+  const executeWithdraw = async () => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (!res.ok || !isSuccess) throw new Error(data.message);
+
+      setIsWithdrawConfirmOpen(false);
+      setIsUserInfoModalOpen(false);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 탈퇴가 완료되었습니다.' }));
+      setTimeout(() => { logout(); }, 1500);
+    } catch (err: any) {
+      setIsWithdrawConfirmOpen(false);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '오류가 발생했습니다.' }));
     }
   };
 
@@ -463,116 +650,6 @@ export default function Home() {
     saveAs(content, "infragen-export.zip");
   };
 
-  const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return;
-    setIsBulkDeleteConfirmOpen(true);
-  };
-
-  const handleCardClick = (projectId: number) => {
-    if (isSelectMode) {
-      setSelectedIds(prev => prev.includes(projectId) ? prev.filter(id => id !== projectId) : [...prev, projectId]);
-    } else {
-      navigate(`/project/${projectId}`);
-    }
-  };
-
-  const handleLogoutClick = async () => {
-    await logout();
-  };
-
-  const handleOpenUserInfo = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditProfileForm({ nickname: userInfo.nickname, password: '', passwordConfirm: '' });
-    setIsUserInfoModalOpen(true);
-    setIsProfileMenuOpen(false);
-  };
-
-  const hasProfileChanges = 
-    editProfileForm.nickname !== userInfo.nickname || 
-    (userInfo.provider !== 'KAKAO' && editProfileForm.password !== '');
-
-  const handleUpdateUserInfo = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!hasProfileChanges) {
-      setIsUserInfoModalOpen(false);
-      return;
-    }
-
-    if (userInfo.provider !== 'KAKAO') {
-      if (editProfileForm.password && editProfileForm.password.length < 8) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
-        return;
-      }
-      if (editProfileForm.password && editProfileForm.password !== editProfileForm.passwordConfirm) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 일치하지 않습니다. 다시 확인해주세요.' }));
-        return;
-      }
-    }
-
-    try {
-      const payload: any = {
-        nickname: editProfileForm.nickname,
-      };
-
-      if (userInfo.provider !== 'KAKAO' && editProfileForm.password) {
-        payload.password = editProfileForm.password;
-      }
-      
-      const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (!res.ok || !isSuccess) {
-        const errorMsg = data.message || (typeof data.result === 'string' ? data.result : `서버 연동 오류 (${res.status})`);
-        throw new Error(errorMsg);
-      }
-
-      setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
-      setIsUserInfoModalOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
-    } catch (err: any) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '예기치 않은 서버 오류가 발생했습니다.' }));
-      console.error('Update User Info Error:', err);
-    }
-  };
-
-  const executeWithdraw = async () => {
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
-      
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (!res.ok || !isSuccess) {
-        const errorMsg = data.message || (typeof data.result === 'string' ? data.result : `서버 연동 오류 (${res.status})`);
-        throw new Error(errorMsg);
-      }
-
-      setIsWithdrawConfirmOpen(false);
-      setIsUserInfoModalOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 탈퇴가 완료되었습니다.' }));
-      
-      setTimeout(() => {
-        logout(); 
-      }, 1500);
-
-    } catch (err: any) {
-      setIsWithdrawConfirmOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '예기치 않은 서버 오류가 발생했습니다.' }));
-      console.error('Withdrawal Error:', err);
-    }
-  };
-
-  const handleToggleAutoSave = async (checked: boolean) => {
-    setIsAutoSaveEnabled(checked);
-  };
-
   const formatDate = (isoString: string) => {
     if (!isoString) return '';
     const date = new Date(isoString);
@@ -595,6 +672,9 @@ export default function Home() {
       ? b.historyId - a.historyId 
       : a.historyId - b.historyId; 
   });
+
+  const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
+  const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
 
   return (
     <PageContainer>
@@ -626,14 +706,14 @@ export default function Home() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>자동 저장 (10분)</span>
                   <ToggleSwitchContainer>
-                    <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => handleToggleAutoSave(e.target.checked)} />
+                    <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => setIsAutoSaveEnabled(e.target.checked)} />
                     <ToggleSlider checked={isAutoSaveEnabled} />
                   </ToggleSwitchContainer>
                 </div>
 
                 <ProfileActionRow>
                   <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
-                  <ProfileActionBtn className="danger" onClick={handleLogoutClick}>로그아웃</ProfileActionBtn>
+                  <ProfileActionBtn className="danger" onClick={logout}>로그아웃</ProfileActionBtn>
                 </ProfileActionRow>
               </ProfileDropdown>
             )}
@@ -646,6 +726,11 @@ export default function Home() {
           <SectionHeader>
             <SectionTitle>내 프로젝트</SectionTitle>
             <HeaderActions>
+              <JoinRequestBtn onClick={() => setIsInviteListOpen(true)}>
+                <span className="icon">✉️</span> 참여 알림
+                {mockInvitations.length > 0 && <BadgeDot />}
+              </JoinRequestBtn>
+
               {projects.length > 0 && (
                 <SelectModeBtn 
                   active={isSelectMode} 
@@ -659,15 +744,12 @@ export default function Home() {
                 </SelectModeBtn>
               )}
               {isSelectMode && selectedIds.length > 0 && (
-                <BulkDeleteBtn onClick={handleBulkDelete}>
+                <BulkDeleteBtn onClick={() => setIsBulkDeleteConfirmOpen(true)}>
                   {selectedIds.length}개 삭제
                 </BulkDeleteBtn>
               )}
               <CreateBtn onClick={() => {
-                setNewTitle('');
-                setNewDesc('');
-                setModalProvider(''); 
-                setModalMode('create');
+                setNewTitle(''); setNewDesc(''); setModalProvider(''); setModalMode('create');
               }}>+ 새 프로젝트</CreateBtn>
             </HeaderActions>
           </SectionHeader>
@@ -684,12 +766,18 @@ export default function Home() {
                 return (
                   <ProjectCard 
                     key={proj.projectId} 
-                    onClick={() => handleCardClick(proj.projectId)}
+                    onClick={() => {
+                      if (isSelectMode) setSelectedIds(prev => prev.includes(proj.projectId) ? prev.filter(id => id !== proj.projectId) : [...prev, proj.projectId]);
+                      else navigate(`/project/${proj.projectId}`);
+                    }}
                     isSelected={isSelected}
                     isSelectMode={isSelectMode}
                   >
                     <CardHeader>
-                      <ProjectStatus status={proj.status}>{proj.status}</ProjectStatus>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <RoleBadge role={proj.myRole || 'OWNER'}>{proj.myRole || 'OWNER'}</RoleBadge>
+                        <ProjectStatus status={proj.status}>{proj.status}</ProjectStatus>
+                      </div>
                       
                       {isSelectMode ? (
                         <Checkbox isChecked={isSelected}>
@@ -715,6 +803,7 @@ export default function Home() {
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>수정</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
                               <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
@@ -737,6 +826,7 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
+      {/* 프로젝트 생성/수정 모달 */}
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -753,7 +843,6 @@ export default function Home() {
                     style={{ flex: 1 }}
                   />
                   
-                  {/* 심플한 텍스트로 축소된 커스텀 셀렉트 박스 */}
                   <div style={{ position: 'relative', width: '110px' }}>
                     <div
                       onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
@@ -772,17 +861,13 @@ export default function Home() {
                           style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >
-                          AWS
-                        </div>
+                        >AWS</div>
                         <div 
                           onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
                           style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >
-                          OCI
-                        </div>
+                        >OCI</div>
                       </div>
                     )}
                   </div>
@@ -790,11 +875,7 @@ export default function Home() {
               </InputGroup>
               <InputGroup>
                 <label>설명 (선택)</label>
-                <TextArea
-                  placeholder="프로젝트에 대한 간단한 설명을 적어주세요."
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                />
+                <TextArea placeholder="간단한 설명을 적어주세요." value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
               </InputGroup>
               <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
                 <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
@@ -805,38 +886,7 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {projectToDelete !== null && (
-        <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>프로젝트 삭제</ModalTitle>
-            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              정말 이 프로젝트를 삭제하시겠습니까?<br />
-              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
-            </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
-              <CancelBtn type="button" onClick={() => setProjectToDelete(null)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmDeleteSingle}>삭제하기</SubmitBtn>
-            </ModalActions>
-          </ModalContent>
-        </ModalOverlay>
-      )}
-
-      {isBulkDeleteConfirmOpen && (
-        <ModalOverlay onClick={() => setIsBulkDeleteConfirmOpen(false)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>다중 프로젝트 삭제</ModalTitle>
-            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              선택한 {selectedIds.length}개의 프로젝트를 정말 삭제하시겠습니까?<br />
-              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
-            </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
-              <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>삭제하기</SubmitBtn>
-            </ModalActions>
-          </ModalContent>
-        </ModalOverlay>
-      )}
-
+      {/* 회원정보 수정 모달 */}
       {isUserInfoModalOpen && (
         <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -850,55 +900,36 @@ export default function Home() {
               </div>
 
               <InputGroup>
-                <label>닉네임</label>
-                <Input
-                  type="text"
-                  required
-                  placeholder="닉네임 입력"
-                  value={editProfileForm.nickname}
-                  onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })}
-                />
-              </InputGroup>
-              <InputGroup>
-                <label>이메일 (ID)</label>
-                <Input
-                  type="email"
-                  value={userInfo.email}
-                  disabled
-                  title="이메일은 변경할 수 없습니다."
-                />
+                <label>내 고유 식별 ID (초대 시 사용)</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <Input type="text" value={userInfo.id} readOnly style={{ flex: 1, background: '#f1f3f5', color: '#718096', fontWeight: 'bold' }} />
+                  <CancelBtn type="button" onClick={() => copyToClipboard(String(userInfo.id))} style={{ flexShrink: 0 }}>복사</CancelBtn>
+                </div>
               </InputGroup>
 
-              {userInfo.provider !== 'KAKAO' ? (
+              <InputGroup>
+                <label>닉네임</label>
+                <Input type="text" required value={editProfileForm.nickname} onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })} />
+              </InputGroup>
+              <InputGroup>
+                <label>이메일 (변경 불가)</label>
+                <Input type="email" value={userInfo.email} disabled />
+              </InputGroup>
+
+              {userInfo.provider !== 'KAKAO' && (
                 <>
                   <InputGroup>
                     <label>새 비밀번호</label>
-                    <Input
-                      type="password"
-                      placeholder="변경할 비밀번호를 입력하세요 (선택사항, 8자 이상)"
-                      value={editProfileForm.password}
-                      onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
-                    />
+                    <Input type="password" placeholder="변경할 비밀번호 (선택사항, 8자 이상)" value={editProfileForm.password} onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })} />
                   </InputGroup>
                   <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
                     <label>새 비밀번호 확인</label>
-                    <Input
-                      type="password"
-                      placeholder="비밀번호를 다시 한 번 입력하세요"
-                      value={editProfileForm.passwordConfirm}
-                      onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })}
-                      disabled={!editProfileForm.password}
-                    />
+                    <Input type="password" placeholder="비밀번호 재입력" value={editProfileForm.passwordConfirm} onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })} disabled={!editProfileForm.password} />
                   </InputGroup>
                 </>
-              ) : (
-                <SocialNoticeBox>
-                  <span className="icon">💬</span>
-                  <p>카카오 소셜 로그인 회원은 비밀번호를 변경할 수 없습니다.</p>
-                </SocialNoticeBox>
               )}
               
-              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: userInfo.provider === 'KAKAO' ? '30px' : '20px' }}>
+              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
                 <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
@@ -910,21 +941,133 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {isWithdrawConfirmOpen && (
-        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>회원 탈퇴를 진행하시겠습니까?</ModalTitle>
-            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              탈퇴 시 생성된 모든 프로젝트와 계정 정보가 완전히 삭제되며, 삭제된 데이터는 다시 복구할 수 없습니다.
-            </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
-              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw}>탈퇴 확인</SubmitBtn>
+      {/* 참여자 관리 모달 */}
+      {isCollabModalOpen && (
+        <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
+            <TabContainer>
+              <CollabTab $active={collabTab === 'list'} onClick={() => setCollabTab('list')}>참여자 목록</CollabTab>
+              {isCollabOwner && (
+                <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>직접 초대하기</CollabTab>
+              )}
+            </TabContainer>
+            
+            <div style={{ padding: '24px' }}>
+              {collabTab === 'invite' && isCollabOwner ? (
+                <form onSubmit={handleInviteMember}>
+                  <InputGroup>
+                    <label>초대할 회원의 고유 식별 ID</label>
+                    <Input 
+                      type="text" 
+                      placeholder="예: 104" 
+                      value={inviteMemberId} 
+                      onChange={(e) => setInviteMemberId(e.target.value)} 
+                    />
+                  </InputGroup>
+                  <InputGroup>
+                    <label>부여할 권한</label>
+                    <select 
+                      value={inviteRole} 
+                      onChange={(e) => setInviteRole(e.target.value as 'EDITOR' | 'VIEWER')}
+                      style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', outline: 'none', background: 'white' }}
+                    >
+                      <option value="VIEWER">VIEWER (조회 가능)</option>
+                      <option value="EDITOR">EDITOR (수정 가능)</option>
+                    </select>
+                  </InputGroup>
+                  
+                  <ModalActions style={{ marginTop: '30px' }}>
+                    <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
+                  </ModalActions>
+                </form>
+              ) : (
+                <CollabListWrapper>
+                  {/* 나 (현재 로그인한 유저) */}
+                  <CollabItem $isMe={true}>
+                    <div className="user-info">
+                      <span className="avatar" style={{ background: '#28b4ad', color: 'white' }}>{userInfo.nickname.charAt(0).toUpperCase()}</span>
+                      <div className="details">
+                        <span className="name">
+                          {userInfo.nickname} 
+                          {isCollabOwner && <span title="프로젝트 생성자">👑</span>} 
+                          <span className="me-badge">나</span>
+                        </span>
+                        <span className="email">{userInfo.email}</span>
+                      </div>
+                    </div>
+                    <span className={`role-text ${isCollabOwner ? 'owner' : ''}`}>
+                      {currentCollabProject?.myRole || 'VIEWER'}
+                    </span>
+                  </CollabItem>
+
+                  {collaborators.filter(c => c.memberId !== userInfo.id).map(member => (
+                    <CollabItem key={member.memberId}>
+                      <div className="user-info">
+                        <span className="avatar">{member.nickname.charAt(0)}</span>
+                        <div className="details">
+                          <span className="name">{member.nickname}</span>
+                          <span className="email">ID: {member.memberId}</span>
+                        </div>
+                      </div>
+                      <div className="actions">
+                        {isCollabOwner ? (
+                          <>
+                            <select 
+                              className="role-select" 
+                              value={member.role} 
+                              onChange={(e) => handleRoleChange(member.memberId, e.target.value)}
+                            >
+                              <option value="EDITOR">EDITOR</option>
+                              <option value="VIEWER">VIEWER</option>
+                            </select>
+                            <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>✕</button>
+                          </>
+                        ) : (
+                          <span className="role-text">{member.role}</span>
+                        )}
+                      </div>
+                    </CollabItem>
+                  ))}
+                </CollabListWrapper>
+              )}
+            </div>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {/* 참여 요청(초대된 목록) 모달 */}
+      {isInviteListOpen && (
+        <ModalOverlay onClick={() => setIsInviteListOpen(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
+            <ModalTitle>받은 참여 요청</ModalTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto' }}>
+              {mockInvitations.length === 0 ? (
+                <EmptyState style={{ padding: '30px 0', border: 'none' }}>
+                  <p style={{ fontSize: '14px', margin: 0 }}>새로 들어온 초대 요청이 없습니다.</p>
+                </EmptyState>
+              ) : (
+                mockInvitations.map(inv => (
+                  <InviteCard key={inv.inviteId}>
+                    <div className="info">
+                      <div className="proj">{inv.projectName}</div>
+                      <div className="owner">{inv.ownerName}님이 초대했습니다.</div>
+                    </div>
+                    <div className="actions">
+                      <button className="reject" onClick={() => handleRejectInvite(inv.inviteId)}>거절</button>
+                      <button className="accept" onClick={() => handleAcceptInvite(inv.inviteId)}>참여</button>
+                    </div>
+                  </InviteCard>
+                ))
+              )}
+            </div>
+            <ModalActions style={{ marginTop: '20px' }}>
+              <CancelBtn style={{ width: '100%' }} onClick={() => setIsInviteListOpen(false)}>닫기</CancelBtn>
             </ModalActions>
           </ModalContent>
         </ModalOverlay>
       )}
 
+      {/* 활동 기록 모달 */}
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -988,7 +1131,7 @@ export default function Home() {
                             <span style={{ fontSize: 12, color: '#a0aec0' }}>상세 보기 →</span>
                           </HistoryItemHeader>
                           <HistoryDescList>
-                            {logLines.map((line, i) => (
+                            {logLines.map((line: string, i: number) => (
                               <li key={i}>{line}</li>
                             ))}
                           </HistoryDescList>
@@ -1006,6 +1149,7 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {/* 코드 뷰어 모달 */}
       {isCodeViewerOpen && (
         <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
           <CodeViewerModal onClick={(e) => e.stopPropagation()}>
@@ -1089,22 +1233,89 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
+      {/* 다중/단일 삭제, 회원탈퇴 모달 */}
+      {projectToDelete !== null && (
+        <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>프로젝트 삭제</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              정말 이 프로젝트를 삭제하시겠습니까?<br />
+              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setProjectToDelete(null)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmDeleteSingle}>삭제하기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
 
+      {isBulkDeleteConfirmOpen && (
+        <ModalOverlay onClick={() => setIsBulkDeleteConfirmOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>다중 프로젝트 삭제</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              선택한 {selectedIds.length}개의 프로젝트를 정말 삭제하시겠습니까?<br />
+              삭제된 프로젝트의 모든 데이터는 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>삭제하기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isWithdrawConfirmOpen && (
+        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>회원 탈퇴를 진행하시겠습니까?</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              탈퇴 시 생성된 모든 프로젝트와 계정 정보가 완전히 삭제되며, 삭제된 데이터는 다시 복구할 수 없습니다.
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw}>탈퇴 확인</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </PageContainer>
   );
 }
-
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-`;
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
   15% { opacity: 1; transform: translate(-50%, 0); }
   85% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, 20px); }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnimation} 3s ease forwards;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80vw;
+`;
+
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 `;
 
 const PageContainer = styled.div`
@@ -1266,16 +1477,10 @@ const ProfileActionBtn = styled.button`
   background: white;
   color: #4a5568;
 
-  &:hover {
-    background: #f8f9fa;
-  }
-
+  &:hover { background: #f8f9fa; }
   &.danger {
     color: #e53e3e;
-    &:hover {
-      background: #fff5f5;
-      border-color: #fc8181;
-    }
+    &:hover { background: #fff5f5; border-color: #fc8181; }
   }
 `;
 
@@ -1306,6 +1511,36 @@ const SectionTitle = styled.h2`
 const HeaderActions = styled.div`
   display: flex;
   gap: 12px;
+  align-items: center;
+`;
+
+const JoinRequestBtn = styled.button`
+  background: white;
+  color: #4a5568;
+  border: 1px solid #cbd5e0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  &:hover { background: #f8f9fa; border-color: #a0aec0; }
+  .icon { font-size: 16px; }
+`;
+
+const BadgeDot = styled.span`
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  background-color: #e53e3e;
+  border-radius: 50%;
+  border: 2px solid white;
 `;
 
 const SelectModeBtn = styled.button<{ active: boolean }>`
@@ -1420,6 +1655,15 @@ const ProjectStatus = styled.span<{ status: string }>`
   color: ${({ status }) => status === 'DRAFT' ? '#4a5568' : '#234e52'};
 `;
 
+const RoleBadge = styled.span<{ role: string }>`
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: ${({ role }) => role === 'OWNER' ? '#feebc8' : role === 'EDITOR' ? '#e9d8fd' : '#e2e8f0'};
+  color: ${({ role }) => role === 'OWNER' ? '#c05621' : role === 'EDITOR' ? '#553c9a' : '#4a5568'};
+`;
+
 const KebabMenuWrapper = styled.div`
   position: relative;
   display: flex;
@@ -1431,10 +1675,7 @@ const KebabMenuWrapper = styled.div`
   color: #a0aec0;
   transition: 0.2s;
   
-  &:hover {
-    background: #edf2f7;
-    color: #4a5568;
-  }
+  &:hover { background: #edf2f7; color: #4a5568; }
 `;
 
 const DropdownMenu = styled.div`
@@ -1445,7 +1686,7 @@ const DropdownMenu = styled.div`
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  width: 130px;
+  width: 140px;
   z-index: 100;
   overflow: hidden;
   animation: ${fadeIn} 0.15s ease-out forwards;
@@ -1458,16 +1699,8 @@ const DropdownItem = styled.div`
   color: #4a5568;
   transition: 0.15s;
 
-  &:hover {
-    background: #f8f9fa;
-  }
-
-  &.danger {
-    color: #e53e3e;
-    &:hover {
-      background: #fff5f5;
-    }
-  }
+  &:hover { background: #f8f9fa; }
+  &.danger { color: #e53e3e; &:hover { background: #fff5f5; } }
 `;
 
 const ProjectTitle = styled.h3`
@@ -1597,18 +1830,100 @@ const SubmitBtn = styled.button`
   &:hover { background: #219992; }
 `;
 
-const SocialNoticeBox = styled.div`
-  background: #f8f9fa;
-  border: 1px dashed #cbd5e0;
-  border-radius: 8px;
-  padding: 16px;
+const TabContainer = styled.div`
   display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e2e8f0;
+`;
+
+const CollabTab = styled.button<{ $active: boolean }>`
+  flex: 1;
+  padding: 14px 0;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: ${({ $active }) => $active ? '#28b4ad' : '#718096'};
+  border-bottom: 2px solid ${({ $active }) => $active ? '#28b4ad' : 'transparent'};
+  cursor: pointer;
+  transition: 0.2s;
+  &:hover { background: ${({ $active }) => $active ? 'transparent' : '#edf2f7'}; }
+`;
+
+const CollabListWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 350px;
+  overflow-y: auto;
+`;
+
+const CollabItem = styled.div<{ $isMe?: boolean }>`
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid ${({ $isMe }) => $isMe ? '#28b4ad' : '#e2e8f0'};
+  background: ${({ $isMe }) => $isMe ? '#f0fdfc' : 'white'};
+  border-radius: 8px;
+
+  .user-info { display: flex; align-items: center; gap: 12px; }
+  .avatar { width: 36px; height: 36px; background: #edf2f7; color: #4a5568; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+  .details { display: flex; flex-direction: column; gap: 2px; }
+  .name { font-weight: bold; color: #2d3748; font-size: 14px; display: flex; align-items: center; gap: 4px; }
+  .email { color: #a0aec0; font-size: 12px; }
+  .me-badge { background: #e2e8f0; color: #4a5568; font-size: 10px; padding: 2px 6px; border-radius: 10px; }
   
-  .icon { font-size: 18px; }
-  p { margin: 0; font-size: 13px; color: #718096; line-height: 1.4; }
+  .actions { display: flex; align-items: center; gap: 8px; }
+  .role-text { font-size: 12px; font-weight: 700; color: #718096; }
+  .role-text.owner { color: #c05621; }
+  
+  .role-select {
+    padding: 4px 8px;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a5568;
+    outline: none;
+    cursor: pointer;
+  }
+  
+  .remove-btn {
+    background: none;
+    border: none;
+    color: #a0aec0;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    &:hover { color: #e53e3e; }
+  }
+`;
+
+const InviteCard = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+
+  .info { display: flex; flex-direction: column; gap: 4px; }
+  .proj { font-weight: bold; color: #2d3748; font-size: 14px; }
+  .owner { color: #718096; font-size: 12px; }
+  
+  .actions { display: flex; gap: 8px; }
+  button {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .reject { background: #edf2f7; color: #4a5568; &:hover { background: #e2e8f0; } }
+  .accept { background: #28b4ad; color: white; &:hover { background: #219992; } }
 `;
 
 const HistoryModalContent = styled(ModalContent)`
@@ -1943,24 +2258,4 @@ const CloseBtn = styled.button`
     background: #e2e8f0;
     color: #1a1a1a;
   }
-`;
-
-const ToastNotification = styled.div`
-  position: fixed;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #4a5568;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 9999;
-  animation: ${toastAnimation} 3s ease forwards;
-  white-space: pre-wrap;
-  word-break: break-all;
-  text-align: center;
-  max-width: 80vw;
 `;

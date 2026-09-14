@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -12,6 +12,7 @@ import Tutorial from './components/Tutorial';
 import { useAuth } from './contexts/AuthContext';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
+const WS_URL = BASE_URL.replace(/^http/, 'ws');
 
 interface HistoryState {
   nodes: NodeData[];
@@ -30,6 +31,16 @@ export interface ViewportState {
   scrollWidth: number;
   scrollHeight: number;
 }
+
+export interface RemoteCursor {
+  memberId: number;
+  nickname: string;
+  x: number;
+  y: number;
+  color: string;
+}
+
+const CURSOR_COLORS = ['#FF3B30', '#FF9500', '#4CD964', '#5AC8FA', '#007AFF', '#5856D6', '#FF2D55'];
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
@@ -107,10 +118,10 @@ const MainPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const navState = location.state as { initialProvider?: CloudProvider } | null;
-  const { fetchWithAuth, isAutoSaveEnabled } = useAuth();
+  const { fetchWithAuth, isAutoSaveEnabled, accessToken } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
-  const [userInfo, setUserInfo] = useState({ nickname: '로딩중...', email: '로딩중...' });
+  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
@@ -159,7 +170,6 @@ const MainPage: React.FC = () => {
 
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
-
   const [clipboard, setClipboard] = useState<NodeData[]>([]);
 
   const [viewport, setViewport] = useState<ViewportState>({
@@ -179,12 +189,83 @@ const MainPage: React.FC = () => {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
 
+  const [otherCursors, setOtherCursors] = useState<RemoteCursor[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+
   const isDataLoaded = useRef(false);
   const isUndoRedo = useRef(false);
   const hasUnsavedChanges = useRef(false);
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
   const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
+
+  useEffect(() => {
+    if (!projectId || !userInfo.id) return;
+
+    const connectWebSocket = () => {
+      const ws = new WebSocket(`${WS_URL}/ws/projects/${projectId}/cursor?token=${accessToken}`);
+      
+      ws.onopen = () => {
+        console.log('Cursor WebSocket Connected');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'CURSOR_MOVE' && data.memberId !== userInfo.id) {
+            setOtherCursors(prev => {
+              const existing = prev.find(c => c.memberId === data.memberId);
+              const color = existing ? existing.color : CURSOR_COLORS[data.memberId % CURSOR_COLORS.length];
+              
+              const updated = prev.filter(c => c.memberId !== data.memberId);
+              return [...updated, { 
+                memberId: data.memberId, 
+                nickname: data.nickname, 
+                x: data.x, 
+                y: data.y, 
+                color 
+              }];
+            });
+          } else if (data.type === 'MEMBER_LEAVE') {
+            setOtherCursors(prev => prev.filter(c => c.memberId !== data.memberId));
+          }
+        } catch (e) {
+          console.error("Cursor parse error", e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('Cursor WebSocket Disconnected. Reconnecting in 3s...');
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      wsRef.current = ws;
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [projectId, userInfo.id, accessToken]);
+
+  const lastBroadcastTime = useRef<number>(0);
+  const handleCursorMove = useCallback((x: number, y: number) => {
+    const now = Date.now();
+    if (now - lastBroadcastTime.current > 50 && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'CURSOR_MOVE',
+        memberId: userInfo.id,
+        nickname: userInfo.nickname,
+        x,
+        y
+      }));
+      lastBroadcastTime.current = now;
+    }
+  }, [userInfo.id, userInfo.nickname]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -436,10 +517,10 @@ const MainPage: React.FC = () => {
       })
       .then(data => {
         const isSuccess = data.isSuccess ?? data.is_success;
-        if (isSuccess && data.result) setUserInfo({ nickname: data.result.nickname, email: data.result.email });
-        else setUserInfo({ nickname: '사용자', email: '알 수 없음' });
+        if (isSuccess && data.result) setUserInfo({ id: data.result.id, nickname: data.result.nickname, email: data.result.email });
+        else setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' });
       })
-      .catch(() => setUserInfo({ nickname: '사용자', email: '알 수 없음' }));
+      .catch(() => setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' }));
 
     if (projectId) {
       fetchWithAuth(`${BASE_URL}/projects/${projectId}`)
@@ -1174,6 +1255,8 @@ const MainPage: React.FC = () => {
             markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
             setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
             setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
+            otherCursors={otherCursors}
+            onCursorMove={handleCursorMove}
           />
           
           {selectedFileId && (
