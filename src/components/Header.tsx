@@ -7,12 +7,17 @@ interface HeaderProps {
   onResetUI: () => void;
   onSaveCanvas?: () => void;
   onOpenTutorial?: () => void;
+  onGoHome: () => void;   // 추가
 }
 
-const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, onSaveCanvas, onOpenTutorial }) => {
+const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, onSaveCanvas, onOpenTutorial, onGoHome }) => {
   return (
     <header className="header" style={{ boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-      <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div 
+        className="header-left" 
+        onClick={onGoHome}
+        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+      >
         <img 
           src={mainlogo} 
           alt='logo' 
@@ -26,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({ onGenerate, isGenerateMode, onResetUI, 
         
         {!isGenerateMode && (
           <span 
-            onClick={onOpenTutorial}
+            onClick={(e) => { e.stopPropagation(); onOpenTutorial?.(); }}
             style={{ color: '#a0aec0', display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '16px', marginLeft: '4px' }}
             title="튜토리얼 다시 보기"
           >

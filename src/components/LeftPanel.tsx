@@ -77,9 +77,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     setIsEditing(false); 
   };
 
-  const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
-    if (activeTab === tab && showRightSidebar) setShowRightSidebar(false);
-    else { setActiveTab(tab); setShowRightSidebar(true); }
+    const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
+      setActiveTab(tab);
+      setShowRightSidebar(true);
   };
 
   useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);

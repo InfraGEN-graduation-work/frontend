@@ -1138,11 +1138,12 @@ const MainPage: React.FC = () => {
 
   return (
     <div className="app-container">
-      <Header 
-        onGenerate={handleGenerateClick} isGenerateMode={appMode === 'generating'} 
-        onResetUI={handleResetUI} onSaveCanvas={() => handleSaveCanvas(false)}
-        onOpenTutorial={() => setShowTutorial(true)}
-      />
+     <Header 
+      onGenerate={handleGenerateClick} isGenerateMode={appMode === 'generating'} 
+      onResetUI={handleResetUI} onSaveCanvas={() => handleSaveCanvas(false)}
+      onOpenTutorial={() => setShowTutorial(true)}
+      onGoHome={handleGoHome}
+    />
       
       {appMode === 'editor' ? (
         <div className="main-layout">
