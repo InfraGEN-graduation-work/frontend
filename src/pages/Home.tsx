@@ -135,10 +135,7 @@ export default function Home() {
       const projData = await projRes.json();
       
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
-        const mappedProjects = (projData.result.projectList || []).map((p: any) => {
-          const fetchedRole = p.role || p.myRole || p.memberRole || 'OWNER';
-          return { ...p, myRole: String(fetchedRole).toUpperCase() };
-        });
+        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: p.role || 'OWNER' }));
         setProjects(mappedProjects);
       }
     } catch (err) {}
@@ -728,7 +725,6 @@ export default function Home() {
   const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
-  const isReadOnlyMode = !isEditTargetOwner && modalMode === 'edit';
 
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
@@ -871,14 +867,10 @@ export default function Home() {
 
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
-                              <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>
-                                {isProjOwner ? '수정' : '정보'}
-                              </DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>수정</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
-                              
-                              {/* 방장이면 '삭제', 아니면 '나가기' 표시 */}
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -906,9 +898,7 @@ export default function Home() {
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>
-              {modalMode === 'create' ? '새 프로젝트 생성' : (isEditTargetOwner ? '프로젝트 수정' : '프로젝트 정보')}
-            </ModalTitle>
+            <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
             <form onSubmit={handleSubmitProject}>
               <InputGroup>
                 <label>프로젝트 이름 및 클라우드 환경</label>
@@ -919,32 +909,13 @@ export default function Home() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
-                    disabled={isReadOnlyMode}
+                    disabled={!isEditTargetOwner && modalMode === 'edit'}
                   />
                   
                   <div style={{ position: 'relative', width: '110px' }}>
                     <div
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        if (isReadOnlyMode) return;
-                        setIsProviderDropdownOpen(!isProviderDropdownOpen); 
-                      }}
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center', 
-                        padding: '10px 14px', 
-                        background: isReadOnlyMode ? '#f8f9fa' : '#f8f9fa', 
-                        border: '1px solid #e2e8f0', 
-                        borderRadius: '8px', 
-                        fontSize: '13px', 
-                        fontWeight: 600, 
-                        color: modalProvider ? '#4a5568' : '#a0aec0', 
-                        cursor: isReadOnlyMode ? 'not-allowed' : 'pointer', 
-                        transition: '0.2s', 
-                        height: '100%', 
-                        boxSizing: 'border-box' 
-                      }}
+                      onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
+                      style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {modalProvider || '선택'}
@@ -952,7 +923,7 @@ export default function Home() {
                       <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
                     </div>
                     
-                    {isProviderDropdownOpen && !isReadOnlyMode && (
+                    {isProviderDropdownOpen && (
                       <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
                         <div 
                           onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
@@ -977,18 +948,12 @@ export default function Home() {
                   placeholder="간단한 설명을 적어주세요." 
                   value={newDesc} 
                   onChange={(e) => setNewDesc(e.target.value)} 
-                  disabled={isReadOnlyMode}
+                  disabled={!isEditTargetOwner && modalMode === 'edit'}
                 />
               </InputGroup>
               <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
-                {isReadOnlyMode ? (
-                  <CancelBtn type="button" onClick={() => setModalMode(null)} style={{ width: '100%' }}>닫기</CancelBtn>
-                ) : (
-                  <>
-                    <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
-                    <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
-                  </>
-                )}
+                <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
+                <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
               </ModalActions>
             </form>
           </ModalContent>
@@ -1051,19 +1016,19 @@ export default function Home() {
 
       {isCollabModalOpen && (
         <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
             <TabContainer>
-              <CollabTab $active={collabTab === 'list'} onClick={() => setCollabTab('list')}>목록</CollabTab>
+              <CollabTab $active={collabTab === 'list'} onClick={() => setCollabTab('list')}>참여자 목록</CollabTab>
               {isCollabOwner && (
-                <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>초대</CollabTab>
+                <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>직접 초대하기</CollabTab>
               )}
             </TabContainer>
             
-            <div style={{ padding: '24px', height: '300px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}>
               {collabTab === 'invite' && isCollabOwner ? (
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '24px' }}>
-                    <InputGroup style={{ marginBottom: 0 }}>
+                  <div style={{ flex: 1 }}>
+                    <InputGroup>
                       <label>초대할 회원의 고유 식별 ID</label>
                       <Input 
                         type="text" 
@@ -1072,7 +1037,7 @@ export default function Home() {
                         onChange={(e) => setInviteMemberId(e.target.value)} 
                       />
                     </InputGroup>
-                    <InputGroup style={{ marginBottom: 0 }}>
+                    <InputGroup>
                       <label>부여할 권한</label>
                       <div style={{ position: 'relative', width: '100%' }}>
                         <div
@@ -1102,12 +1067,12 @@ export default function Home() {
                     </InputGroup>
                   </div>
                   
-                  <ModalActions style={{ marginTop: '0' }}>
+                  <ModalActions style={{ marginTop: 'auto' }}>
                     <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
                   </ModalActions>
                 </form>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <>
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
                     <Input 
                       type="text" 
@@ -1139,7 +1104,7 @@ export default function Home() {
                               <span className="name-wrapper">
                                 <span className="name-text">{member.nickname}</span>
                               </span>
-                              <span className="email">{member.email || '이메일 정보 없음'}</span>
+                              <span className="email">{member.email || `ID: ${member.memberId}`}</span>
                             </div>
                           </div>
                           <div className="actions">
@@ -1185,7 +1150,7 @@ export default function Home() {
                       ))
                     )}
                   </CollabListWrapper>
-                </div>
+                </>
               )}
             </div>
           </ModalContent>
@@ -1979,12 +1944,12 @@ const CollabListWrapper = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  flex: 1; /* 고정된 높이 내에서 여백만큼 꽉 채우도록 설정 */
+  flex: 1; 
   overflow-y: auto;
   overflow-x: hidden;
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
-  &::-webkit-scrollbar { display: none; /* Chrome, Safari and Opera */ }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `;
 
 const CollabItem = styled.div<{ $isMe?: boolean }>`
@@ -2092,7 +2057,7 @@ const HistoryHeaderRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  marginBottom: 20px;
+  margin-bottom: 20px;
   flex-shrink: 0;
 `;
 
@@ -2155,7 +2120,7 @@ const HistoryItemCard = styled.div`
 `;
 
 const HistoryItemHeader = styled.div`
-  marginBottom: 10px;
+  margin-bottom: 10px;
   border-bottom: 1px dashed #e2e8f0;
   padding-bottom: 8px;
   display: flex;
@@ -2175,7 +2140,7 @@ const HistoryDescList = styled.ul`
   color: #4a5568;
   line-height: 1.6;
   
-  li { marginBottom: 4px; }
+  li { margin-bottom: 4px; }
 `;
 
 const HistoryDetailContainer = styled.div`
@@ -2269,7 +2234,7 @@ const CVSectionTitle = styled.div`
   font-size: 12px;
   font-weight: 700;
   color: #718096;
-  marginBottom: 12px;
+  margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 `;
@@ -2329,7 +2294,7 @@ const CVAssignedNodes = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  marginBottom: 24px;
+  margin-bottom: 24px;
 `;
 
 const CVNodeBadge = styled.div`
