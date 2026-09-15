@@ -439,6 +439,7 @@ export default function Home() {
           try {
             const proj = projects.find(p => p.projectId === id);
             const isOwner = proj?.myRole === 'OWNER';
+
             const endpoint = isOwner 
               ? `${BASE_URL}/projects/${id}`
               : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
@@ -877,7 +878,6 @@ export default function Home() {
                               <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
-
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -925,7 +925,7 @@ export default function Home() {
                     <div
                       onClick={(e) => { 
                         e.stopPropagation(); 
-                        if (isReadOnlyMode) return;
+                        if (isReadOnlyMode) return;  
                         setIsProviderDropdownOpen(!isProviderDropdownOpen); 
                       }}
                       style={{ 
@@ -1058,10 +1058,10 @@ export default function Home() {
               )}
             </TabContainer>
             
-            <div style={{ padding: '24px', height: '300px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '24px', height: '380px', display: 'flex', flexDirection: 'column' }}>
               {collabTab === 'invite' && isCollabOwner ? (
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '24px' }}>
+                  <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', gap: '32px' }}>
                     <InputGroup style={{ marginBottom: 0 }}>
                       <label>초대할 회원의 고유 식별 ID</label>
                       <Input 
@@ -2091,7 +2091,7 @@ const HistoryHeaderRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  marginBottom: 20px;
+  margin-bottom: 20px;
   flex-shrink: 0;
 `;
 
@@ -2154,7 +2154,7 @@ const HistoryItemCard = styled.div`
 `;
 
 const HistoryItemHeader = styled.div`
-  marginBottom: 10px;
+  margin-bottom: 10px;
   border-bottom: 1px dashed #e2e8f0;
   padding-bottom: 8px;
   display: flex;
@@ -2174,7 +2174,7 @@ const HistoryDescList = styled.ul`
   color: #4a5568;
   line-height: 1.6;
   
-  li { marginBottom: 4px; }
+  li { margin-bottom: 4px; }
 `;
 
 const HistoryDetailContainer = styled.div`
@@ -2268,7 +2268,7 @@ const CVSectionTitle = styled.div`
   font-size: 12px;
   font-weight: 700;
   color: #718096;
-  marginBottom: 12px;
+  margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 `;
@@ -2328,7 +2328,7 @@ const CVAssignedNodes = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  marginBottom: 24px;
+  margin-bottom: 24px;
 `;
 
 const CVNodeBadge = styled.div`
