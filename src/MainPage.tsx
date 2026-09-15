@@ -126,7 +126,7 @@ const MainPage: React.FC = () => {
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
 
-  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('AWS');
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider>('LOCAL');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
   
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
@@ -186,8 +186,10 @@ const MainPage: React.FC = () => {
 
   const [leftWidth, setLeftWidth] = useState(320);
   const [rightWidth, setRightWidth] = useState(320);
+  const [codeViewerWidth, setCodeViewerWidth] = useState(350);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const [isResizingCodeViewer, setIsResizingCodeViewer] = useState(false);
 
   const [otherCursors, setOtherCursors] = useState<RemoteCursor[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -274,15 +276,21 @@ const MainPage: React.FC = () => {
       } else if (isResizingRight) {
         const newWidth = Math.max(200, Math.min(window.innerWidth - e.clientX - 10, window.innerWidth / 2));
         setRightWidth(newWidth);
+      } else if (isResizingCodeViewer) {
+        const rightSidebarSpace = showRightSidebar ? rightWidth + 16 : 0;
+        const paddingRight = 10;
+        const newWidth = window.innerWidth - e.clientX - rightSidebarSpace - paddingRight;
+        setCodeViewerWidth(Math.max(250, Math.min(newWidth, window.innerWidth * 0.6)));
       }
     };
 
     const handleMouseUp = () => {
       setIsResizingLeft(false);
       setIsResizingRight(false);
+      setIsResizingCodeViewer(false);
     };
 
-    if (isResizingLeft || isResizingRight) {
+    if (isResizingLeft || isResizingRight || isResizingCodeViewer) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = 'col-resize';
@@ -298,7 +306,7 @@ const MainPage: React.FC = () => {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizingLeft, isResizingRight]);
+  }, [isResizingLeft, isResizingRight, isResizingCodeViewer, showRightSidebar, rightWidth]);
 
   useEffect(() => {
     if (!isDataLoaded.current) return;
@@ -454,36 +462,38 @@ const MainPage: React.FC = () => {
     { key: 'securityGroupName', label: 'Security Group/List Name' }, { key: 'instanceName', label: 'Instance Name' }
   ];
 
-  cloudNameFields.forEach(({ key, label }) => {
-    checkCloudNameFormat(cloudSettings[key as keyof CloudSettings], label, key);
-  });
+  if (cloudProvider !== 'LOCAL') {
+    cloudNameFields.forEach(({ key, label }) => {
+      checkCloudNameFormat(cloudSettings[key as keyof CloudSettings], label, key);
+    });
 
-  if (cloudProvider === 'AWS') {
-    const requiredAws = [
-      { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VPC Name' }, { key: 'subnetName', label: 'Subnet Name' },
-      { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-      { key: 'securityGroupName', label: 'Security Group Name' }, { key: 'instanceName', label: 'Instance Name' },
-      { key: 'amiId', label: 'AMI ID' }, { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }
-    ];
-    requiredAws.forEach(({ key, label }) => {
-      if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-        validationErrors.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
-      }
-    });
-  } else if (cloudProvider === 'OCI') {
-    const requiredOci = [
-      { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
-      { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-      { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
-      { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
-      { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
-      { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
-    ];
-    requiredOci.forEach(({ key, label }) => {
-      if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-        validationErrors.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
-      }
-    });
+    if (cloudProvider === 'AWS') {
+      const requiredAws = [
+        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VPC Name' }, { key: 'subnetName', label: 'Subnet Name' },
+        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+        { key: 'securityGroupName', label: 'Security Group Name' }, { key: 'instanceName', label: 'Instance Name' },
+        { key: 'amiId', label: 'AMI ID' }, { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }
+      ];
+      requiredAws.forEach(({ key, label }) => {
+        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
+          validationErrors.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
+        }
+      });
+    } else if (cloudProvider === 'OCI') {
+      const requiredOci = [
+        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
+        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+        { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
+        { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
+        { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
+        { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
+      ];
+      requiredOci.forEach(({ key, label }) => {
+        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
+          validationErrors.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
+        }
+      });
+    }
   }
 
   useEffect(() => { setActiveSubTab(0); }, [selectedFileId]);
@@ -532,7 +542,7 @@ const MainPage: React.FC = () => {
 
           const fetchedNodes = data.result.nodes || [];
           
-          let loadedCloudProvider: CloudProvider = 'AWS';
+          let loadedCloudProvider: CloudProvider = 'LOCAL';
           let loadedIncludeLocal = true;
           let loadedCloudSettings: CloudSettings = { ...cloudSettings };
 
@@ -967,8 +977,8 @@ const MainPage: React.FC = () => {
 
           const generatePayload = {
             deploymentOption: cloudProvider, 
-            includeLocalSpec: includeLocal,
-            deploymentTarget: cloudProvider === 'AWS' ? {
+            includeLocalSpec: cloudProvider === 'LOCAL' ? false : includeLocal,
+            deploymentTarget: cloudProvider === 'LOCAL' ? null : (cloudProvider === 'AWS' ? {
               deploymentOption: 'AWS', 
               region: cloudSettings.region || 'ap-northeast-2',
               vpcName: cloudSettings.vpcName,
@@ -1002,7 +1012,7 @@ const MainPage: React.FC = () => {
               adminCidr: cloudSettings.adminCidr,
               appCidr: cloudSettings.appCidr,
               sshAuthorizedKeys: cloudSettings.sshAuthorizedKeys
-            },
+            }),
             nodes: generateNodes,
             edges: generateEdges
           };
@@ -1259,46 +1269,52 @@ const MainPage: React.FC = () => {
           />
           
           {selectedFileId && (
-            <div className="code-viewer-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {(() => {
-                const f = files.find(file => file.id === selectedFileId);
-                if (!f) return null;
-                return (
-                  <>
-                    <div className="code-viewer-header" style={{ padding: '16px 16px 0 16px', marginBottom: 0, borderBottom: 'none' }}>
-                      <div className="code-viewer-tab">
-                        {f.name} <span style={{fontSize:'11px', color:'#718096', fontWeight:'normal'}}>(프로젝트 폴더)</span>
-                      </div>
-                    </div>
-                    
-                    <div className="code-viewer-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, border: 'none', background: 'transparent' }}>
-                      {f.generatedFiles && f.generatedFiles.length > 0 ? (
-                        <>
-                          <div style={{ display: 'flex', background: '#f8f9fa', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
-                            {f.generatedFiles.map((gf, idx) => (
-                              <button
-                                key={idx} onClick={() => setActiveSubTab(idx)} title={gf.fileName}
-                                style={{ flex: 1, padding: '10px 8px', border: 'none', borderRight: '1px solid var(--border)', background: activeSubTab === idx ? 'white' : 'transparent', fontWeight: activeSubTab === idx ? 'bold' : 'normal', color: activeSubTab === idx ? 'var(--mint)' : '#4a5568', cursor: 'pointer', borderBottom: activeSubTab === idx ? '2px solid var(--mint)' : '2px solid transparent', fontSize: '14px' }}
-                              >{idx + 1}</button>
-                            ))}
-                          </div>
-                          <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
-                            <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center' }}>
-                              {f.generatedFiles[activeSubTab]?.fileName}
-                            </div>
-                            {f.generatedFiles[activeSubTab]?.content}
-                          </div>
-                        </>
-                      ) : (
-                        <div style={{ padding: '16px', background: 'white', flex: 1, fontSize: '12px', color: '#718096' }}>
-                          {`// 폴더에 생성된 코드가 없습니다.\n// Generate 버튼을 클릭하여 코드를 생성하세요.`}
+            <>
+              <div 
+                className={`resizer ${isResizingCodeViewer ? 'active' : ''}`} 
+                onMouseDown={(e) => { e.preventDefault(); setIsResizingCodeViewer(true); }} 
+              />
+              <div className="code-viewer-panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', width: `${codeViewerWidth}px`, flexShrink: 0 }}>
+                {(() => {
+                  const f = files.find(file => file.id === selectedFileId);
+                  if (!f) return null;
+                  return (
+                    <>
+                      <div className="code-viewer-header" style={{ padding: '16px 16px 0 16px', marginBottom: 0, borderBottom: 'none' }}>
+                        <div className="code-viewer-tab">
+                          {f.name} <span style={{fontSize:'11px', color:'#718096', fontWeight:'normal'}}>(프로젝트 폴더)</span>
                         </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+                      </div>
+                      
+                      <div className="code-viewer-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, border: 'none', background: 'transparent' }}>
+                        {f.generatedFiles && f.generatedFiles.length > 0 ? (
+                          <>
+                            <div style={{ display: 'flex', background: '#f8f9fa', borderBottom: '1px solid var(--border)', borderTop: '1px solid var(--border)' }}>
+                              {f.generatedFiles.map((gf, idx) => (
+                                <button
+                                  key={idx} onClick={() => setActiveSubTab(idx)} title={gf.fileName}
+                                  style={{ flex: 1, padding: '10px 8px', border: 'none', borderRight: '1px solid var(--border)', background: activeSubTab === idx ? 'white' : 'transparent', fontWeight: activeSubTab === idx ? 'bold' : 'normal', color: activeSubTab === idx ? 'var(--mint)' : '#4a5568', cursor: 'pointer', borderBottom: activeSubTab === idx ? '2px solid var(--mint)' : '2px solid transparent', fontSize: '14px' }}
+                                >{idx + 1}</button>
+                              ))}
+                            </div>
+                            <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
+                              <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center' }}>
+                                {f.generatedFiles[activeSubTab]?.fileName}
+                              </div>
+                              {f.generatedFiles[activeSubTab]?.content}
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ padding: '16px', background: 'white', flex: 1, fontSize: '12px', color: '#718096' }}>
+                            {`// 폴더에 생성된 코드가 없습니다.\n// Generate 버튼을 클릭하여 코드를 생성하세요.`}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </>
           )}
 
           {showRightSidebar && (
@@ -1308,6 +1324,7 @@ const MainPage: React.FC = () => {
                 onMouseDown={(e) => { e.preventDefault(); setIsResizingRight(true); }} 
               />
               <RightSideBar 
+                projectName={projectName}
                 nodes={nodes} setNodes={setNodes} edges={edges} activeTab={leftActiveTab} setActiveTab={setLeftActiveTab} saveHistory={saveHistory}
                 files={files} setFiles={setFiles} targetFileIds={targetFileIds} setTargetFileIds={setTargetFileIds}
                 markFilesAsModified={markFilesAsModified} deleteRightPanelItems={deleteRightPanelItems}

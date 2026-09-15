@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
 interface RightSideBarProps {
+  projectName: string;
   nodes: NodeData[];
   setNodes: React.Dispatch<React.SetStateAction<NodeData[]>>;
   edges: Edge[];
@@ -37,7 +38,7 @@ interface RightSideBarProps {
 }
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
-  nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, setTargetFileIds, markFilesAsModified, deleteRightPanelItems,
+  projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, setTargetFileIds, markFilesAsModified, deleteRightPanelItems,
   selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, validationErrors, resetTrigger,
   setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width
 }) => {
@@ -249,12 +250,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       filesWithCode.forEach(fileGroup => {
         const gFiles = fileGroup.generatedFiles || [];
         gFiles.forEach(gf => {
-          zip.file(`${fileGroup.name}_${gf.fileName}`, gf.content);
+          zip.file(`${fileGroup.name}/${gf.fileName}`, gf.content);
         });
       });
 
       zip.generateAsync({ type: "blob" }).then(content => {
-        saveAs(content, "infragen-export.zip");
+        saveAs(content, `${projectName}-infragen-export.zip`);
         cancelSelectionMode(); 
       });
     } else {
@@ -556,12 +557,16 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         <div className="project-tree">
           <div className="tree-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
             Project
-            <button className="select-mode-btn" onClick={(e) => { 
+            <button className="select-mode-btn" title="선택" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { 
               e.stopPropagation(); 
               const nextMode = !isMultiSelectMode;
               setIsMultiSelectMode(nextMode); setCheckedItems(new Set()); 
               if (nextMode) { setSelectedNodeIds([]); setSelectedFileId(null); clearCanvasSelectionArea(); }
-            }}>✔</button>
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </button>
           </div>
           <div className="tree-content">
             <div 
@@ -664,160 +669,169 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           <div className="tree-title">Settings</div>
           <div className="settings-content">
 
-            <div className="node-settings-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: '20px' }}>
-              <div className="setting-section-title">
-                <span className="box-icon" style={{ fontSize: '12px', marginRight: '4px' }}>⚙️</span> 
-                기본 배포 설정 (Local)
-              </div>
-              <div className="setting-row">
-                <label>로컬 환경(Docker Compose, .env) 구성 생성</label>
-                <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
-                    <input type="radio" name="localGen" checked={includeLocal} onChange={() => { saveHistory(); setIncludeLocal(true); markFilesAsModified(); }} />
-                    생성함 (포함)
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
-                    <input type="radio" name="localGen" checked={!includeLocal} onChange={() => { saveHistory(); setIncludeLocal(false); markFilesAsModified(); }} />
-                    생성 안함
-                  </label>
+            {cloudProvider !== 'LOCAL' && (
+              <>
+                <div className="node-settings-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: '20px' }}>
+                  <div className="setting-section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                      <circle cx="12" cy="12" r="3"></circle>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    기본 배포 설정 (Local)
+                  </div>
+                  <div className="setting-row">
+                    <label>로컬 환경(Docker Compose, .env) 구성 생성</label>
+                    <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
+                        <input type="radio" name="localGen" checked={includeLocal} onChange={() => { saveHistory(); setIncludeLocal(true); markFilesAsModified(); }} />
+                        생성함 (포함)
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
+                        <input type="radio" name="localGen" checked={!includeLocal} onChange={() => { saveHistory(); setIncludeLocal(false); markFilesAsModified(); }} />
+                        생성 안함
+                      </label>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="node-settings-section" style={{ marginBottom: '24px' }}>
-              <div className="setting-section-title" style={{ color: cloudProvider === 'AWS' ? '#dd6b20' : '#c53030' }}>
-                <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}></span>
-                {cloudProvider} 글로벌 배포 설정 (IaC)
-              </div>
+                <div className="node-settings-section" style={{ marginBottom: '24px' }}>
+                  <div className="setting-section-title" style={{ color: cloudProvider === 'AWS' ? '#dd6b20' : '#c53030' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                      <path d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5S19.985 10 17.5 10c-.167 0-.33.013-.489.038A6.5 6.5 0 1 0 5.674 13.92C3.125 14.152 1 16.326 1 19c0 2.761 2.239 5 5 5h11c2.485 0 4.5-2.015 4.5-4.5z"></path>
+                    </svg>
+                    {cloudProvider} 글로벌 배포 설정 (IaC)
+                  </div>
 
-              {cloudProvider === 'AWS' ? (
-                <>
-                  <div className="setting-row">
-                    <label>Region <span style={{color:'red'}}>*</span></label>
-                    {renderComboInput('region', awsRegions, 'ap-northeast-2')}
-                  </div>
-                  <div className="setting-row">
-                    <label>VPC Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vpc" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>VPC CIDR</label>
-                    <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Subnet Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Subnet CIDR</label>
-                    <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Route Table Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Security Group Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sg" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Instance Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Instance Type</label>
-                    {renderComboInput('instanceType', awsInstanceTypes, 't3.micro')}
-                  </div>
-                  <div className="setting-row">
-                    <label>AMI ID <span style={{color:'red'}}>*</span></label>
-                    {renderComboInput('amiId', awsAmis, 'ami-084e92d3e117f7692')}
-                  </div>
-                  <div className="setting-row">
-                    <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
-                    <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>App CIDR <span style={{color:'red'}}>*</span></label>
-                    <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="setting-row">
-                    <label>Region <span style={{color:'red'}}>*</span></label>
-                    {renderComboInput('region', ociRegions, 'ap-seoul-1')}
-                  </div>
-                  <div className="setting-row">
-                    <label>Compartment ID <span style={{color:'red'}}>*</span></label>
-                    <input id="field-compartmentId" type="text" className={`custom-input ${highlightedField === 'compartmentId' ? 'highlight-flash' : ''}`} value={cloudSettings.compartmentId || ''} placeholder="ocid1.compartment..." style={inputStyle} onChange={e => updateGlobalSetting('compartmentId', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>VCN Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vcn" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>VCN CIDR</label>
-                    <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Subnet Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Subnet CIDR</label>
-                    <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Route Table Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Security List Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sl" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Instance Name <span style={{color:'red'}}>*</span></label>
-                    <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Hostname Label <span style={{color:'red'}}>*</span></label>
-                    <input id="field-hostnameLabel" type="text" className={`custom-input ${highlightedField === 'hostnameLabel' ? 'highlight-flash' : ''}`} value={cloudSettings.hostnameLabel || ''} placeholder="myhost" style={inputStyle} onChange={e => updateGlobalSetting('hostnameLabel', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Availability Domain <span style={{color:'red'}}>*</span></label>
-                    {renderComboInput('availabilityDomain', ociADs, 'AD-1')}
-                  </div>
-                  <div className="setting-row">
-                    <label>Shape</label>
-                    {renderComboInput('instanceType', ociShapes, 'VM.Standard.E2.1.Micro')}
-                  </div>
-                  <div className="setting-row">
-                    <label>Image ID <span style={{color:'red'}}>*</span></label>
-                    <input id="field-amiId" type="text" className={`custom-input ${highlightedField === 'amiId' ? 'highlight-flash' : ''}`} value={cloudSettings.amiId} placeholder="ocid1.image..." style={inputStyle} onChange={e => updateGlobalSetting('amiId', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
-                    <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>App CIDR <span style={{color:'red'}}>*</span></label>
-                    <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
-                  </div>
-                  <div className="setting-row">
-                    <label>SSH Authorized Keys <span style={{color:'red'}}>*</span></label>
-                    <input id="field-sshAuthorizedKeys" type="text" className={`custom-input ${highlightedField === 'sshAuthorizedKeys' ? 'highlight-flash' : ''}`} value={cloudSettings.sshAuthorizedKeys || ''} placeholder="ssh-rsa AAA..." style={inputStyle} onChange={e => updateGlobalSetting('sshAuthorizedKeys', e.target.value)} />
-                  </div>
-                </>
-              )}
-            </div>
+                  {cloudProvider === 'AWS' ? (
+                    <>
+                      <div className="setting-row">
+                        <label>Region <span style={{color:'red'}}>*</span></label>
+                        {renderComboInput('region', awsRegions, 'ap-northeast-2')}
+                      </div>
+                      <div className="setting-row">
+                        <label>VPC Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vpc" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>VPC CIDR</label>
+                        <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Subnet Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Subnet CIDR</label>
+                        <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Route Table Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Security Group Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sg" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Instance Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Instance Type</label>
+                        {renderComboInput('instanceType', awsInstanceTypes, 't3.micro')}
+                      </div>
+                      <div className="setting-row">
+                        <label>AMI ID <span style={{color:'red'}}>*</span></label>
+                        {renderComboInput('amiId', awsAmis, 'ami-084e92d3e117f7692')}
+                      </div>
+                      <div className="setting-row">
+                        <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
+                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>App CIDR <span style={{color:'red'}}>*</span></label>
+                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="setting-row">
+                        <label>Region <span style={{color:'red'}}>*</span></label>
+                        {renderComboInput('region', ociRegions, 'ap-seoul-1')}
+                      </div>
+                      <div className="setting-row">
+                        <label>Compartment ID <span style={{color:'red'}}>*</span></label>
+                        <input id="field-compartmentId" type="text" className={`custom-input ${highlightedField === 'compartmentId' ? 'highlight-flash' : ''}`} value={cloudSettings.compartmentId || ''} placeholder="ocid1.compartment..." style={inputStyle} onChange={e => updateGlobalSetting('compartmentId', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>VCN Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vcn" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>VCN CIDR</label>
+                        <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Subnet Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Subnet CIDR</label>
+                        <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Route Table Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Security List Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sl" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Instance Name <span style={{color:'red'}}>*</span></label>
+                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Hostname Label <span style={{color:'red'}}>*</span></label>
+                        <input id="field-hostnameLabel" type="text" className={`custom-input ${highlightedField === 'hostnameLabel' ? 'highlight-flash' : ''}`} value={cloudSettings.hostnameLabel || ''} placeholder="myhost" style={inputStyle} onChange={e => updateGlobalSetting('hostnameLabel', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Availability Domain <span style={{color:'red'}}>*</span></label>
+                        {renderComboInput('availabilityDomain', ociADs, 'AD-1')}
+                      </div>
+                      <div className="setting-row">
+                        <label>Shape</label>
+                        {renderComboInput('instanceType', ociShapes, 'VM.Standard.E2.1.Micro')}
+                      </div>
+                      <div className="setting-row">
+                        <label>Image ID <span style={{color:'red'}}>*</span></label>
+                        <input id="field-amiId" type="text" className={`custom-input ${highlightedField === 'amiId' ? 'highlight-flash' : ''}`} value={cloudSettings.amiId} placeholder="ocid1.image..." style={inputStyle} onChange={e => updateGlobalSetting('amiId', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
+                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>App CIDR <span style={{color:'red'}}>*</span></label>
+                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                      </div>
+                      <div className="setting-row">
+                        <label>SSH Authorized Keys <span style={{color:'red'}}>*</span></label>
+                        <input id="field-sshAuthorizedKeys" type="text" className={`custom-input ${highlightedField === 'sshAuthorizedKeys' ? 'highlight-flash' : ''}`} value={cloudSettings.sshAuthorizedKeys || ''} placeholder="ssh-rsa AAA..." style={inputStyle} onChange={e => updateGlobalSetting('sshAuthorizedKeys', e.target.value)} />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
 
             {selectedNodeIds.length === 1 ? (
               (() => {
@@ -835,7 +849,9 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 return (
                   <div className="node-settings-section">
                     <div className="setting-section-title">
-                      <span className="box-icon" style={{ fontSize: '12px', marginRight: '4px' }}>●</span> 
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                      </svg>
                       {selectedNode.type} 노드 세부 설정
                     </div>
                     
@@ -880,7 +896,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
 
                         <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
-                          <span className="box-icon" style={{ fontSize: '10px', marginRight: '4px' }}>🔒</span> 
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', marginTop: '-2px' }}>
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                          </svg>
                           데이터베이스 설정 (env)
                         </div>
                         <div className="setting-row">
@@ -922,6 +941,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
                           <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 6379" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                        </div>
+                        <div className="setting-row">
+                          <label>볼륨 이름 (volumeName)</label>
+                          <input id="field-volumeName" type="text" className="custom-input" value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>

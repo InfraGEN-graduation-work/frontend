@@ -32,7 +32,7 @@ export interface FileGroup {
   lastHash?: string;
 }
 
-export type CloudProvider = 'AWS' | 'OCI';
+export type CloudProvider = 'AWS' | 'OCI' | 'LOCAL';
 
 export interface CloudSettings {
   region: string;

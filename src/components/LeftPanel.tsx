@@ -77,9 +77,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     setIsEditing(false); 
   };
 
-    const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
-      setActiveTab(tab);
-      setShowRightSidebar(true);
+  const handleTabClick = (tab: 'Project' | 'Settings' | 'Validation') => {
+    setActiveTab(tab);
+    setShowRightSidebar(true);
   };
 
   useEffect(() => { if (isEditing) inputRef.current?.focus(); }, [isEditing]);
@@ -151,7 +151,12 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
               {projectName}
             </span>
-            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, fontSize: '14px' }}>✏️</button>
+            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a0aec0' }} title="이름 수정">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+              </svg>
+            </button>
           </>
         )}
       </div>
@@ -162,13 +167,14 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
           style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor:'pointer', transition: '0.2s' }}
         >
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
-            {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : cloudProvider}
+            {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : 'LOCAL (로컬 전용)'}
           </span>
           <span style={{ fontSize: '10px', transform: isCloudDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', flexShrink: 0 }}>▼</span>
         </div>
         
         {isCloudDropdownOpen && (
           <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
+            <div onClick={() => { setCloudProvider('LOCAL'); setIsCloudDropdownOpen(false); }} style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: cloudProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: cloudProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7' }}>LOCAL (로컬 전용)</div>
             <div onClick={() => { setCloudProvider('AWS'); setIsCloudDropdownOpen(false); }} style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: cloudProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: cloudProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7' }}>AWS (Amazon Web Services)</div>
             <div onClick={() => { setCloudProvider('OCI'); setIsCloudDropdownOpen(false); }} style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: cloudProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: cloudProvider === 'OCI' ? 'bold' : 'normal' }}>OCI (Oracle Cloud)</div>
           </div>
@@ -176,18 +182,34 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       </div>
 
       <div className="toolbar">
-        <button onClick={onToggleRightSidebar} title="패널 열기/닫기">田</button>
+        <button onClick={onToggleRightSidebar} title="우측 패널">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="15" y1="3" x2="15" y2="21"></line></svg>
+        </button>
         <div className="divider"></div>
-        <button onClick={onZoomIn} title="확대">+</button>
-        <button onClick={onZoomOut} title="축소">-</button>
+        <button onClick={onZoomIn} title="화면확대">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="11" y1="8" x2="11" y2="14"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
+        <button onClick={onZoomOut} title="화면축소">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="8" y1="11" x2="14" y2="11"></line></svg>
+        </button>
         <div className="divider"></div>
-        <button onClick={onSelectMode} style={{ color: isSelectMode ? '#28b4ad' : '#555' }} title="선택 모드">▢</button>
-        <button onClick={onCancelSelection} title="선택 취소">×</button>
+        <button onClick={onSelectMode} style={{ color: isSelectMode ? '#28b4ad' : '#555' }} title="영역선택">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 4"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+        </button>
+        <button onClick={onCancelSelection} title="선택취소">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
         <div className="divider"></div>
-        <button onClick={onUndo} disabled={!canUndo} style={{ color: canUndo ? '#555' : '#ccc', cursor: canUndo ? 'pointer' : 'default' }} title="실행 취소">◀</button>
-        <button onClick={onRedo} disabled={!canRedo} style={{ color: canRedo ? '#555' : '#ccc', cursor: canRedo ? 'pointer' : 'default' }} title="다시 실행">▶</button>
+        <button onClick={onUndo} disabled={!canUndo} style={{ color: canUndo ? '#555' : '#ccc', cursor: canUndo ? 'pointer' : 'default' }} title="취소">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>
+        </button>
+        <button onClick={onRedo} disabled={!canRedo} style={{ color: canRedo ? '#555' : '#ccc', cursor: canRedo ? 'pointer' : 'default' }} title="다시실행">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
+        </button>
         <div className="divider"></div>
-        <button onClick={onDelete} className="delete-btn" title="삭제">🗑️</button>
+        <button onClick={onDelete} className="delete-btn" title="삭제">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        </button>
       </div>
 
       <div className="tabs">

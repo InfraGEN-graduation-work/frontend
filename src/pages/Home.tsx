@@ -37,7 +37,7 @@ export default function Home() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
-  const [modalProvider, setModalProvider] = useState<CloudProvider | ''>('');
+  const [modalProvider, setModalProvider] = useState<CloudProvider | ''>('LOCAL');
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
   
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
@@ -73,6 +73,7 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [codeViewerProjectName, setCodeViewerProjectName] = useState<string>('project');
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
@@ -358,13 +359,13 @@ export default function Home() {
         setEditTargetId(proj.projectId);
 
         const fetchedNodes = data.result.nodes || [];
-        let provider: CloudProvider = 'AWS';
+        let provider: CloudProvider = 'LOCAL';
         if (fetchedNodes.length > 0) {
           let props = fetchedNodes[0].properties || {};
           if (typeof props === 'string') {
             try { props = JSON.parse(props); } catch (e) {}
           }
-          provider = props.globalCloudProvider || 'AWS';
+          provider = props.globalCloudProvider || 'LOCAL';
         }
         setModalProvider(provider);
         setModalMode('edit');
@@ -593,6 +594,8 @@ export default function Home() {
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
 
+      setCodeViewerProjectName(projObj.result?.title || 'project');
+
       const allFiles: any[] = [];
       const folderMap = new Map();
 
@@ -679,11 +682,11 @@ export default function Home() {
     const zip = new JSZip();
     codeViewerFiles.forEach(file => {
       if (downloadSelection.has(file.fileId)) {
-        zip.file(`${file.folderName}_${file.fileName}`, file.content);
+        zip.file(`${file.folderName}/${file.fileName}`, file.content);
       }
     });
     const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, "infragen-export.zip");
+    saveAs(content, `${codeViewerProjectName}-infragen-export.zip`);
   };
 
   const formatDate = (isoString: string) => {
@@ -808,7 +811,7 @@ export default function Home() {
                 </BulkDeleteBtn>
               )}
               <CreateBtn onClick={() => {
-                setNewTitle(''); setNewDesc(''); setModalProvider(''); setModalMode('create');
+                setNewTitle(''); setNewDesc(''); setModalProvider('LOCAL'); setModalMode('create');
               }}>+ 새 프로젝트</CreateBtn>
             </HeaderActions>
           </SectionHeader>
@@ -912,19 +915,25 @@ export default function Home() {
                     disabled={!isEditTargetOwner && modalMode === 'edit'}
                   />
                   
-                  <div style={{ position: 'relative', width: '110px' }}>
+                  <div style={{ position: 'relative', width: '130px' }}>
                     <div
                       onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
                       style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {modalProvider || '선택'}
+                        {modalProvider === 'LOCAL' ? 'LOCAL (로컬 전용)' : modalProvider}
                       </span>
                       <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
                     </div>
                     
                     {isProviderDropdownOpen && (
                       <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
+                        <div 
+                          onClick={() => { setModalProvider('LOCAL'); setIsProviderDropdownOpen(false); }} 
+                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                        >LOCAL (로컬 전용)</div>
                         <div 
                           onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
                           style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
@@ -1388,6 +1397,7 @@ export default function Home() {
     </PageContainer>
   );
 }
+
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
