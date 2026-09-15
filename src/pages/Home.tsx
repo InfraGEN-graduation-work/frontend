@@ -439,7 +439,6 @@ export default function Home() {
           try {
             const proj = projects.find(p => p.projectId === id);
             const isOwner = proj?.myRole === 'OWNER';
-
             const endpoint = isOwner 
               ? `${BASE_URL}/projects/${id}`
               : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
@@ -768,7 +767,7 @@ export default function Home() {
                 
                 <div style={{ width: '100%', borderBottom: '1px solid #e2e8f0', margin: '12px 0' }} />
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', margin: '0 0 16px 0', padding: '0 4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>자동 저장 (10분)</span>
                   <ToggleSwitchContainer>
                     <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => setIsAutoSaveEnabled(e.target.checked)} />
@@ -878,6 +877,7 @@ export default function Home() {
                               <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
+
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -925,7 +925,7 @@ export default function Home() {
                     <div
                       onClick={(e) => { 
                         e.stopPropagation(); 
-                        if (isReadOnlyMode) return;  
+                        if (isReadOnlyMode) return; 
                         setIsProviderDropdownOpen(!isProviderDropdownOpen); 
                       }}
                       style={{ 
@@ -1001,7 +1001,7 @@ export default function Home() {
             <form onSubmit={handleUpdateUserInfo}>
               
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                <ProfileAvatarLg style={{ marginBottom: 0, width: '80px', height: '80px', cursor: 'default' }}>
+                <ProfileAvatarLg style={{ margin: '0 0 0 0', width: '80px', height: '80px', cursor: 'default' }}>
                   {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
                 </ProfileAvatarLg>
               </div>
@@ -1036,7 +1036,7 @@ export default function Home() {
                 </>
               )}
               
-              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
+              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 0 0' }}>
                 <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
@@ -1058,11 +1058,11 @@ export default function Home() {
               )}
             </TabContainer>
             
-            <div style={{ padding: '24px', height: '380px', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '24px', height: '320px', display: 'flex', flexDirection: 'column' }}>
               {collabTab === 'invite' && isCollabOwner ? (
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ margin: 'auto 0', display: 'flex', flexDirection: 'column', gap: '32px' }}>
-                    <InputGroup style={{ marginBottom: 0 }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '16px' }}>
+                    <InputGroup style={{ margin: '0 0 0 0' }}>
                       <label>초대할 회원의 고유 식별 ID</label>
                       <Input 
                         type="text" 
@@ -1071,7 +1071,7 @@ export default function Home() {
                         onChange={(e) => setInviteMemberId(e.target.value)} 
                       />
                     </InputGroup>
-                    <InputGroup style={{ marginBottom: 0 }}>
+                    <InputGroup style={{ margin: '0 0 0 0' }}>
                       <label>부여할 권한</label>
                       <div style={{ position: 'relative', width: '100%' }}>
                         <div
@@ -1101,13 +1101,13 @@ export default function Home() {
                     </InputGroup>
                   </div>
                   
-                  <ModalActions style={{ marginTop: '0' }}>
+                  <ModalActions style={{ margin: '0 0 0 0' }}>
                     <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
                   </ModalActions>
                 </form>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: '8px', margin: '0 0 16px 0', flexShrink: 0 }}>
                     <Input 
                       type="text" 
                       placeholder="닉네임 또는 이메일 검색" 
@@ -1156,7 +1156,7 @@ export default function Home() {
                                       <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
                                     {openRoleDropdownId === member.memberId && (
-                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, margin: '2px 0 0 0', overflow: 'hidden', boxSizing: 'border-box' }}>
                                         <div 
                                           onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
                                           style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
@@ -1203,17 +1203,17 @@ export default function Home() {
             ) : selectedHistoryId && historyDetail ? (
               <HistoryDetailContainer>
                 <HistoryHeaderRow>
-                  <ModalTitle style={{ marginBottom: 0 }}>버전: {historyDetail.versionName}</ModalTitle>
+                  <ModalTitle style={{ margin: '0 0 0 0' }}>버전: {historyDetail.versionName}</ModalTitle>
                   <SortToggleBtn onClick={() => setSelectedHistoryId(null)}>← 목록으로</SortToggleBtn>
                 </HistoryHeaderRow>
                 
-                <HistoryDescList style={{ marginBottom: 16 }}>
+                <HistoryDescList style={{ margin: '0 0 16px 0' }}>
                   {historyDetail.description.split('\n').map((line: string, i: number) => (
                     <li key={i}>{line}</li>
                   ))}
                 </HistoryDescList>
                 
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#4a5568' }}>생성된 코드 파일 내역</div>
+                <div style={{ fontWeight: 600, fontSize: 13, margin: '0 0 8px 0', color: '#4a5568' }}>생성된 코드 파일 내역</div>
                 <FileListWrapper>
                   {((historyDetail.generatedFileList && historyDetail.generatedFileList.length > 0) || (historyDetail.files && historyDetail.files.length > 0)) ? (
                     (historyDetail.generatedFileList || historyDetail.files).map((file: any, idx: number) => (
@@ -1233,7 +1233,7 @@ export default function Home() {
             ) : (
               <>
                 <HistoryHeaderRow>
-                  <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
+                  <ModalTitle style={{ margin: '0 0 0 0' }}>활동 기록</ModalTitle>
                   <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
                     {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
                   </SortToggleBtn>
@@ -1265,7 +1265,7 @@ export default function Home() {
                 </HistoryListWrapper>
               </>
             )}
-            <ModalActions style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
+            <ModalActions style={{ margin: '20px 0 0 0', justifyContent: 'flex-end' }}>
               <CancelBtn style={{ width: '100%' }} onClick={() => setIsHistoryModalOpen(false)}>닫기</CancelBtn>
             </ModalActions>
           </HistoryModalContent>
@@ -1311,7 +1311,7 @@ export default function Home() {
                           <polyline points="13 2 13 9 20 9"></polyline>
                         </svg>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
-                          <span style={{ fontSize: '10px', color: isSelected ? '#28b4ad' : '#a0aec0', marginBottom: '2px', opacity: 0.8 }}>{file.folderName}</span>
+                          <span style={{ fontSize: '10px', color: isSelected ? '#28b4ad' : '#a0aec0', margin: '0 0 2px 0', opacity: 0.8 }}>{file.folderName}</span>
                           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{file.fileName}</span>
                         </div>
                       </CVFileItem>
@@ -1340,7 +1340,7 @@ export default function Home() {
 
                     <CVSectionTitle>코드 내용</CVSectionTitle>
                     <CVCodeContainer>
-                      <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
+                      <div style={{ fontWeight: 'bold', color: '#2d3748', margin: '0 0 12px 0', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
                         {selectedViewFile.fileName}
                       </div>
                       {selectedViewFile.content}
@@ -1981,9 +1981,9 @@ const CollabListWrapper = styled.div`
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  -ms-overflow-style: none; 
-  scrollbar-width: none; 
-  &::-webkit-scrollbar { display: none; 
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none;}
 `;
 
 const CollabItem = styled.div<{ $isMe?: boolean }>`
