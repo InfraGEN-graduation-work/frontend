@@ -921,7 +921,7 @@ export default function Home() {
                       style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {modalProvider === 'LOCAL' ? 'LOCAL (로컬 전용)' : modalProvider}
+                        {modalProvider === 'LOCAL' ? 'LOCAL' : modalProvider}
                       </span>
                       <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
                     </div>
@@ -933,7 +933,7 @@ export default function Home() {
                           style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >LOCAL (로컬 전용)</div>
+                        >LOCAL</div>
                         <div 
                           onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
                           style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
