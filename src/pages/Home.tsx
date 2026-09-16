@@ -969,7 +969,6 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* 받은 초대 목록 모달 */}
       {isInviteListModalOpen && (
         <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
