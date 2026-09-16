@@ -852,7 +852,7 @@ export default function Home() {
                   </ToggleSwitchContainer>
                 </div>
 
-                {/* [추후 백엔드 연동 시 주석 해제]
+                {/* 나중
                 <div style={{ width: '100%', marginBottom: '16px' }}>
                   <ProfileActionBtn 
                     style={{ width: '100%', position: 'relative' }} 
@@ -992,7 +992,7 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* [추후 백엔드 연동 시 주석 해제] 받은 초대 목록 모달 */}
+      {/* 나중
       {/* 
       {isInviteListModalOpen && (
         <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
