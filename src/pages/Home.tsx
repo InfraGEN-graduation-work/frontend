@@ -188,8 +188,7 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
       return;
     }
-    
-    // 현재 백엔드 API는 대기 없이 즉시 참여자로 등록합니다.
+
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
         method: 'POST',
@@ -201,7 +200,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
-        fetchCollaborators(collabProjectId); // 등록 성공 후 목록 새로고침
+        fetchCollaborators(collabProjectId);
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
       }
@@ -730,7 +729,6 @@ export default function Home() {
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
-  // 가나다 순(닉네임 기준)으로 정렬하되 본인(OWNER 등)을 최상단에 배치
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
