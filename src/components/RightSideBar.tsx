@@ -39,7 +39,7 @@ interface RightSideBarProps {
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
   projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, setTargetFileIds, markFilesAsModified, deleteRightPanelItems,
-  selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, validationErrors, resetTrigger,
+  selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, resetTrigger,
   setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width
 }) => {
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
