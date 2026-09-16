@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -189,6 +189,7 @@ export default function Home() {
       return;
     }
     
+    // 현재 백엔드 API는 대기 없이 즉시 참여자로 등록합니다.
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
         method: 'POST',
@@ -197,12 +198,12 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 초대(추가)되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
-        fetchCollaborators(collabProjectId);
+        fetchCollaborators(collabProjectId); // 등록 성공 후 목록 새로고침
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
@@ -211,7 +212,7 @@ export default function Home() {
 
   const handleRemoveCollaborator = async (memberId: number) => {
     if (!collabProjectId) return;
-    if (!window.confirm('정말 이 참여자를 퇴출하시겠습니까?')) return;
+    if (!window.confirm('정말 이 참여자를 제외하시겠습니까?')) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
@@ -219,7 +220,7 @@ export default function Home() {
       });
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 퇴출되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 제외되었습니다.' }));
       }
     } catch (err) {}
   };
@@ -593,7 +594,7 @@ export default function Home() {
       const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
-
+      
       setCodeViewerProjectName(projObj.result?.title || 'project');
 
       const allFiles: any[] = [];
@@ -729,9 +730,11 @@ export default function Home() {
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
+  // 가나다 순(닉네임 기준)으로 정렬하되 본인(OWNER 등)을 최상단에 배치
+  const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
-    ...collaborators.map(c => ({ isMe: false, email: c.email, ...c }))
+    ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
   ];
 
   const filteredMembers = allMembers.filter(m => 
@@ -1397,7 +1400,6 @@ export default function Home() {
     </PageContainer>
   );
 }
-
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
