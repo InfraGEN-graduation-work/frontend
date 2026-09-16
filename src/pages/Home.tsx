@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -26,7 +26,7 @@ interface Collaborator {
   isPending?: boolean; // 프론트엔드 가상 상태용 (수락대기)
 }
 
-// 프론트엔드 UI 테스트용 가상 초대 목록 타입
+// 프론트엔드 UI용 초대 목록 타입
 interface MockInvitation {
   inviteId: number;
   projectId: number;
@@ -80,12 +80,9 @@ export default function Home() {
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
-  // 초대 목록 UI 관련 상태 (백엔드 API 완성 전 가상 데이터)
+  // 초대 목록 UI 관련 상태 (백엔드 API 연동 전 빈 배열로 초기화)
   const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
-  const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([
-    { inviteId: 1, projectId: 999, projectName: '테스트용 협업 인프라', ownerNickname: '수석엔지니어', role: 'EDITOR' },
-    { inviteId: 2, projectId: 888, projectName: '사내 공용 DB 망', ownerNickname: 'Admin', role: 'VIEWER' }
-  ]);
+  const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -237,9 +234,11 @@ export default function Home() {
     }
   };
 
-  const handleRemoveCollaborator = async (memberId: number) => {
+  // 수락 대기중인 초대 취소인지, 기존 멤버 퇴출인지에 따라 메시지를 분기 처리합니다.
+  const handleRemoveCollaborator = async (memberId: number, isPending: boolean = false) => {
     if (!collabProjectId) return;
-    if (!window.confirm('정말 이 참여자(또는 초대)를 취소하시겠습니까?')) return;
+    const confirmMessage = isPending ? '초대를 취소하시겠습니까?' : '정말 이 참여자를 퇴출하시겠습니까?';
+    if (!window.confirm(confirmMessage)) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
@@ -247,7 +246,7 @@ export default function Home() {
       });
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 제외되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: isPending ? '초대가 취소되었습니다.' : '성공적으로 제외되었습니다.' }));
       }
     } catch (err) {}
   };
@@ -781,7 +780,7 @@ export default function Home() {
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
   
-  // 타입 에러 해결: isPending: false 를 명시적으로 추가
+  // 첫 번째 요소(나)에 isPending: false 추가
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER', isPending: false },
     ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
@@ -969,6 +968,7 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
+      {/* 받은 초대 목록 모달 */}
       {isInviteListModalOpen && (
         <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
@@ -1224,51 +1224,54 @@ export default function Home() {
                             </div>
                           </div>
                           <div className="actions">
-                            {!isCollabEditMode || member.isMe ? (
-                              // 실제 API에는 PENDING이 없으므로 주석 처리
-                              // member.isPending ? (
-                              //   <span style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold' }}>수락대기</span>
-                              // ) : (
-                                <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
-                              // )
+                            {member.isPending ? (
+                              <span 
+                                style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold', cursor: isCollabOwner ? 'pointer' : 'default', textDecoration: isCollabOwner ? 'underline' : 'none' }}
+                                onClick={() => {
+                                  if (isCollabOwner) handleRemoveCollaborator(member.memberId, true);
+                                }}
+                                title={isCollabOwner ? "클릭하여 초대 취소" : ""}
+                              >
+                                수락대기중
+                              </span>
                             ) : (
-                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <div className="action-row-top">
-                                  <div style={{ position: 'relative', width: '100%' }}>
-                                    <div
-                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
-                                    >
-                                      <span>{member.isPending ? '수락대기' : member.role}</span>
-                                      <span style={{ fontSize: '8px' }}>▼</span>
-                                    </div>
-                                    {openRoleDropdownId === member.memberId && (
-                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >EDITOR</div>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >VIEWER</div>
+                              !isCollabEditMode || member.isMe ? (
+                                <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
+                              ) : (
+                                <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div className="action-row-top">
+                                    <div style={{ position: 'relative', width: '100%' }}>
+                                      <div
+                                        onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
+                                      >
+                                        <span>{member.role}</span>
+                                        <span style={{ fontSize: '8px' }}>▼</span>
                                       </div>
-                                    )}
+                                      {openRoleDropdownId === member.memberId && (
+                                        <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+                                          <div 
+                                            onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                          >EDITOR</div>
+                                          <div 
+                                            onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                          >VIEWER</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="action-row-bottom">
+                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                    <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId, false)}>퇴출</button>
                                   </div>
                                 </div>
-                                <div className="action-row-bottom">
-                                  {!member.isPending && (
-                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                  )}
-                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>
-                                    {member.isPending ? '취소' : '퇴출'}
-                                  </button>
-                                </div>
-                              </div>
+                              )
                             )}
                           </div>
                         </CollabItem>
