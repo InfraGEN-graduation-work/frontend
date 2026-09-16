@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import JSZip from 'jszip';
@@ -23,10 +23,9 @@ interface Collaborator {
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
-  isPending?: boolean; // 프론트엔드 가상 상태용 (수락대기)
+  isPending?: boolean;
 }
 
-// 프론트엔드 UI용 초대 목록 타입
 interface MockInvitation {
   inviteId: number;
   projectId: number;
@@ -80,7 +79,6 @@ export default function Home() {
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
-  // 초대 목록 UI 관련 상태 (백엔드 API 연동 전 빈 배열로 초기화)
   const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
   const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([]);
 
@@ -234,7 +232,6 @@ export default function Home() {
     }
   };
 
-  // 수락 대기중인 초대 취소인지, 기존 멤버 퇴출인지에 따라 메시지를 분기 처리합니다.
   const handleRemoveCollaborator = async (memberId: number, isPending: boolean = false) => {
     if (!collabProjectId) return;
     const confirmMessage = isPending ? '초대를 취소하시겠습니까?' : '정말 이 참여자를 퇴출하시겠습니까?';
@@ -779,8 +776,7 @@ export default function Home() {
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
-  
-  // 첫 번째 요소(나)에 isPending: false 추가
+
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER', isPending: false },
     ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
@@ -968,7 +964,6 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* 받은 초대 목록 모달 */}
       {isInviteListModalOpen && (
         <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
