@@ -23,6 +23,16 @@ interface Collaborator {
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
+  isPending?: boolean; // 프론트엔드 가상 상태용 (수락대기)
+}
+
+// 프론트엔드 UI 테스트용 가상 초대 목록 타입
+interface MockInvitation {
+  inviteId: number;
+  projectId: number;
+  projectName: string;
+  ownerNickname: string;
+  role: 'EDITOR' | 'VIEWER';
 }
 
 export default function Home() {
@@ -69,6 +79,13 @@ export default function Home() {
   const [projectToLeave, setProjectToLeave] = useState<number | null>(null);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
+
+  // 초대 목록 UI 관련 상태 (백엔드 API 완성 전 가상 데이터)
+  const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
+  const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([
+    { inviteId: 1, projectId: 999, projectName: '테스트용 협업 인프라', ownerNickname: '수석엔지니어', role: 'EDITOR' },
+    { inviteId: 2, projectId: 888, projectName: '사내 공용 DB 망', ownerNickname: 'Admin', role: 'VIEWER' }
+  ]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -136,7 +153,10 @@ export default function Home() {
       const projData = await projRes.json();
       
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
-        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ ...p, myRole: p.role || 'OWNER' }));
+        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ 
+          ...p, 
+          myRole: p.accessRole || p.role || 'OWNER' 
+        }));
         setProjects(mappedProjects);
       }
     } catch (err) {}
@@ -188,7 +208,7 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
       return;
     }
-
+    
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
         method: 'POST',
@@ -197,12 +217,20 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대 요청이 전송되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
-        fetchCollaborators(collabProjectId);
+        
+        const newPendingMember: Collaborator = {
+          memberId: parsedId,
+          nickname: data.result?.nickname || `User_${parsedId}`,
+          role: inviteRole,
+          isPending: true
+        };
+        setCollaborators(prev => [...prev, newPendingMember]);
+
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
@@ -211,7 +239,7 @@ export default function Home() {
 
   const handleRemoveCollaborator = async (memberId: number) => {
     if (!collabProjectId) return;
-    if (!window.confirm('정말 이 참여자를 제외하시겠습니까?')) return;
+    if (!window.confirm('정말 이 참여자(또는 초대)를 취소하시겠습니까?')) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
@@ -259,6 +287,28 @@ export default function Home() {
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
     }
+  };
+
+  const handleAcceptInvite = (invitation: MockInvitation) => {
+    const newProject: Project = {
+      projectId: invitation.projectId,
+      title: invitation.projectName,
+      description: '초대받은 협업 프로젝트',
+      status: 'DRAFT',
+      createdAt: new Date().toISOString(),
+      myRole: invitation.role
+    };
+    
+    setProjects(prev => [...prev, newProject]);
+    setMockInvitations(prev => prev.filter(inv => inv.inviteId !== invitation.inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invitation.projectName}' 초대를 수락했습니다.` }));
+    if (mockInvitations.length === 1) setIsInviteListModalOpen(false); 
+  };
+
+  const handleRejectInvite = (inviteId: number) => {
+    setMockInvitations(prev => prev.filter(inv => inv.inviteId !== inviteId));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 거절했습니다.' }));
+    if (mockInvitations.length === 1) setIsInviteListModalOpen(false);
   };
 
   const handleSubmitProject = async (e: React.FormEvent) => {
@@ -730,8 +780,10 @@ export default function Home() {
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
+  
+  // 타입 에러 해결: isPending: false 를 명시적으로 추가
   const allMembers = [
-    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
+    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER', isPending: false },
     ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
   ];
 
@@ -757,6 +809,10 @@ export default function Home() {
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
             
+            {mockInvitations.length > 0 && (
+              <NotificationBadge />
+            )}
+
             {isProfileMenuOpen && (
               <ProfileDropdown onClick={(e) => e.stopPropagation()}>
                 <ProfileAvatarLg style={{ cursor: 'default' }}>
@@ -773,6 +829,20 @@ export default function Home() {
                     <ToggleInput type="checkbox" checked={isAutoSaveEnabled} onChange={(e) => setIsAutoSaveEnabled(e.target.checked)} />
                     <ToggleSlider checked={isAutoSaveEnabled} />
                   </ToggleSwitchContainer>
+                </div>
+
+                <div style={{ width: '100%', marginBottom: '16px' }}>
+                  <ProfileActionBtn 
+                    style={{ width: '100%', position: 'relative' }} 
+                    onClick={() => { setIsInviteListModalOpen(true); setIsProfileMenuOpen(false); }}
+                  >
+                    받은 초대 목록
+                    {mockInvitations.length > 0 && (
+                      <span style={{ marginLeft: '8px', background: '#e53e3e', color: 'white', padding: '2px 6px', borderRadius: '10px', fontSize: '11px' }}>
+                        {mockInvitations.length}
+                      </span>
+                    )}
+                  </ProfileActionBtn>
                 </div>
 
                 <ProfileActionRow>
@@ -898,6 +968,43 @@ export default function Home() {
           )}
         </ContentWrapper>
       </ContentArea>
+
+      {/* 받은 초대 목록 모달 */}
+      {isInviteListModalOpen && (
+        <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
+            <ModalTitle>받은 초대 목록</ModalTitle>
+            
+            {mockInvitations.length === 0 ? (
+              <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>
+                <p style={{ fontSize: '14px', color: '#718096' }}>받은 초대가 없습니다.</p>
+              </EmptyState>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
+                {mockInvitations.map(inv => (
+                  <div key={inv.inviteId} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', background: 'white' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', color: '#2d3748', fontSize: '15px', marginBottom: '4px' }}>{inv.projectName}</div>
+                        <div style={{ fontSize: '12px', color: '#718096' }}>초대자: {inv.ownerNickname}</div>
+                      </div>
+                      <RoleBadge role={inv.role}>{inv.role}</RoleBadge>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <CancelBtn style={{ flex: 1, padding: '8px 0', fontSize: '13px' }} onClick={() => handleRejectInvite(inv.inviteId)}>거절</CancelBtn>
+                      <SubmitBtn style={{ flex: 1, padding: '8px 0', fontSize: '13px' }} onClick={() => handleAcceptInvite(inv)}>수락</SubmitBtn>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <ModalActions style={{ justifyContent: 'flex-end', marginTop: '20px' }}>
+              <CancelBtn onClick={() => setIsInviteListModalOpen(false)}>닫기</CancelBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
 
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
@@ -1119,7 +1226,12 @@ export default function Home() {
                           </div>
                           <div className="actions">
                             {!isCollabEditMode || member.isMe ? (
-                              <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
+                              // 실제 API에는 PENDING이 없으므로 주석 처리
+                              // member.isPending ? (
+                              //   <span style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold' }}>수락대기</span>
+                              // ) : (
+                                <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
+                              // )
                             ) : (
                               <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 <div className="action-row-top">
@@ -1128,7 +1240,7 @@ export default function Home() {
                                       onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
                                       style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
                                     >
-                                      <span>{member.role}</span>
+                                      <span>{member.isPending ? '수락대기' : member.role}</span>
                                       <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
                                     {openRoleDropdownId === member.memberId && (
@@ -1150,8 +1262,12 @@ export default function Home() {
                                   </div>
                                 </div>
                                 <div className="action-row-bottom">
-                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                  {!member.isPending && (
+                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                  )}
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>
+                                    {member.isPending ? '취소' : '퇴출'}
+                                  </button>
                                 </div>
                               </div>
                             )}
@@ -1398,6 +1514,17 @@ export default function Home() {
     </PageContainer>
   );
 }
+
+const NotificationBadge = styled.div`
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  background-color: #e53e3e;
+  border-radius: 50%;
+  border: 2px solid white;
+`;
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
