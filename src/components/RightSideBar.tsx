@@ -437,13 +437,173 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     { value: 'AD-3', label: '가용성 도메인 3' }
   ];
 
-  const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
-  const nodeErrorsMap = new Map<string, typeof validationErrors>();
+  const validationErrorsForRightPanel: { name: string; desc: string; targetNodeId?: string; isGlobal?: boolean; targetField?: string; isProjectTab?: boolean }[] = [];
   
-  validationErrors.forEach(e => {
+  if (nodes.length === 0) {
+    validationErrorsForRightPanel.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
+  }
+  if (targetFileIds.length === 0) {
+    validationErrorsForRightPanel.push({ name: '생성 대상 없음', desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.', isProjectTab: true, targetField: 'target-file-box' });
+  }
+
+  const nameRegex = /^[a-zA-Z0-9_-]+$/;
+  const portMap = new Map<number, {id: string, name: string}[]>();
+
+  nodes.forEach(node => {
+    const settings = node.settings || {};
+    
+    const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
+      if (val && !nameRegex.test(val)) {
+        validationErrorsForRightPanel.push({ name: `${label} 형식 오류`, desc: `'${node.name}' 노드의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, targetNodeId: node.id, targetField: fieldKey });
+      }
+    };
+
+    if (!settings.name) validationErrorsForRightPanel.push({ name: '서비스 이름 누락', desc: `'${node.name}' 노드의 [서비스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'name' });
+    else checkNameFormat(settings.name, '서비스 이름', 'name');
+
+    if (!settings.containerName) validationErrorsForRightPanel.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
+    else checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
+
+    if (!settings.port) {
+      validationErrorsForRightPanel.push({ name: '포트 번호 누락', desc: `'${node.name}' 노드의 [포트 번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'port' });
+    } else {
+      const portNum = Number(settings.port);
+      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+        validationErrorsForRightPanel.push({ name: '포트 번호 범위 초과', desc: `'${node.name}' 노드의 포트 번호는 1024부터 65535 사이의 숫자여야 합니다.`, targetNodeId: node.id, targetField: 'port' });
+      } else {
+        if (!portMap.has(portNum)) portMap.set(portNum, []);
+        portMap.get(portNum)!.push({ id: node.id, name: node.name });
+      }
+    }
+
+    if (node.type === 'MySQL') {
+      if (!settings.imageVersion) validationErrorsForRightPanel.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      
+      if (!settings.databaseName) validationErrorsForRightPanel.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
+      else checkNameFormat(settings.databaseName, '데이터베이스 이름', 'databaseName');
+
+      if (!settings.username) validationErrorsForRightPanel.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
+      else checkNameFormat(settings.username, '사용자 이름', 'username');
+
+      /* 8자리 제한 없는 코드
+      if (!settings.userPassword) validationErrorsForRightPanel.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      if (!settings.rootPassword) validationErrorsForRightPanel.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
+      */
+      
+      if (!settings.userPassword || String(settings.userPassword).length < 8) {
+        validationErrorsForRightPanel.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      }
+
+      if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
+        validationErrorsForRightPanel.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
+      }
+    }
+    
+    if (node.type === 'Redis') {
+      if (!settings.imageVersion) validationErrorsForRightPanel.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      
+      /* 8자리 제한 없는 코드
+      if (!settings.password) validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      */
+      
+      if (!settings.password || String(settings.password).length < 8) {
+        validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      }
+    }
+    
+    if (node.type === 'Spring Boot') {
+      if (!settings.javaVersion) validationErrorsForRightPanel.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'javaVersion' });
+    }
+  });
+
+  portMap.forEach((nodesInfo, port) => {
+    if (nodesInfo.length > 1) {
+      nodesInfo.forEach(nodeInfo => {
+        validationErrorsForRightPanel.push({ name: '포트 번호 중복', desc: `포트 번호 ${port}가 여러 노드(${nodesInfo.map(n => n.name).join(', ')})에서 중복 사용되고 있습니다.`, targetNodeId: nodeInfo.id, targetField: 'port' });
+      });
+    }
+  });
+
+  edges.forEach(edge => {
+    const sNode = nodes.find(n => n.id === edge.sourceId);
+    const tNode = nodes.find(n => n.id === edge.targetId);
+    if (sNode && tNode) {
+      const isSourceDb = sNode.type === 'MySQL' || sNode.type === 'Redis';
+      const isTargetServer = tNode.type === 'Spring Boot';
+      if (!isSourceDb || !isTargetServer) {
+        validationErrorsForRightPanel.push({ name: '잘못된 노드 연결 방향', desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`, targetNodeId: sNode.id });
+      }
+    }
+  });
+
+  const springNodes = nodes.filter(n => n.type === 'Spring Boot');
+  springNodes.forEach(springNode => {
+    const connectedMysqlCount = edges.filter(e => {
+      const s = nodes.find(n => n.id === e.sourceId);
+      const t = nodes.find(n => n.id === e.targetId);
+      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
+    }).length;
+    if (connectedMysqlCount > 1) validationErrorsForRightPanel.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
+
+    const connectedRedisCount = edges.filter(e => {
+      const s = nodes.find(n => n.id === e.sourceId);
+      const t = nodes.find(n => n.id === e.targetId);
+      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
+    }).length;
+    if (connectedRedisCount > 1) validationErrorsForRightPanel.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
+  });
+
+  const checkCloudNameFormat = (val: string | undefined, label: string, key: string) => {
+    if (val && !nameRegex.test(val)) {
+      validationErrorsForRightPanel.push({ name: `클라우드 이름 형식 오류`, desc: `Settings 탭의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, isGlobal: true, targetField: key });
+    }
+  };
+
+  const cloudNameFields = [
+    { key: 'vpcName', label: 'VPC/VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
+    { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+    { key: 'securityGroupName', label: 'Security Group/List Name' }, { key: 'instanceName', label: 'Instance Name' }
+  ];
+
+  if (cloudProvider !== 'LOCAL') {
+    cloudNameFields.forEach(({ key, label }) => { checkCloudNameFormat(cloudSettings[key as keyof CloudSettings], label, key); });
+
+    if (cloudProvider === 'AWS') {
+      const requiredAws = [
+        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VPC Name' }, { key: 'subnetName', label: 'Subnet Name' },
+        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+        { key: 'securityGroupName', label: 'Security Group Name' }, { key: 'instanceName', label: 'Instance Name' },
+        { key: 'amiId', label: 'AMI ID' }, { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }
+      ];
+      requiredAws.forEach(({ key, label }) => {
+        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
+          validationErrorsForRightPanel.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
+        }
+      });
+    } else if (cloudProvider === 'OCI') {
+      const requiredOci = [
+        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
+        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
+        { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
+        { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
+        { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
+        { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
+      ];
+      requiredOci.forEach(({ key, label }) => {
+        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
+          validationErrorsForRightPanel.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
+        }
+      });
+    }
+  }
+
+  const globalErrorsRightPanel = validationErrorsForRightPanel.filter(e => e.isGlobal || !e.targetNodeId);
+  const nodeErrorsMapRightPanel = new Map<string, typeof validationErrorsForRightPanel>();
+  
+  validationErrorsForRightPanel.forEach(e => {
     if (!e.isGlobal && e.targetNodeId) {
-      if (!nodeErrorsMap.has(e.targetNodeId)) nodeErrorsMap.set(e.targetNodeId, []);
-      nodeErrorsMap.get(e.targetNodeId)!.push(e);
+      if (!nodeErrorsMapRightPanel.has(e.targetNodeId)) nodeErrorsMapRightPanel.set(e.targetNodeId, []);
+      nodeErrorsMapRightPanel.get(e.targetNodeId)!.push(e);
     }
   });
 
@@ -992,9 +1152,9 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         <div className="validation-panel" onClick={e => e.stopPropagation()}>
           <div className="validation-header-title">Error</div>
           <div className="validation-content">
-            {validationErrors.length > 0 ? (
+            {globalErrorsRightPanel.length > 0 || nodeErrorsMapRightPanel.size > 0 ? (
               <div className="error-list">
-                {globalErrors.length > 0 && (
+                {globalErrorsRightPanel.length > 0 && (
                   <div className="error-group">
                     <div className="error-group-header" onClick={() => toggleErrorGroup('global')}>
                       <span className="toggle-icon" style={{ marginRight: '8px', fontSize: '10px', color: '#9b2c2c' }}>
@@ -1004,7 +1164,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     </div>
                     {!collapsedErrorGroups.includes('global') && (
                       <div className="error-group-content">
-                        {globalErrors.map((err, idx) => (
+                        {globalErrorsRightPanel.map((err, idx) => (
                           <div key={idx} className="error-box" onClick={() => handleErrorClick(err)} style={{ cursor: 'pointer' }}>
                             <div className="error-header">
                               <div className="error-icon-circle">X</div>
@@ -1018,7 +1178,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                   </div>
                 )}
 
-                {Array.from(nodeErrorsMap.entries()).map(([nodeId, errs]) => {
+                {Array.from(nodeErrorsMapRightPanel.entries()).map(([nodeId, errs]) => {
                   const nodeName = nodes.find(n => n.id === nodeId)?.name || '알 수 없는 노드';
                   const isCollapsed = collapsedErrorGroups.includes(nodeId);
                   

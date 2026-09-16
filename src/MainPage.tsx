@@ -386,15 +386,30 @@ const MainPage: React.FC = () => {
       if (!settings.username) validationErrors.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
       else checkNameFormat(settings.username, '사용자 이름', 'username');
 
+      /* 8자리 제한 없는 코드
       if (!settings.userPassword) validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-
       if (!settings.rootPassword) validationErrors.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
+      */
+      
+      if (!settings.userPassword || String(settings.userPassword).length < 8) {
+        validationErrors.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      }
+
+      if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
+        validationErrors.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
+      }
     }
     
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
       
+      /* 8자리 제한 없는 코드
       if (!settings.password) validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      */
+      
+      if (!settings.password || String(settings.password).length < 8) {
+        validationErrors.push({ name: 'Redis 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      }
     }
     
     if (node.type === 'Spring Boot') {
