@@ -23,9 +23,10 @@ interface Collaborator {
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
-  isPending?: boolean;
+  // isPending?: boolean; // 나중
 }
 
+/*
 interface MockInvitation {
   inviteId: number;
   projectId: number;
@@ -33,6 +34,7 @@ interface MockInvitation {
   ownerNickname: string;
   role: 'EDITOR' | 'VIEWER';
 }
+*/
 
 export default function Home() {
   const navigate = useNavigate();
@@ -79,8 +81,10 @@ export default function Home() {
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
-  const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
-  const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([]);
+  // 나중
+  // const pendingInvitesRef = useRef<{ [projectId: number]: number[] }>({});
+  // const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
+  // const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -185,6 +189,13 @@ export default function Home() {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
+        // 나중
+        // const currentPending = pendingInvitesRef.current[projectId] || [];
+        // const mergedCollaborators = (data.result.collaborators || []).map((c: any) => ({
+        //   ...c,
+        //   isPending: currentPending.includes(c.memberId)
+        // }));
+        // setCollaborators(mergedCollaborators);
         setCollaborators(data.result.collaborators || []);
       }
     } catch (err) {}
@@ -212,38 +223,45 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대 요청이 전송되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
         
-        const newPendingMember: Collaborator = {
-          memberId: parsedId,
-          nickname: data.result?.nickname || `User_${parsedId}`,
-          role: inviteRole,
-          isPending: true
-        };
-        setCollaborators(prev => [...prev, newPendingMember]);
+        // 나중
+        /*
+        const currentPending = pendingInvitesRef.current[collabProjectId] || [];
+        if (!currentPending.includes(parsedId)) {
+          pendingInvitesRef.current[collabProjectId] = [...currentPending, parsedId];
+        }
+        */
+        
+        fetchCollaborators(collabProjectId); // 등록 성공 후 목록 새로고침
 
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
     }
   };
 
-  const handleRemoveCollaborator = async (memberId: number, isPending: boolean = false) => {
+  const handleRemoveCollaborator = async (memberId: number) => {
     if (!collabProjectId) return;
-    const confirmMessage = isPending ? '초대를 취소하시겠습니까?' : '정말 이 참여자를 퇴출하시겠습니까?';
-    if (!window.confirm(confirmMessage)) return;
+    if (!window.confirm('정말 이 참여자를 퇴출하시겠습니까?')) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
+        // 나중
+        /*
+        const currentPending = pendingInvitesRef.current[collabProjectId] || [];
+        pendingInvitesRef.current[collabProjectId] = currentPending.filter(id => id !== memberId);
+        */
+
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: isPending ? '초대가 취소되었습니다.' : '성공적으로 제외되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 제외되었습니다.' }));
       }
     } catch (err) {}
   };
@@ -285,6 +303,8 @@ export default function Home() {
     }
   };
 
+  // 나중
+  /*
   const handleAcceptInvite = (invitation: MockInvitation) => {
     const newProject: Project = {
       projectId: invitation.projectId,
@@ -300,12 +320,16 @@ export default function Home() {
     window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invitation.projectName}' 초대를 수락했습니다.` }));
     if (mockInvitations.length === 1) setIsInviteListModalOpen(false); 
   };
+  */
 
+  // 나중
+  /*
   const handleRejectInvite = (inviteId: number) => {
     setMockInvitations(prev => prev.filter(inv => inv.inviteId !== inviteId));
     window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 거절했습니다.' }));
     if (mockInvitations.length === 1) setIsInviteListModalOpen(false);
   };
+  */
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -776,9 +800,9 @@ export default function Home() {
   const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
-
+  
   const allMembers = [
-    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER', isPending: false },
+    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
     ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
   ];
 
@@ -804,9 +828,11 @@ export default function Home() {
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
             
+            {/* [추후 백엔드 연동 시 주석 해제]
             {mockInvitations.length > 0 && (
               <NotificationBadge />
             )}
+            */}
 
             {isProfileMenuOpen && (
               <ProfileDropdown onClick={(e) => e.stopPropagation()}>
@@ -826,6 +852,7 @@ export default function Home() {
                   </ToggleSwitchContainer>
                 </div>
 
+                {/* [추후 백엔드 연동 시 주석 해제]
                 <div style={{ width: '100%', marginBottom: '16px' }}>
                   <ProfileActionBtn 
                     style={{ width: '100%', position: 'relative' }} 
@@ -839,6 +866,7 @@ export default function Home() {
                     )}
                   </ProfileActionBtn>
                 </div>
+                */}
 
                 <ProfileActionRow>
                   <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
@@ -964,6 +992,8 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
+      {/* [추후 백엔드 연동 시 주석 해제] 받은 초대 목록 모달 */}
+      {/* 
       {isInviteListModalOpen && (
         <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
@@ -998,7 +1028,8 @@ export default function Home() {
             </ModalActions>
           </ModalContent>
         </ModalOverlay>
-      )}
+      )} 
+      */}
 
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
@@ -1219,54 +1250,55 @@ export default function Home() {
                             </div>
                           </div>
                           <div className="actions">
-                            {member.isPending ? (
-                              <span 
-                                style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold', cursor: isCollabOwner ? 'pointer' : 'default', textDecoration: isCollabOwner ? 'underline' : 'none' }}
-                                onClick={() => {
-                                  if (isCollabOwner) handleRemoveCollaborator(member.memberId, true);
-                                }}
-                                title={isCollabOwner ? "클릭하여 초대 취소" : ""}
-                              >
-                                수락대기중
-                              </span>
-                            ) : (
-                              !isCollabEditMode || member.isMe ? (
+                            {!isCollabEditMode || member.isMe ? (
+                              // 나중
+                              // member.isPending ? (
+                              //   <span 
+                              //     style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold', cursor: isCollabOwner ? 'pointer' : 'default', textDecoration: isCollabOwner ? 'underline' : 'none' }}
+                              //     onClick={() => {
+                              //       if (isCollabOwner) handleRemoveCollaborator(member.memberId, true);
+                              //     }}
+                              //     title={isCollabOwner ? "클릭하여 초대 취소" : ""}
+                              //   >
+                              //     수락대기중
+                              //   </span>
+                              // ) : (
                                 <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
-                              ) : (
-                                <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  <div className="action-row-top">
-                                    <div style={{ position: 'relative', width: '100%' }}>
-                                      <div
-                                        onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
-                                      >
-                                        <span>{member.role}</span>
-                                        <span style={{ fontSize: '8px' }}>▼</span>
-                                      </div>
-                                      {openRoleDropdownId === member.memberId && (
-                                        <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
-                                          <div 
-                                            onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                          >EDITOR</div>
-                                          <div 
-                                            onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                          >VIEWER</div>
-                                        </div>
-                                      )}
+                              // )
+                            ) : (
+                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div className="action-row-top">
+                                  <div style={{ position: 'relative', width: '100%' }}>
+                                    <div
+                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
+                                    >
+                                      <span>{member.role}</span>
+                                      <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
-                                  </div>
-                                  <div className="action-row-bottom">
-                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                    <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId, false)}>퇴출</button>
+                                    {openRoleDropdownId === member.memberId && (
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >EDITOR</div>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >VIEWER</div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              )
+                                <div className="action-row-bottom">
+                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </CollabItem>
@@ -1512,6 +1544,8 @@ export default function Home() {
   );
 }
 
+// 나중
+/*
 const NotificationBadge = styled.div`
   position: absolute;
   top: -2px;
@@ -1522,6 +1556,7 @@ const NotificationBadge = styled.div`
   border-radius: 50%;
   border: 2px solid white;
 `;
+*/
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
