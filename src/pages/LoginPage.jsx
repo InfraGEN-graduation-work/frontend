@@ -6,9 +6,7 @@ import logo2 from "../assets/mainlogo-2.png";
 import { useAuth } from "../contexts/AuthContext";
 
 const KAKAO_REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY || "1d3c47d4d92cec1710ef19ae5625d985";
-
 const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI || "https://infragen1.vercel.app/";
-
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
 
 const KAKAO_AUTH_URL =
@@ -26,6 +24,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   const [showLogin, setShowLogin] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
   
   const params = new URLSearchParams(window.location.search);
   const kakaoCode = params.get("code");
@@ -115,6 +114,34 @@ export default function LoginPage() {
     window.location.href = KAKAO_AUTH_URL;
   };
 
+  const handleGuestLogin = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/auth/guest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error('SERVER_ERROR');
+      }
+
+      const data = await res.json();
+      const isSuccess = data.isSuccess ?? data.is_success;
+
+      if (res.ok && isSuccess) {
+        setAccessToken(data.result.accessToken);
+        navigate("/dashboard");
+      } else {
+        setError(data.message || "게스트 로그인에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Guest Login Failed:", error);
+      setError("예기치 않은 서버 오류가 발생했습니다.");
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
@@ -180,47 +207,73 @@ export default function LoginPage() {
 
         <LoginSection>
           <Card>
-            <LogoWrap>
-              <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
-            </LogoWrap>
+            {!showEmailForm ? (
+              <>
+                <LogoWrap>
+                  <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
+                </LogoWrap>
 
-            <BrandName>InfraGen</BrandName>
+                <BrandName>InfraGen</BrandName>
 
-            <LoginForm onSubmit={handleLogin}>
-              <InputField
-                type="email"
-                placeholder="이메일"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-              <InputField
-                type="password"
-                placeholder="비밀번호"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-              {error && <ErrorMsg>{error}</ErrorMsg>}
-              <LoginButton type="submit">로그인</LoginButton>
-            </LoginForm>
+                {error && <ErrorMsg style={{ marginBottom: '16px' }}>{error}</ErrorMsg>}
 
-            <TextRow>
-              <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
-              <Dot />
-              <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
-            </TextRow>
+                <ButtonGroup>
+                  <EmailButton type="button" onClick={() => { setError(""); setShowEmailForm(true); }}>
+                    이메일로 로그인
+                  </EmailButton>
+                  <KakaoButton type="button" onClick={handleKakaoLogin}>
+                    <KakaoIcon />
+                    카카오계정으로 로그인
+                  </KakaoButton>
+                  <GuestButton type="button" onClick={handleGuestLogin}>
+                    게스트로 시작하기
+                  </GuestButton>
+                </ButtonGroup>
 
-            <Divider>
-              <Line />
-              <DividerText>또는</DividerText>
-              <Line />
-            </Divider>
+                <TextRow>
+                  <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
+                  <Dot />
+                  <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
+                </TextRow>
+              </>
+            ) : (
+              <>
+                <BackButton type="button" onClick={() => { setError(""); setShowEmailForm(false); }}>
+                  ← 뒤로 가기
+                </BackButton>
 
-            <KakaoButton type="button" onClick={handleKakaoLogin}>
-              <KakaoIcon />
-              카카오계정으로 로그인
-            </KakaoButton>
+                <LogoWrap>
+                  <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
+                </LogoWrap>
+
+                <BrandName>이메일 로그인</BrandName>
+
+                <LoginForm onSubmit={handleLogin}>
+                  <InputField
+                    type="email"
+                    placeholder="이메일"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                  <InputField
+                    type="password"
+                    placeholder="비밀번호"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
+                  {error && <ErrorMsg>{error}</ErrorMsg>}
+                  <LoginButton type="submit">로그인</LoginButton>
+                </LoginForm>
+
+                <TextRow style={{ marginTop: '16px', marginBottom: 0 }}>
+                  <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
+                  <Dot />
+                  <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
+                </TextRow>
+              </>
+            )}
           </Card>
         </LoginSection>
 
@@ -368,6 +421,23 @@ const Card = styled.div`
   align-items: center;
   padding: 56px 32px 48px;
   animation: ${fadeIn} 0.4s ease both;
+  position: relative;
+`;
+
+const BackButton = styled.button`
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #888;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  transition: color 0.15s;
+
+  &:hover { color: #333; }
 `;
 
 const LogoWrap = styled.div`
@@ -385,6 +455,72 @@ const BrandName = styled.h1`
   color: #1a1a1a;
   margin: 0 0 28px;
   letter-spacing: -0.4px;
+`;
+
+const ButtonGroup = styled.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+`;
+
+const EmailButton = styled.button`
+  width: 100%;
+  height: 50px;
+  background: #1a1a1a;
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: -0.2px;
+  transition: opacity 0.15s, transform 0.1s;
+  font-family: inherit;
+
+  &:hover  { opacity: 0.82; }
+  &:active { transform: scale(0.98); }
+`;
+
+const KakaoButton = styled.button`
+  width: 100%;
+  height: 50px;
+  background: #fee500;
+  border: none;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  color: #191919;
+  letter-spacing: -0.2px;
+  transition: opacity 0.15s, transform 0.1s;
+  font-family: inherit;
+
+  &:hover  { opacity: 0.9; }
+  &:active { transform: scale(0.98); }
+`;
+
+const GuestButton = styled.button`
+  width: 100%;
+  height: 50px;
+  background: #f1f3f5;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #4a5568;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: -0.2px;
+  transition: opacity 0.15s, transform 0.1s, background 0.2s;
+  font-family: inherit;
+
+  &:hover  { background: #e2e8f0; }
+  &:active { transform: scale(0.98); }
 `;
 
 const LoginForm = styled.form`
@@ -421,6 +557,7 @@ const ErrorMsg = styled.p`
   color: #e05858;
   margin: 0;
   padding-left: 2px;
+  text-align: center;
 `;
 
 const LoginButton = styled.button`
@@ -446,7 +583,6 @@ const TextRow = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 24px;
 `;
 
 const Dot = styled.span`
@@ -482,47 +618,6 @@ const SignupLink = styled.button`
   transition: color 0.15s;
 
   &:hover { color: #5a4fd4; }
-`;
-
-const Divider = styled.div`
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-`;
-
-const Line = styled.div`
-  flex: 1;
-  height: 1px;
-  background: #e8e8e8;
-`;
-
-const DividerText = styled.span`
-  font-size: 13px;
-  color: #aaaaaa;
-`;
-
-const KakaoButton = styled.button`
-  width: 100%;
-  height: 50px;
-  background: #fee500;
-  border: none;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 600;
-  color: #191919;
-  letter-spacing: -0.2px;
-  transition: opacity 0.15s, transform 0.1s;
-  font-family: inherit;
-
-  &:hover  { opacity: 0.9; }
-  &:active { transform: scale(0.98); }
 `;
 
 function KakaoIcon() {
