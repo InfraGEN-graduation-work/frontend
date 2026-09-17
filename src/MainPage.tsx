@@ -1292,7 +1292,6 @@ const MainPage: React.FC = () => {
           div[data-id="${id}"], div[id="${id}"] {
             opacity: 0.85 !important;
             filter: saturate(30%) !important;
-            transition: all 0.3s ease;
           }
         `).join('\n')}
         {myRole === 'VIEWER' && `
