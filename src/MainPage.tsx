@@ -817,38 +817,6 @@ const MainPage: React.FC = () => {
     return { mappedNodes, mappedEdges };
   };
 
-  const getGeneratePayloadForFolder = (fileId: string) => {
-    const file = files.find(f => f.id === fileId);
-    if (!file) return { generateNodes: [], generateEdges: [] };
-
-    const folderNodes = nodes.filter(n => file.nodeIds.includes(n.id));
-    const generateNodes = folderNodes.map(n => {
-      const rawProperties: any = { ...(n as any).settings };
-      rawProperties.fileId = file.id; rawProperties.fileName = file.name; rawProperties.fileIsGenerated = String(file.isGenerated);
-      rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []); rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
-      return {
-        nodeId: n.id, 
-        componentType: n.type.toUpperCase().replace(/ /g, '_'),
-        positionX: Math.round(n.x),
-        positionY: Math.round(n.y),
-        properties: processProperties(n, rawProperties)
-      };
-    });
-
-    const folderEdges = edges.filter(e => file.nodeIds.includes(e.sourceId) && file.nodeIds.includes(e.targetId));
-    const generateEdges = folderEdges.map(e => {
-      const sourceNode = nodes.find(n => n.id === e.sourceId);
-      const targetNode = nodes.find(n => n.id === e.targetId);
-      let finalSourceId = e.sourceId; let finalTargetId = e.targetId;
-      if (sourceNode?.type === 'Spring Boot' && (targetNode?.type === 'MySQL' || targetNode?.type === 'Redis')) {
-        finalSourceId = e.targetId; finalTargetId = e.sourceId;
-      }
-      return { edgeId: e.id, sourceNodeId: finalSourceId, targetNodeId: finalTargetId, connectionType: "DEFAULT" };
-    });
-
-    return { generateNodes, generateEdges };
-  };
-
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
     if (myRole === 'VIEWER') {
       if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 프로젝트를 저장할 수 없습니다.' }));
@@ -1008,110 +976,129 @@ const MainPage: React.FC = () => {
           }
         } catch (e) {}
 
-        await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
+        const putRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentVersion })
         });
-
-        const updatedFilesList = [...files];
-        let hasError = false;
-        let errorMsg = '';
-
-        for (const tFileId of targetFileIds) {
-          const { generateNodes, generateEdges } = getGeneratePayloadForFolder(tFileId);
-          if (generateNodes.length === 0) continue; 
-
-          const generatePayload = {
-            deploymentOption: cloudProvider, 
-            includeLocalSpec: cloudProvider === 'LOCAL' ? false : includeLocal,
-            deploymentTarget: cloudProvider === 'LOCAL' ? null : (cloudProvider === 'AWS' ? {
-              deploymentOption: 'AWS', 
-              region: cloudSettings.region || 'ap-northeast-2',
-              vpcName: cloudSettings.vpcName,
-              subnetName: cloudSettings.subnetName,
-              internetGatewayName: cloudSettings.internetGatewayName,
-              routeTableName: cloudSettings.routeTableName,
-              securityGroupName: cloudSettings.securityGroupName,
-              instanceName: cloudSettings.instanceName,
-              vpcCidr: cloudSettings.vpcCidr || '10.0.0.0/16',
-              subnetCidr: cloudSettings.subnetCidr || '10.0.1.0/24',
-              amiId: cloudSettings.amiId,
-              instanceType: cloudSettings.instanceType || 't3.micro',
-              adminCidr: cloudSettings.adminCidr,
-              appCidr: cloudSettings.appCidr
-            } : {
-              deploymentOption: 'OCI', 
-              region: cloudSettings.region || 'ap-seoul-1',
-              vcnName: cloudSettings.vpcName,
-              subnetName: cloudSettings.subnetName,
-              internetGatewayName: cloudSettings.internetGatewayName,
-              routeTableName: cloudSettings.routeTableName,
-              securityListName: cloudSettings.securityGroupName,
-              instanceName: cloudSettings.instanceName,
-              hostnameLabel: cloudSettings.hostnameLabel,
-              compartmentId: cloudSettings.compartmentId,
-              availabilityDomain: cloudSettings.availabilityDomain,
-              imageId: cloudSettings.amiId,
-              shape: cloudSettings.instanceType || 'VM.Standard.E2.1.Micro',
-              vcnCidr: cloudSettings.vpcCidr || '10.0.0.0/16',
-              subnetCidr: cloudSettings.subnetCidr || '10.0.1.0/24',
-              adminCidr: cloudSettings.adminCidr,
-              appCidr: cloudSettings.appCidr,
-              sshAuthorizedKeys: cloudSettings.sshAuthorizedKeys
-            }),
-            nodes: generateNodes,
-            edges: generateEdges
-          };
-
-          const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(generatePayload)
-          });
-
-          const generateData = await generateRes.json();
-
-          if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
-            const generatedFilesFromApi = generateData.result.files || [];
-            const fileIdx = updatedFilesList.findIndex(f => f.id === tFileId);
-            if (fileIdx > -1) {
-              const newHash = computeFileHash(updatedFilesList[fileIdx], nodes, edges, cloudProvider, includeLocal, cloudSettings);
-              updatedFilesList[fileIdx] = { ...updatedFilesList[fileIdx], isGenerated: true, generatedFiles: generatedFilesFromApi, lastHash: newHash };
-            }
-          } else {
-            hasError = true;
-            errorMsg = generateData.message || '코드 생성에 실패했습니다. 올바른 값이 입력되었는지 확인해주세요.';
-            break;
-          }
-        }
         
+        if (!putRes.ok) {
+          const putData = await putRes.json();
+          alert(putData.message || '프로젝트 저장 중 오류가 발생하여 코드 생성을 중단합니다.');
+          clearInterval(progressInterval);
+          setAppMode('editor');
+          return;
+        }
+
+        const generateNodes = activeNodes.map(n => {
+          const rawProperties: any = { ...(n as any).settings };
+          rawProperties.fileId = files[0]?.id || 'default';
+          rawProperties.fileName = files[0]?.name || '생성할 노드 목록';
+          rawProperties.fileIsGenerated = String(files[0]?.isGenerated || false);
+          rawProperties.fileGeneratedCodes = JSON.stringify(files[0]?.generatedFiles || []);
+          rawProperties.fileIsTarget = 'true';
+          return {
+            nodeId: n.id, 
+            componentType: n.type.toUpperCase().replace(/ /g, '_'),
+            positionX: Math.round(n.x),
+            positionY: Math.round(n.y),
+            properties: processProperties(n, rawProperties)
+          };
+        });
+
+        const generateEdges = activeEdges.map(e => {
+          const sourceNode = nodes.find(n => n.id === e.sourceId);
+          const targetNode = nodes.find(n => n.id === e.targetId);
+          let finalSourceId = e.sourceId; let finalTargetId = e.targetId;
+          if (sourceNode?.type === 'Spring Boot' && (targetNode?.type === 'MySQL' || targetNode?.type === 'Redis')) {
+            finalSourceId = e.targetId; finalTargetId = e.sourceId;
+          }
+          return { edgeId: e.id, sourceNodeId: finalSourceId, targetNodeId: finalTargetId, connectionType: "DEFAULT" };
+        });
+
+        const generatePayload = {
+          deploymentOption: cloudProvider, 
+          includeLocalSpec: cloudProvider === 'LOCAL' ? false : includeLocal,
+          deploymentTarget: cloudProvider === 'LOCAL' ? null : (cloudProvider === 'AWS' ? {
+            deploymentOption: 'AWS', 
+            region: cloudSettings.region || 'ap-northeast-2',
+            vpcName: cloudSettings.vpcName,
+            subnetName: cloudSettings.subnetName,
+            internetGatewayName: cloudSettings.internetGatewayName,
+            routeTableName: cloudSettings.routeTableName,
+            securityGroupName: cloudSettings.securityGroupName,
+            instanceName: cloudSettings.instanceName,
+            vpcCidr: cloudSettings.vpcCidr || '10.0.0.0/16',
+            subnetCidr: cloudSettings.subnetCidr || '10.0.1.0/24',
+            amiId: cloudSettings.amiId,
+            instanceType: cloudSettings.instanceType || 't3.micro',
+            adminCidr: cloudSettings.adminCidr,
+            appCidr: cloudSettings.appCidr
+          } : {
+            deploymentOption: 'OCI', 
+            region: cloudSettings.region || 'ap-seoul-1',
+            vcnName: cloudSettings.vpcName,
+            subnetName: cloudSettings.subnetName,
+            internetGatewayName: cloudSettings.internetGatewayName,
+            routeTableName: cloudSettings.routeTableName,
+            securityListName: cloudSettings.securityGroupName,
+            instanceName: cloudSettings.instanceName,
+            hostnameLabel: cloudSettings.hostnameLabel,
+            compartmentId: cloudSettings.compartmentId,
+            availabilityDomain: cloudSettings.availabilityDomain,
+            imageId: cloudSettings.amiId,
+            shape: cloudSettings.instanceType || 'VM.Standard.E2.1.Micro',
+            vcnCidr: cloudSettings.vpcCidr || '10.0.0.0/16',
+            subnetCidr: cloudSettings.subnetCidr || '10.0.1.0/24',
+            adminCidr: cloudSettings.adminCidr,
+            appCidr: cloudSettings.appCidr,
+            sshAuthorizedKeys: cloudSettings.sshAuthorizedKeys
+          }),
+          nodes: generateNodes,
+          edges: generateEdges
+        };
+
+        const generateRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(generatePayload)
+        });
+
+        const generateData = await generateRes.json();
+
         clearInterval(progressInterval);
         setGenProgress(100); 
 
-        if (!hasError) {
+        if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
+          const generatedFilesFromApi = generateData.result.files || [];
+          
+          const updatedFilesList = [...files];
+          if (updatedFilesList.length > 0) {
+            const newHash = computeFileHash(updatedFilesList[0], nodes, edges, cloudProvider, includeLocal, cloudSettings);
+            updatedFilesList[0] = { ...updatedFilesList[0], isGenerated: true, generatedFiles: generatedFilesFromApi, lastHash: newHash };
+          }
+          
           setFiles(updatedFilesList); 
           setActivityLog([]); 
           hasUnsavedChanges.current = false;
           
           const finalMapped = getMappedCanvasData(updatedFilesList); 
-          
-          try {
-            const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
-            if (collabRes.ok) {
-              const collabData = await collabRes.json();
-              currentVersion = collabData.result?.graphVersion ?? 0;
-            }
-          } catch (e) {}
-
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentVersion })
           });
-        } else { alert(errorMsg); setAppMode('editor'); }
-      } catch (err) { alert('서버 오류가 발생했습니다.'); setAppMode('editor'); }
-    } else setAppMode('editor');
+        } else {
+          alert(generateData.message || '코드 생성에 실패했습니다. 올바른 값이 입력되었는지 확인해주세요.');
+          setAppMode('editor');
+        }
+      } catch (err) {
+        alert('서버 오류가 발생했습니다.');
+        setAppMode('editor');
+      }
+    } else {
+      setAppMode('editor');
+    }
   };
 
   const closeErrorModalAndShowValidation = () => {
@@ -1303,8 +1290,8 @@ const MainPage: React.FC = () => {
       <style>
         {unassignedNodeIds.map(id => `
           div[data-id="${id}"], div[id="${id}"] {
-            opacity: 0.75 !important;
-            filter: grayscale(60%) !important;
+            opacity: 0.85 !important;
+            filter: saturate(30%) !important;
             transition: all 0.3s ease;
           }
         `).join('\n')}

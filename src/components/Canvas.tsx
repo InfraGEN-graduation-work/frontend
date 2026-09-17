@@ -34,7 +34,7 @@ interface CanvasProps {
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
-  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove
+  focusNodeId, setFocusNodeId, resetTrigger, otherCursors = [], onCursorMove
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -308,11 +308,6 @@ const Canvas: React.FC<CanvasProps> = ({
            setSelectedNodeIds(currentSelected);
            setSelectedFileId(null);
            scrollToNode(targetNode);
-        }
-        
-        if (!isSelectMode) {
-          setActiveTab('Settings');
-          setShowRightSidebar(true);
         }
       }
 
