@@ -10,6 +10,7 @@ interface CanvasProps {
   setNodes: React.Dispatch<React.SetStateAction<NodeData[]>>;
   edges: Edge[];
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
+  unassignedNodeIds: string[];
   selectedNodeIds: string[];
   setSelectedNodeIds: React.Dispatch<React.SetStateAction<string[]>>;
   addNode: (type: string, name: string, x: number, y: number) => void;
@@ -31,14 +32,13 @@ interface CanvasProps {
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
-  nodes, setNodes, edges, setEdges, selectedNodeIds, setSelectedNodeIds, 
+  nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
   focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   const [startMousePos, setStartMousePos] = useState({ x: 0, y: 0 });
@@ -463,6 +463,12 @@ const Canvas: React.FC<CanvasProps> = ({
               const t = nodes.find(n => n.id === edge.targetId);
               if (!s || !t) return null;
               
+              const isSelected = selectedEdgeId === edge.id;
+              const isInactive = unassignedNodeIds.includes(edge.sourceId) || unassignedNodeIds.includes(edge.targetId);
+              const edgeOpacity = isInactive ? 0.3 : 1;
+              const edgeColor = isInactive ? "#a0aec0" : (isSelected ? "#28b4ad" : "#cbd5e0");
+              const strokeWidth = isInactive ? "2" : (isSelected ? "3" : "2");
+
               const x1 = s.x + HW;
               const y1 = s.y + HH;
               const x2 = t.x + HW;
@@ -472,7 +478,6 @@ const Canvas: React.FC<CanvasProps> = ({
               const dy = y2 - y1;
               const len = Math.sqrt(dx * dx + dy * dy) || 1;
               const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-              const isSelected = selectedEdgeId === edge.id;
 
               const tx = HW / Math.abs(dx || 0.001);
               const ty = HH / Math.abs(dy || 0.001);
@@ -494,11 +499,11 @@ const Canvas: React.FC<CanvasProps> = ({
               const midY = (startY + lineEndY) / 2;
 
               return (
-                <g key={edge.id}>
+                <g key={edge.id} style={{ opacity: edgeOpacity }}>
                   <line 
                     x1={x1} y1={y1} x2={x2} y2={y2} 
                     stroke="transparent" strokeWidth="20" 
-                    style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                    style={{ pointerEvents: isInactive ? 'none' : 'stroke', cursor: 'pointer' }}
                     onPointerDown={(e) => {
                       e.stopPropagation(); 
                       setSelectedEdgeId(edge.id);
@@ -508,20 +513,20 @@ const Canvas: React.FC<CanvasProps> = ({
                   
                   <line 
                     x1={startX} y1={startY} x2={lineEndX} y2={lineEndY} 
-                    stroke={isSelected ? "#28b4ad" : "#cbd5e0"} 
-                    strokeWidth={isSelected ? "3" : "2"} 
+                    stroke={edgeColor} 
+                    strokeWidth={strokeWidth} 
                     strokeDasharray="4" 
                     style={{ pointerEvents: 'none' }} 
                   />
 
                   <polygon
                     points="-6,-6 6,0 -6,6"
-                    fill={isSelected ? "#28b4ad" : "#a0aec0"}
+                    fill={edgeColor}
                     transform={`translate(${arrowX}, ${arrowY}) rotate(${angle})`}
                     style={{ pointerEvents: 'none' }}
                   />
 
-                  {isSelected && (
+                  {isSelected && !isInactive && (
                     <g
                       transform={`translate(${midX}, ${midY})`} 
                       style={{ pointerEvents: 'auto', cursor: 'pointer' }}
@@ -585,6 +590,7 @@ const Canvas: React.FC<CanvasProps> = ({
           {nodes.map((node) => (
             <div 
               key={node.id} 
+              id={node.id}
               className={`deployed-node ${selectedNodeIds.includes(node.id) ? 'selected' : ''}`} 
               style={{ 
                 left: node.x, 

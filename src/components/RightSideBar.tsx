@@ -47,9 +47,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
   const [isDragOverUnassigned, setIsDragOverUnassigned] = useState(false);
   
-  const [editingFileId, setEditingFileId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-
   const [isTargetBoxCollapsed, setIsTargetBoxCollapsed] = useState(false);
   const [isUnassignedCollapsed, setIsUnassignedCollapsed] = useState(false);
 
@@ -70,7 +67,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     if (resetTrigger > 0) {
       setIsMultiSelectMode(false);
       setCheckedItems(new Set());
-      setEditingFileId(null);
       setIsTargetBoxCollapsed(true);
       setIsUnassignedCollapsed(true);
       setOpenDropdownKey(null);
@@ -80,6 +76,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   }, [resetTrigger, targetFileIds]);
 
   const unassignedNodes = nodes.filter((canvasNode) => !files.some((file) => file.nodeIds.includes(canvasNode.id)));
+  const unassignedNodeIds = unassignedNodes.map(n => n.id);
+
+  const activeNodes = nodes.filter(n => !unassignedNodeIds.includes(n.id));
+  const activeEdges = edges.filter(e => !unassignedNodeIds.includes(e.sourceId) && !unassignedNodeIds.includes(e.targetId));
 
   const handleDragOver = (e: React.DragEvent) => {
     if (isViewer) return;
@@ -135,13 +135,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     markFilesAsModified();
     setFiles((prev) => prev.map((f) => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) })));
     if (isMultiSelectMode) setCheckedItems(new Set());
-  };
-
-  const saveFileNameEdit = (id: string) => {
-    const finalName = editingName.trim() || '새 파일';
-    saveHistory();
-    setFiles((prev) => prev.map(f => f.id === id ? { ...f, name: finalName, isGenerated: false } : f));
-    setEditingFileId(null);
   };
 
   const toggleMainExpand = (e: React.MouseEvent, id: string) => {
@@ -387,9 +380,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const validationErrorsForRightPanel: { name: string; desc: string; targetNodeId?: string; isGlobal?: boolean; targetField?: string; isProjectTab?: boolean }[] = [];
   
-  if (nodes.length === 0) {
+  if (activeNodes.length === 0 && nodes.length > 0) {
+    validationErrorsForRightPanel.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 코드 목록]으로 이동해주세요.', isProjectTab: true });
+  } else if (nodes.length === 0) {
     validationErrorsForRightPanel.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
+  
   if (targetFileIds.length === 0) {
     validationErrorsForRightPanel.push({ name: '생성 대상 없음', desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.', isProjectTab: true, targetField: 'target-file-box' });
   }
@@ -397,7 +393,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const nameRegex = /^[a-zA-Z0-9_-]+$/;
   const portMap = new Map<number, {id: string, name: string}[]>();
 
-  nodes.forEach(node => {
+  activeNodes.forEach(node => {
     const settings = node.settings || {};
     
     const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
@@ -463,9 +459,9 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     }
   });
 
-  edges.forEach(edge => {
-    const sNode = nodes.find(n => n.id === edge.sourceId);
-    const tNode = nodes.find(n => n.id === edge.targetId);
+  activeEdges.forEach(edge => {
+    const sNode = activeNodes.find(n => n.id === edge.sourceId);
+    const tNode = activeNodes.find(n => n.id === edge.targetId);
     if (sNode && tNode) {
       const isSourceDb = sNode.type === 'MySQL' || sNode.type === 'Redis';
       const isTargetServer = tNode.type === 'Spring Boot';
@@ -475,18 +471,18 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     }
   });
 
-  const springNodes = nodes.filter(n => n.type === 'Spring Boot');
+  const springNodes = activeNodes.filter(n => n.type === 'Spring Boot');
   springNodes.forEach(springNode => {
-    const connectedMysqlCount = edges.filter(e => {
-      const s = nodes.find(n => n.id === e.sourceId);
-      const t = nodes.find(n => n.id === e.targetId);
+    const connectedMysqlCount = activeEdges.filter(e => {
+      const s = activeNodes.find(n => n.id === e.sourceId);
+      const t = activeNodes.find(n => n.id === e.targetId);
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
     }).length;
     if (connectedMysqlCount > 1) validationErrorsForRightPanel.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
 
-    const connectedRedisCount = edges.filter(e => {
-      const s = nodes.find(n => n.id === e.sourceId);
-      const t = nodes.find(n => n.id === e.targetId);
+    const connectedRedisCount = activeEdges.filter(e => {
+      const s = activeNodes.find(n => n.id === e.sourceId);
+      const t = activeNodes.find(n => n.id === e.targetId);
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
     }).length;
     if (connectedRedisCount > 1) validationErrorsForRightPanel.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
@@ -617,7 +613,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           border-color: #fbd38d;
         }
 
-        
         .viewer-input {
           background-color: #f8f9fa !important;
           color: #718096 !important;
@@ -696,7 +691,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                   markFilesAsModified();
                   setFiles((prev) => {
                     if (prev.length === 0) {
-                      return [{ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds, isExpanded: true }];
+                      return [{ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds, isExpanded: true }];
                     }
                     return prev.map((f, idx) => {
                       if (idx === 0) {
@@ -730,11 +725,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     >
                       <div className="file-header" onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}>
                         <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>{file.isExpanded ? '▼' : '▶'}</span>
-                        {editingFileId === file.id ? (
-                          <input type="text" className="file-name-input custom-input" value={editingName} onChange={(e) => setEditingName(e.target.value)} onBlur={() => saveFileNameEdit(file.id)} onKeyDown={(e) => e.key === 'Enter' && saveFileNameEdit(file.id)} autoFocus />
-                        ) : (
-                          <div className="file-name-editable" onDoubleClick={(e) => { e.stopPropagation(); if (isViewer || isMultiSelectMode) return; setEditingFileId(file.id); setEditingName(file.name); }} title={isViewer ? "" : "더블클릭하여 파일명 수정"}>{file.name}</div>
-                        )}
+                        <div className="file-name-editable" style={{ cursor: 'default' }}>{file.name}</div>
                       </div>
 
                       {file.isExpanded && (

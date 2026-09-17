@@ -339,9 +339,15 @@ const MainPage: React.FC = () => {
     }
   }, [files, targetFileIds]);
 
+  const unassignedNodeIds = nodes.filter(n => !files.some(f => f.nodeIds.includes(n.id))).map(n => n.id);
+  const activeNodes = nodes.filter(n => !unassignedNodeIds.includes(n.id));
+  const activeEdges = edges.filter(e => !unassignedNodeIds.includes(e.sourceId) && !unassignedNodeIds.includes(e.targetId));
+
   const validationErrors: ValidationError[] = [];
   
-  if (nodes.length === 0) {
+  if (activeNodes.length === 0 && nodes.length > 0) {
+    validationErrors.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 코드 목록]으로 이동해주세요.', isProjectTab: true });
+  } else if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
   
@@ -357,7 +363,7 @@ const MainPage: React.FC = () => {
   const nameRegex = /^[a-zA-Z0-9_-]+$/;
   const portMap = new Map<number, {id: string, name: string}[]>();
 
-  nodes.forEach(node => {
+  activeNodes.forEach(node => {
     const settings = node.settings || {};
     
     const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
@@ -432,9 +438,9 @@ const MainPage: React.FC = () => {
     }
   });
 
-  edges.forEach(edge => {
-    const sNode = nodes.find(n => n.id === edge.sourceId);
-    const tNode = nodes.find(n => n.id === edge.targetId);
+  activeEdges.forEach(edge => {
+    const sNode = activeNodes.find(n => n.id === edge.sourceId);
+    const tNode = activeNodes.find(n => n.id === edge.targetId);
     if (sNode && tNode) {
       const isSourceDb = sNode.type === 'MySQL' || sNode.type === 'Redis';
       const isTargetServer = tNode.type === 'Spring Boot';
@@ -448,19 +454,19 @@ const MainPage: React.FC = () => {
     }
   });
 
-  const springNodes = nodes.filter(n => n.type === 'Spring Boot');
+  const springNodes = activeNodes.filter(n => n.type === 'Spring Boot');
   springNodes.forEach(springNode => {
-    const connectedMysqlCount = edges.filter(e => {
-      const s = nodes.find(n => n.id === e.sourceId);
-      const t = nodes.find(n => n.id === e.targetId);
+    const connectedMysqlCount = activeEdges.filter(e => {
+      const s = activeNodes.find(n => n.id === e.sourceId);
+      const t = activeNodes.find(n => n.id === e.targetId);
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
     }).length;
 
     if (connectedMysqlCount > 1) validationErrors.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
 
-    const connectedRedisCount = edges.filter(e => {
-      const s = nodes.find(n => n.id === e.sourceId);
-      const t = nodes.find(n => n.id === e.targetId);
+    const connectedRedisCount = activeEdges.filter(e => {
+      const s = activeNodes.find(n => n.id === e.sourceId);
+      const t = activeNodes.find(n => n.id === e.targetId);
       return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
     }).length;
 
@@ -642,7 +648,7 @@ const MainPage: React.FC = () => {
 
                 reconstructedFiles[props.fileId] = {
                   id: props.fileId,
-                  name: props.fileName || '기본 인프라 파일',
+                  name: props.fileName || '생성할 코드 목록',
                   isGenerated: String(props.fileIsGenerated) === 'true',
                   nodeIds: [],
                   isExpanded: true,
@@ -1161,7 +1167,7 @@ const MainPage: React.FC = () => {
     setFiles((prevFiles) => {
       const updatedFiles = [...prevFiles];
       if (updatedFiles.length === 0) {
-        updatedFiles.push({ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
+        updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
       } else {
         updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, newNode.id] };
       }
@@ -1263,7 +1269,7 @@ const MainPage: React.FC = () => {
           setFiles((prev) => {
             const updatedFiles = [...prev];
             if (updatedFiles.length === 0) {
-              updatedFiles.push({ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds: newNodes.map(n => n.id), isExpanded: true });
+              updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds: newNodes.map(n => n.id), isExpanded: true });
             } else {
               updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, ...newNodes.map(n => n.id)] };
             }
@@ -1291,8 +1297,6 @@ const MainPage: React.FC = () => {
       nodeErrorsMap.get(e.targetNodeId)!.push(e);
     }
   });
-
-  const unassignedNodeIds = nodes.filter(n => !files.some(f => f.nodeIds.includes(n.id))).map(n => n.id);
 
   return (
     <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
@@ -1346,6 +1350,7 @@ const MainPage: React.FC = () => {
           <Canvas 
             nodes={nodes} setNodes={myRole === 'VIEWER' ? () => {} : setNodes} 
             edges={edges} setEdges={myRole === 'VIEWER' ? () => {} : setEdges}
+            unassignedNodeIds={unassignedNodeIds}
             selectedNodeIds={selectedNodeIds} setSelectedNodeIds={setSelectedNodeIds}
             addNode={myRole === 'VIEWER' ? () => {} : addNode} 
             zoomLevel={zoomLevel} isSelectMode={isSelectMode}
