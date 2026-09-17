@@ -29,7 +29,7 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
       if (file && file.generatedFiles && file.generatedFiles.length > 0) {
         hasFiles = true;
         file.generatedFiles.forEach(gf => {
-          zip.file(`${file.name}/${gf.fileName}`, gf.content);
+          zip.file(`${projectName}/${gf.fileName}`, gf.content);
         });
       }
     });

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { NodeData, FileGroup, Edge, SelectionArea, CloudProvider, CloudSettings } from '../types';
 import type { ViewportState } from '../MainPage';
 import JSZip from 'jszip';
@@ -35,12 +35,13 @@ interface RightSideBarProps {
   cloudSettings: CloudSettings;
   setCloudSettings: React.Dispatch<React.SetStateAction<CloudSettings>>;
   width: number;
+  isViewer?: boolean;
 }
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
-  projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, setTargetFileIds, markFilesAsModified, deleteRightPanelItems,
+  projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, markFilesAsModified, deleteRightPanelItems,
   selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, resetTrigger,
-  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width
+  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width, isViewer = false
 }) => {
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
@@ -51,7 +52,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const [isTargetBoxCollapsed, setIsTargetBoxCollapsed] = useState(false);
   const [isUnassignedCollapsed, setIsUnassignedCollapsed] = useState(false);
-  const [collapsedTargetFiles, setCollapsedTargetFiles] = useState<string[]>([]);
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
@@ -73,19 +73,21 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       setEditingFileId(null);
       setIsTargetBoxCollapsed(true);
       setIsUnassignedCollapsed(true);
-      setCollapsedTargetFiles([...targetFileIds]); 
       setOpenDropdownKey(null);
       setHighlightedField(null);
       setCollapsedErrorGroups([]); 
     }
   }, [resetTrigger, targetFileIds]);
 
-  const wasDroppedInTarget = useRef(false);
   const unassignedNodes = nodes.filter((canvasNode) => !files.some((file) => file.nodeIds.includes(canvasNode.id)));
 
-  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
+  const handleDragOver = (e: React.DragEvent) => {
+    if (isViewer) return;
+    e.preventDefault();
+  };
 
   const handleNodeDragStart = (e: React.DragEvent, nodeId: string) => {
+    if (isViewer) { e.preventDefault(); return; }
     e.stopPropagation();
     let dragIds = [nodeId];
 
@@ -99,32 +101,10 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     e.dataTransfer.setData('rightBarNodeIds', JSON.stringify(dragIds));
   };
 
-  const handleFileDragStart = (e: React.DragEvent, fileId: string) => {
-    if (editingFileId === fileId) return; 
-    e.stopPropagation();
-    let dragIds = [fileId];
-    if (isMultiSelectMode && checkedItems.has(fileId)) {
-      dragIds = Array.from(checkedItems).filter(id => id.startsWith('file-'));
-    }
-    e.dataTransfer.setData('rightBarFileIds', JSON.stringify(dragIds));
-    wasDroppedInTarget.current = false;
-  };
-
-  const handleFileDragEnd = (_e: React.DragEvent, fileId: string) => {
-    if (!wasDroppedInTarget.current) {
-      saveHistory();
-      let dragIds = [fileId];
-      if (isMultiSelectMode && checkedItems.has(fileId)) {
-        dragIds = Array.from(checkedItems).filter(id => id.startsWith('file-'));
-      }
-      setTargetFileIds((prev) => prev.filter(id => !dragIds.includes(id)));
-      if (isMultiSelectMode) setCheckedItems(new Set());
-    }
-    wasDroppedInTarget.current = false;
-  };
-
   const handleDropNodeToFile = (e: React.DragEvent, fileId: string) => {
+    if (isViewer) return;
     e.preventDefault();
+    e.stopPropagation();
     setDragOverFileId(null);
     const data = e.dataTransfer.getData('rightBarNodeIds');
     if (!data) return;
@@ -144,6 +124,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const handleDropToUnassigned = (e: React.DragEvent) => {
+    if (isViewer) return;
     e.preventDefault();
     setIsDragOverUnassigned(false);
     const data = e.dataTransfer.getData('rightBarNodeIds');
@@ -154,40 +135,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     markFilesAsModified();
     setFiles((prev) => prev.map((f) => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) })));
     if (isMultiSelectMode) setCheckedItems(new Set());
-  };
-
-  const handleDropFileToTarget = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOverTarget(false);
-    const data = e.dataTransfer.getData('rightBarFileIds');
-    if (!data) return;
-    const fileIds: string[] = JSON.parse(data);
-
-    wasDroppedInTarget.current = true;
-    let hasConflict = false;
-    fileIds.forEach(id => { if (targetFileIds.includes(id)) hasConflict = true; });
-
-    if (hasConflict) {
-      if (window.confirm('이미 존재하는 파일이 포함되어 있습니다. 최신 상태로 덮어쓰시겠습니까?')) {
-        saveHistory();
-        setTargetFileIds(prev => Array.from(new Set([...prev, ...fileIds])));
-      }
-    } else {
-      saveHistory();
-      setTargetFileIds(prev => Array.from(new Set([...prev, ...fileIds])));
-    }
-
-    if (isMultiSelectMode) setCheckedItems(new Set());
-  };
-
-  const handleAddFile = () => {
-    saveHistory();
-    const newId = `file-${Date.now()}`;
-    const newFile: FileGroup = { id: newId, name: '', isGenerated: false, nodeIds: [], isExpanded: true };
-    setFiles([...files, newFile]);
-    setEditingFileId(newId);
-    setEditingName('');
   };
 
   const saveFileNameEdit = (id: string) => {
@@ -202,12 +149,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     setFiles(prev => prev.map(f => f.id === id ? { ...f, isExpanded: !f.isExpanded } : f));
   };
 
-  const toggleTargetExpand = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setCollapsedTargetFiles(prev => prev.includes(id) ? prev.filter(fileId => fileId !== id) : [...prev, id]);
-  };
-
   const toggleFileCheck = (fileId: string, childNodeIds: string[]) => {
+    if (isViewer) return;
     const newChecked = new Set(checkedItems);
     if (newChecked.has(fileId)) {
       newChecked.delete(fileId);
@@ -220,6 +163,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const toggleNodeCheck = (nodeId: string) => {
+    if (isViewer) return;
     const newChecked = new Set(checkedItems);
     if (newChecked.has(nodeId)) newChecked.delete(nodeId);
     else newChecked.add(nodeId);
@@ -227,6 +171,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const handleDeleteItems = () => {
+    if (isViewer) return;
     const fileIdsToDelete = files.map(f => f.id).filter(id => checkedItems.has(id));
     const nodeIdsToDelete = nodes.map(n => n.id).filter(id => checkedItems.has(id));
     deleteRightPanelItems(fileIdsToDelete, nodeIdsToDelete);
@@ -234,6 +179,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const handleDownloadItems = () => {
+    if (isViewer) return;
     const hasFileSelected = files.some(f => checkedItems.has(f.id));
     const hasNodeSelected = nodes.some(n => checkedItems.has(n.id));
 
@@ -250,7 +196,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       filesWithCode.forEach(fileGroup => {
         const gFiles = fileGroup.generatedFiles || [];
         gFiles.forEach(gf => {
-          zip.file(`${fileGroup.name}/${gf.fileName}`, gf.content);
+          zip.file(`${projectName}/${gf.fileName}`, gf.content);
         });
       });
 
@@ -326,6 +272,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const updateGlobalSetting = (key: keyof CloudSettings, value: string) => {
+    if (isViewer) return;
     saveHistory();
     setCloudSettings(prev => ({ ...prev, [key]: value }));
     markFilesAsModified();
@@ -368,24 +315,25 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     const isHighlighted = highlightedField === key;
     return (
       <div style={{ position: 'relative', width: '100%' }} id={`field-${key}`}>
-        <div className={`combo-input-wrapper ${isHighlighted ? 'highlight-flash' : ''}`} style={{ display: 'flex', border: '1px solid #cbd5e0', borderRadius: '6px', background: 'white', overflow: 'hidden', boxSizing: 'border-box' }}>
+        <div className={`combo-input-wrapper ${isHighlighted ? 'highlight-flash' : ''}`} style={{ display: 'flex', border: '1px solid #cbd5e0', borderRadius: '6px', background: isViewer ? '#f8f9fa' : 'white', overflow: 'hidden', boxSizing: 'border-box' }}>
           <input
             type="text"
             className="custom-input"
             value={cloudSettings[key] || ''}
             placeholder={placeholder}
             onChange={e => updateGlobalSetting(key, e.target.value)}
-            onFocus={() => { setOpenDropdownKey(key); saveHistory(); }}
-            style={{ flex: 1, minWidth: 0, padding: '8px', border: 'none', outline: 'none', fontSize: '12px', color: '#2d3748', boxSizing: 'border-box' }}
+            onFocus={() => { if (!isViewer) { setOpenDropdownKey(key); saveHistory(); } }}
+            readOnly={isViewer}
+            style={{ flex: 1, minWidth: 0, padding: '8px', border: 'none', outline: 'none', fontSize: '12px', color: isViewer ? '#718096' : '#2d3748', boxSizing: 'border-box', background: 'transparent' }}
           />
           <div
-            onClick={(e) => { e.stopPropagation(); setOpenDropdownKey(isOpen ? null : key); }}
-            style={{ width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa', borderLeft: '1px solid #cbd5e0', cursor: 'pointer', color: '#4a5568', fontSize: '10px' }}
+            onClick={(e) => { e.stopPropagation(); if (isViewer) return; setOpenDropdownKey(isOpen ? null : key); }}
+            style={{ width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa', borderLeft: '1px solid #cbd5e0', cursor: isViewer ? 'not-allowed' : 'pointer', color: '#4a5568', fontSize: '10px' }}
           >
             ▼
           </div>
         </div>
-        {isOpen && (
+        {!isViewer && isOpen && (
           <div style={{ position: 'absolute', top: '100%', left: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '4px', maxHeight: '180px', overflowY: 'auto' }}>
             {options.map(opt => (
               <div
@@ -485,13 +433,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
       if (!settings.username) validationErrorsForRightPanel.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
       else checkNameFormat(settings.username, '사용자 이름', 'username');
 
-      /* 8자리 제한 없는 코드
-      if (!settings.userPassword) validationErrorsForRightPanel.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-      if (!settings.rootPassword) validationErrorsForRightPanel.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
-      */
-      
-      if (!settings.userPassword || String(settings.userPassword).length < 8) {
-        validationErrorsForRightPanel.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      if (!settings.userPassword) {
+        validationErrorsForRightPanel.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
       }
 
       if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
@@ -502,12 +445,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrorsForRightPanel.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
       
-      /* 8자리 제한 없는 코드
-      if (!settings.password) validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
-      */
-      
-      if (!settings.password || String(settings.password).length < 8) {
-        validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      if (!settings.password) {
+        validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
       }
     }
     
@@ -677,6 +616,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           background: #feebc8;
           border-color: #fbd38d;
         }
+
+        
+        .viewer-input {
+          background-color: #f8f9fa !important;
+          color: #718096 !important;
+          cursor: not-allowed !important;
+        }
       `}</style>
       <div className="minimap-area" onClick={(e) => e.stopPropagation()}>
         <div className="minimap-window">
@@ -717,22 +663,52 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         <div className="project-tree">
           <div className="tree-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
             Project
-            <button className="select-mode-btn" title="선택" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { 
-              e.stopPropagation(); 
-              const nextMode = !isMultiSelectMode;
-              setIsMultiSelectMode(nextMode); setCheckedItems(new Set()); 
-              if (nextMode) { setSelectedNodeIds([]); setSelectedFileId(null); clearCanvasSelectionArea(); }
-            }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            </button>
+            {!isViewer && (
+              <button className="select-mode-btn" title="선택" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={(e) => { 
+                e.stopPropagation(); 
+                const nextMode = !isMultiSelectMode;
+                setIsMultiSelectMode(nextMode); setCheckedItems(new Set()); 
+                if (nextMode) { setSelectedNodeIds([]); setSelectedFileId(null); clearCanvasSelectionArea(); }
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              </button>
+            )}
           </div>
           <div className="tree-content">
+            
             <div 
               id="field-target-file-box"
               className={`target-box ${isDragOverTarget ? 'drag-over' : ''} ${highlightedField === 'target-file-box' ? 'highlight-flash' : ''}`}
-              onDragOver={handleDragOver} onDragEnter={() => setIsDragOverTarget(true)} onDragLeave={() => setIsDragOverTarget(false)} onDrop={handleDropFileToTarget}
+              onDragOver={handleDragOver} 
+              onDragEnter={() => { if (!isViewer) setIsDragOverTarget(true); }} 
+              onDragLeave={() => { if (!isViewer) setIsDragOverTarget(false); }} 
+              onDrop={(e) => {
+                if (isViewer) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDragOverTarget(false);
+                const data = e.dataTransfer.getData('rightBarNodeIds');
+                if (data) {
+                  const nodeIds: string[] = JSON.parse(data);
+                  saveHistory();
+                  markFilesAsModified();
+                  setFiles((prev) => {
+                    if (prev.length === 0) {
+                      return [{ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds, isExpanded: true }];
+                    }
+                    return prev.map((f, idx) => {
+                      if (idx === 0) {
+                        const newNodes = nodeIds.filter(id => !f.nodeIds.includes(id));
+                        return { ...f, nodeIds: [...f.nodeIds, ...newNodes] };
+                      }
+                      return { ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) };
+                    });
+                  });
+                  if (isMultiSelectMode) setCheckedItems(new Set());
+                }
+              }}
               style={{ minHeight: isTargetBoxCollapsed ? '0' : '80px', padding: isTargetBoxCollapsed ? '8px 12px' : '10px' }}
             >
               <div className="target-box-title" onClick={(e) => { e.stopPropagation(); setIsTargetBoxCollapsed(!isTargetBoxCollapsed); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', userSelect: 'none' }}>
@@ -741,80 +717,61 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
               </div>
               
               {!isTargetBoxCollapsed && (
-                <>
-                  {targetFileIds.length === 0 && <div className="empty-info-zone">파일을 드래그하세요</div>}
-                  {targetFileIds.map(id => {
-                    const file = files.find(f => f.id === id);
-                    if (!file) return null;
-                    const isTargetFileCollapsed = collapsedTargetFiles.includes(file.id);
-
-                    return (
-                      <div key={`target-${file.id}`} className="target-file-item" draggable onDragStart={(e) => handleFileDragStart(e, file.id)} onDragEnd={(e) => handleFileDragEnd(e, file.id)}>
-                        <div className="file-header">
-                          <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleTargetExpand(e, file.id); }}>{isTargetFileCollapsed ? '▶' : '▼'}</span>
-                          <div className="file-name">{file.name}</div>
-                        </div>
-                        {!isTargetFileCollapsed && (
-                          <div className="file-children">
-                            {file.nodeIds.map(nodeId => {
-                              const node = nodes.find(n => n.id === nodeId);
-                              return node ? <div key={`target-node-${node.id}`} className="tree-node-item readonly">● {node.name}</div> : null;
-                            })}
-                          </div>
+                <div className="file-list-container" style={{ padding: 0, marginTop: '8px', border: 'none', background: 'transparent' }}>
+                  {files.length === 0 && <div className="empty-info-zone">노드가 없습니다.</div>}
+                  {files.map(file => (
+                    <div 
+                      key={file.id} 
+                      className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${isMultiSelectMode ? (checkedItems.has(file.id) ? 'selected' : '') : (selectedFileId === file.id ? 'selected' : '')}`} 
+                      onDragOver={handleDragOver} 
+                      onDragEnter={() => { if (!isViewer) setDragOverFileId(file.id); }} 
+                      onDragLeave={() => { if (!isViewer) setDragOverFileId(null); }} 
+                      onDrop={(e) => { if (!isViewer) { e.stopPropagation(); handleDropNodeToFile(e, file.id); } }}
+                    >
+                      <div className="file-header" onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}>
+                        <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>{file.isExpanded ? '▼' : '▶'}</span>
+                        {editingFileId === file.id ? (
+                          <input type="text" className="file-name-input custom-input" value={editingName} onChange={(e) => setEditingName(e.target.value)} onBlur={() => saveFileNameEdit(file.id)} onKeyDown={(e) => e.key === 'Enter' && saveFileNameEdit(file.id)} autoFocus />
+                        ) : (
+                          <div className="file-name-editable" onDoubleClick={(e) => { e.stopPropagation(); if (isViewer || isMultiSelectMode) return; setEditingFileId(file.id); setEditingName(file.name); }} title={isViewer ? "" : "더블클릭하여 파일명 수정"}>{file.name}</div>
                         )}
                       </div>
-                    );
-                  })}
-                </>
+
+                      {file.isExpanded && (
+                        <div className="file-children">
+                          {file.nodeIds.map(nodeId => {
+                            const node = nodes.find(n => n.id === nodeId);
+                            if (!node) return null;
+                            return (
+                              <div key={node.id} className={`tree-node-item assigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={!isViewer} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
+                            );
+                          })}
+                          {file.nodeIds.length === 0 && <div className="empty-drop-zone">노드가 없습니다.</div>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
-            <div className="file-list-container">
-              {files.map(file => (
-                <div key={file.id} className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${isMultiSelectMode ? (checkedItems.has(file.id) ? 'selected' : '') : (selectedFileId === file.id ? 'selected' : '')}`} draggable={editingFileId !== file.id} onDragStart={(e) => handleFileDragStart(e, file.id)} onDragOver={handleDragOver} onDragEnter={() => setDragOverFileId(file.id)} onDragLeave={() => setDragOverFileId(null)} onDrop={(e) => handleDropNodeToFile(e, file.id)}>
-                  <div className="file-header" onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}>
-                    <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>{file.isExpanded ? '▼' : '▶'}</span>
-                    {editingFileId === file.id ? (
-                      <input type="text" className="file-name-input custom-input" value={editingName} onChange={(e) => setEditingName(e.target.value)} onBlur={() => saveFileNameEdit(file.id)} onKeyDown={(e) => e.key === 'Enter' && saveFileNameEdit(file.id)} onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()} autoFocus />
-                    ) : (
-                      <div className="file-name-editable" onDoubleClick={(e) => { e.stopPropagation(); if (isMultiSelectMode) return; setEditingFileId(file.id); setEditingName(file.name); }} title="더블클릭하여 파일명 수정">{file.name}</div>
-                    )}
-                  </div>
-
-                  {file.isExpanded && (
-                    <div className="file-children">
-                      {file.nodeIds.map(nodeId => {
-                        const node = nodes.find(n => n.id === nodeId);
-                        if (!node) return null;
-                        return (
-                          <div key={node.id} className={`tree-node-item assigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={true} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
-                        );
-                      })}
-                      {file.nodeIds.length === 0 && <div className="empty-drop-zone">노드를 드래그하세요</div>}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!isMultiSelectMode && <button className="add-file-btn" onClick={(e) => { e.stopPropagation(); handleAddFile(); }}>+ 파일추가</button>}
-            </div>
-
-            <div className={`unassigned-box ${isDragOverUnassigned ? 'drag-over' : ''}`} onDragOver={handleDragOver} onDragEnter={() => setIsDragOverUnassigned(true)} onDragLeave={() => setIsDragOverUnassigned(false)} onDrop={handleDropToUnassigned}>
+            <div className={`unassigned-box ${isDragOverUnassigned ? 'drag-over' : ''}`} onDragOver={handleDragOver} onDragEnter={() => { if (!isViewer) setIsDragOverUnassigned(true); }} onDragLeave={() => { if (!isViewer) setIsDragOverUnassigned(false); }} onDrop={handleDropToUnassigned}>
               <div className="unassigned-title" onClick={(e) => { e.stopPropagation(); setIsUnassignedCollapsed(!isUnassignedCollapsed); }}>
                 <span className="toggle-icon" style={{ marginRight: '6px', fontSize: '10px' }}>{isUnassignedCollapsed ? '▶' : '▼'}</span>
-                낱개로 배치된 Node
+                낱개로 배치된 Node (생성 제외됨)
               </div>
               {!isUnassignedCollapsed && (
                 <div className="unassigned-children">
                   {unassignedNodes.map((node) => (
-                    <div key={node.id} className={`tree-node-item unassigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={true} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
+                    <div key={node.id} className={`tree-node-item unassigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={!isViewer} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
                   ))}
-                  {unassignedNodes.length === 0 && <div className="empty-info-zone">비배치 노드가 없습니다</div>}
+                  {unassignedNodes.length === 0 && <div className="empty-info-zone">제외된 노드가 없습니다</div>}
                 </div>
               )}
             </div>
           </div>
           
-          {isMultiSelectMode && (
+          {isMultiSelectMode && !isViewer && (
             <div className="right-panel-actions" onClick={e => e.stopPropagation()}>
               <button className="action-btn" onClick={cancelSelectionMode}>취소</button>
               <button className="action-btn" onClick={handleDeleteItems}>삭제</button>
@@ -826,7 +783,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
       {activeTab === 'Settings' && (
         <div className="settings-panel" onClick={e => e.stopPropagation()}>
-          <div className="tree-title">Settings</div>
+          <div className="tree-title">Settings {isViewer && <span style={{fontSize:'11px', color:'#e53e3e', fontWeight:'normal'}}>(보기 전용)</span>}</div>
           <div className="settings-content">
 
             {cloudProvider !== 'LOCAL' && (
@@ -842,12 +799,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                   <div className="setting-row">
                     <label>로컬 환경(Docker Compose, .env) 구성 생성</label>
                     <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
-                        <input type="radio" name="localGen" checked={includeLocal} onChange={() => { saveHistory(); setIncludeLocal(true); markFilesAsModified(); }} />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: isViewer ? 'not-allowed' : 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal', opacity: isViewer ? 0.6 : 1 }}>
+                        <input type="radio" name="localGen" checked={includeLocal} disabled={isViewer} onChange={() => { if(!isViewer) { saveHistory(); setIncludeLocal(true); markFilesAsModified(); } }} />
                         생성함 (포함)
                       </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal' }}>
-                        <input type="radio" name="localGen" checked={!includeLocal} onChange={() => { saveHistory(); setIncludeLocal(false); markFilesAsModified(); }} />
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: isViewer ? 'not-allowed' : 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal', opacity: isViewer ? 0.6 : 1 }}>
+                        <input type="radio" name="localGen" checked={!includeLocal} disabled={isViewer} onChange={() => { if(!isViewer) { saveHistory(); setIncludeLocal(false); markFilesAsModified(); } }} />
                         생성 안함
                       </label>
                     </div>
@@ -870,35 +827,35 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       </div>
                       <div className="setting-row">
                         <label>VPC Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vpc" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcName} placeholder="my-vpc" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>VPC CIDR</label>
-                        <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                        <input id="field-vpcCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Subnet Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Subnet CIDR</label>
-                        <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                        <input id="field-subnetCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Route Table Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Security Group Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sg" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sg" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Instance Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Instance Type</label>
@@ -910,11 +867,11 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       </div>
                       <div className="setting-row">
                         <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
-                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>App CIDR <span style={{color:'red'}}>*</span></label>
-                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
                       </div>
                     </>
                   ) : (
@@ -925,43 +882,43 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       </div>
                       <div className="setting-row">
                         <label>Compartment ID <span style={{color:'red'}}>*</span></label>
-                        <input id="field-compartmentId" type="text" className={`custom-input ${highlightedField === 'compartmentId' ? 'highlight-flash' : ''}`} value={cloudSettings.compartmentId || ''} placeholder="ocid1.compartment..." style={inputStyle} onChange={e => updateGlobalSetting('compartmentId', e.target.value)} />
+                        <input id="field-compartmentId" type="text" className={`custom-input ${highlightedField === 'compartmentId' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.compartmentId || ''} placeholder="ocid1.compartment..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('compartmentId', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>VCN Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''}`} value={cloudSettings.vpcName} placeholder="my-vcn" style={inputStyle} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                        <input id="field-vpcName" type="text" className={`custom-input ${highlightedField === 'vpcName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcName} placeholder="my-vcn" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>VCN CIDR</label>
-                        <input id="field-vpcCidr" type="text" className="custom-input" value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                        <input id="field-vpcCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Subnet Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                        <input id="field-subnetName" type="text" className={`custom-input ${highlightedField === 'subnetName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Subnet CIDR</label>
-                        <input id="field-subnetCidr" type="text" className="custom-input" value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                        <input id="field-subnetCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                        <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedField === 'internetGatewayName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Route Table Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                        <input id="field-routeTableName" type="text" className={`custom-input ${highlightedField === 'routeTableName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Security List Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sl" style={inputStyle} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                        <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedField === 'securityGroupName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sl" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Instance Name <span style={{color:'red'}}>*</span></label>
-                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                        <input id="field-instanceName" type="text" className={`custom-input ${highlightedField === 'instanceName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Hostname Label <span style={{color:'red'}}>*</span></label>
-                        <input id="field-hostnameLabel" type="text" className={`custom-input ${highlightedField === 'hostnameLabel' ? 'highlight-flash' : ''}`} value={cloudSettings.hostnameLabel || ''} placeholder="myhost" style={inputStyle} onChange={e => updateGlobalSetting('hostnameLabel', e.target.value)} />
+                        <input id="field-hostnameLabel" type="text" className={`custom-input ${highlightedField === 'hostnameLabel' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.hostnameLabel || ''} placeholder="myhost" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('hostnameLabel', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Availability Domain <span style={{color:'red'}}>*</span></label>
@@ -973,19 +930,19 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       </div>
                       <div className="setting-row">
                         <label>Image ID <span style={{color:'red'}}>*</span></label>
-                        <input id="field-amiId" type="text" className={`custom-input ${highlightedField === 'amiId' ? 'highlight-flash' : ''}`} value={cloudSettings.amiId} placeholder="ocid1.image..." style={inputStyle} onChange={e => updateGlobalSetting('amiId', e.target.value)} />
+                        <input id="field-amiId" type="text" className={`custom-input ${highlightedField === 'amiId' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.amiId} placeholder="ocid1.image..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('amiId', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
-                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                        <input id="field-adminCidr" type="text" className={`custom-input ${highlightedField === 'adminCidr' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>App CIDR <span style={{color:'red'}}>*</span></label>
-                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                        <input id="field-appCidr" type="text" className={`custom-input ${highlightedField === 'appCidr' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
                       </div>
                       <div className="setting-row">
                         <label>SSH Authorized Keys <span style={{color:'red'}}>*</span></label>
-                        <input id="field-sshAuthorizedKeys" type="text" className={`custom-input ${highlightedField === 'sshAuthorizedKeys' ? 'highlight-flash' : ''}`} value={cloudSettings.sshAuthorizedKeys || ''} placeholder="ssh-rsa AAA..." style={inputStyle} onChange={e => updateGlobalSetting('sshAuthorizedKeys', e.target.value)} />
+                        <input id="field-sshAuthorizedKeys" type="text" className={`custom-input ${highlightedField === 'sshAuthorizedKeys' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.sshAuthorizedKeys || ''} placeholder="ssh-rsa AAA..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('sshAuthorizedKeys', e.target.value)} />
                       </div>
                     </>
                   )}
@@ -1000,6 +957,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                 const settings = (selectedNode as any).settings || {};
                 
                 const updateSetting = (key: string, value: string) => {
+                  if (isViewer) return;
                   setNodes(prev => prev.map(n => 
                     n.id === selectedNode.id ? { ...n, settings: { ...((n as any).settings || {}), [key]: value } } : n
                   ));
@@ -1017,12 +975,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     
                     <div className="setting-row">
                       <label>노드 이름 (화면 표시용)</label>
-                      <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''}`} value={selectedNode.name} 
+                      <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={selectedNode.name} 
                         onChange={(e) => {
+                          if (isViewer) return;
                           setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n));
                           markFilesAsModified();
                         }}
-                        onFocus={saveHistory} style={inputStyle}
+                        onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer}
                       />
                     </div>
 
@@ -1030,11 +989,11 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       <>
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''}`} value={settings.name || ''} placeholder="mysql_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="mysql_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
-                          <select id="field-imageVersion" className={`custom-input ${highlightedField === 'imageVersion' ? 'highlight-flash' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} onFocus={saveHistory} style={inputStyle}>
+                          <select id="field-imageVersion" className={`custom-input ${highlightedField === 'imageVersion' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} disabled={isViewer}>
                             <option value="" disabled>버전을 선택하세요</option>
                             <option value="mysql:latest">mysql : latest</option>
                             <option value="mysql:8.4">mysql : 8.4</option>
@@ -1044,15 +1003,15 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''}`} value={settings.containerName || ''} placeholder="mysql_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="mysql_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 3306" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 3306" onChange={(e) => updateSetting('port', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>볼륨 이름 (volumeName)</label>
-                          <input id="field-volumeName" type="text" className="custom-input" value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
 
                         <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
@@ -1064,30 +1023,30 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedField === 'databaseName' ? 'highlight-flash' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedField === 'databaseName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-username" type="text" className={`custom-input ${highlightedField === 'username' ? 'highlight-flash' : ''}`} value={settings.username || ''} placeholder="dbuser" onChange={(e) => updateSetting('username', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-username" type="text" className={`custom-input ${highlightedField === 'username' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="dbuser" onChange={(e) => updateSetting('username', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>사용자 비밀번호 (userPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-userPassword" type="password" className={`custom-input ${highlightedField === 'userPassword' ? 'highlight-flash' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateSetting('userPassword', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-userPassword" type="password" className={`custom-input ${highlightedField === 'userPassword' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateSetting('userPassword', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>루트 비밀번호 (rootPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-rootPassword" type="password" className={`custom-input ${highlightedField === 'rootPassword' ? 'highlight-flash' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateSetting('rootPassword', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-rootPassword" type="password" className={`custom-input ${highlightedField === 'rootPassword' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateSetting('rootPassword', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                       </>
                     ) : selectedNode.type === 'Redis' ? (
                       <>
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''}`} value={settings.name || ''} placeholder="redis_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="redis_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
-                          <select id="field-imageVersion" className={`custom-input ${highlightedField === 'imageVersion' ? 'highlight-flash' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} onFocus={saveHistory} style={inputStyle}>
+                          <select id="field-imageVersion" className={`custom-input ${highlightedField === 'imageVersion' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} disabled={isViewer}>
                             <option value="" disabled>버전을 선택하세요</option>
                             <option value="redis:latest">redis : latest</option>
                             <option value="redis:7.0">redis : 7.0</option>
@@ -1096,30 +1055,30 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''}`} value={settings.containerName || ''} placeholder="redis_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="redis_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 6379" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 6379" onChange={(e) => updateSetting('port', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>볼륨 이름 (volumeName)</label>
-                          <input id="field-volumeName" type="text" className="custom-input" value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedField === 'password' ? 'highlight-flash' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateSetting('password', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-password" type="password" className={`custom-input ${highlightedField === 'password' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateSetting('password', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                       </>
                     ) : selectedNode.type === 'Spring Boot' ? (
                       <>
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''}`} value={settings.name || ''} placeholder="spring_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-name" type="text" className={`custom-input ${highlightedField === 'name' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="spring_service" onChange={(e) => updateSetting('name', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>Java 버전 <span style={{color:'red'}}>*</span></label>
-                          <select id="field-javaVersion" className={`custom-input ${highlightedField === 'javaVersion' ? 'highlight-flash' : ''}`} value={settings.javaVersion || ''} onChange={(e) => updateSetting('javaVersion', e.target.value)} onFocus={saveHistory} style={inputStyle}>
+                          <select id="field-javaVersion" className={`custom-input ${highlightedField === 'javaVersion' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.javaVersion || ''} onChange={(e) => updateSetting('javaVersion', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} disabled={isViewer}>
                             <option value="" disabled>버전 선택</option>
                             <option value="11">Java 11</option>
                             <option value="17">Java 17</option>
@@ -1128,11 +1087,11 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''}`} value={settings.containerName || ''} placeholder="spring_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedField === 'containerName' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="spring_container" onChange={(e) => updateSetting('containerName', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 8080" onChange={(e) => updateSetting('port', e.target.value)} onFocus={saveHistory} style={inputStyle} />
+                          <input id="field-port" type="text" className={`custom-input ${highlightedField === 'port' ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 8080" onChange={(e) => updateSetting('port', e.target.value)} onFocus={() => { if(!isViewer) saveHistory(); }} style={inputStyle} readOnly={isViewer} />
                         </div>
                       </>
                     ) : null}

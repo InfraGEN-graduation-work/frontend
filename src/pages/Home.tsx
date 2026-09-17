@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect  } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
+/* import JSZip from 'jszip'; */
+/* import { saveAs } from 'file-saver'; */
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
 import type { CloudProvider } from '../types';
@@ -23,18 +23,7 @@ interface Collaborator {
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
-  // isPending?: boolean; // 나중
 }
-
-/*
-interface MockInvitation {
-  inviteId: number;
-  projectId: number;
-  projectName: string;
-  ownerNickname: string;
-  role: 'EDITOR' | 'VIEWER';
-}
-*/
 
 export default function Home() {
   const navigate = useNavigate();
@@ -81,19 +70,19 @@ export default function Home() {
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
-  // 나중
-  // const pendingInvitesRef = useRef<{ [projectId: number]: number[] }>({});
-  // const [isInviteListModalOpen, setIsInviteListModalOpen] = useState(false);
-  // const [mockInvitations, setMockInvitations] = useState<MockInvitation[]>([]);
-
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  /*
   const [codeViewerProjectName, setCodeViewerProjectName] = useState<string>('project');
+  */
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
+  
+  /*
   const [downloadSelection, setDownloadSelection] = useState<Set<string>>(new Set());
+  */
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -189,13 +178,6 @@ export default function Home() {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        // 나중
-        // const currentPending = pendingInvitesRef.current[projectId] || [];
-        // const mergedCollaborators = (data.result.collaborators || []).map((c: any) => ({
-        //   ...c,
-        //   isPending: currentPending.includes(c.memberId)
-        // }));
-        // setCollaborators(mergedCollaborators);
         setCollaborators(data.result.collaborators || []);
       }
     } catch (err) {}
@@ -226,17 +208,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
-        
-        // 나중
-        /*
-        const currentPending = pendingInvitesRef.current[collabProjectId] || [];
-        if (!currentPending.includes(parsedId)) {
-          pendingInvitesRef.current[collabProjectId] = [...currentPending, parsedId];
-        }
-        */
-        
-        fetchCollaborators(collabProjectId); // 등록 성공 후 목록 새로고침
-
+        fetchCollaborators(collabProjectId); 
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
       }
@@ -254,12 +226,6 @@ export default function Home() {
         method: 'DELETE'
       });
       if (res.ok) {
-        // 나중
-        /*
-        const currentPending = pendingInvitesRef.current[collabProjectId] || [];
-        pendingInvitesRef.current[collabProjectId] = currentPending.filter(id => id !== memberId);
-        */
-
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 제외되었습니다.' }));
       }
@@ -302,34 +268,6 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
     }
   };
-
-  // 나중
-  /*
-  const handleAcceptInvite = (invitation: MockInvitation) => {
-    const newProject: Project = {
-      projectId: invitation.projectId,
-      title: invitation.projectName,
-      description: '초대받은 협업 프로젝트',
-      status: 'DRAFT',
-      createdAt: new Date().toISOString(),
-      myRole: invitation.role
-    };
-    
-    setProjects(prev => [...prev, newProject]);
-    setMockInvitations(prev => prev.filter(inv => inv.inviteId !== invitation.inviteId));
-    window.dispatchEvent(new CustomEvent('global-toast', { detail: `'${invitation.projectName}' 초대를 수락했습니다.` }));
-    if (mockInvitations.length === 1) setIsInviteListModalOpen(false); 
-  };
-  */
-
-  // 나중
-  /*
-  const handleRejectInvite = (inviteId: number) => {
-    setMockInvitations(prev => prev.filter(inv => inv.inviteId !== inviteId));
-    window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 거절했습니다.' }));
-    if (mockInvitations.length === 1) setIsInviteListModalOpen(false);
-  };
-  */
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -664,7 +602,9 @@ export default function Home() {
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
       
+      /*
       setCodeViewerProjectName(projObj.result?.title || 'project');
+      */
 
       const allFiles: any[] = [];
       const folderMap = new Map();
@@ -736,13 +676,16 @@ export default function Home() {
       setCodeViewerNodes(nodes);
       setSelectedViewFile(allFiles[0]);
       
+      /*
       const allFileIds = allFiles.map(f => f.fileId);
       setDownloadSelection(new Set(allFileIds));
+      */
 
       setIsCodeViewerOpen(true);
     } catch (err) {}
   };
 
+  /*
   const handleDownloadZip = async () => {
     if (downloadSelection.size === 0) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 파일을 하나 이상 선택해주세요.' }));
@@ -752,12 +695,13 @@ export default function Home() {
     const zip = new JSZip();
     codeViewerFiles.forEach(file => {
       if (downloadSelection.has(file.fileId)) {
-        zip.file(`${file.folderName}/${file.fileName}`, file.content);
+        zip.file(`${codeViewerProjectName}/${file.fileName}`, file.content);
       }
     });
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, `${codeViewerProjectName}-infragen-export.zip`);
   };
+  */
 
   const formatDate = (isoString: string) => {
     if (!isoString) return '';
@@ -797,7 +741,8 @@ export default function Home() {
 
   const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
-  const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
+  
+  // const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
   
@@ -807,8 +752,7 @@ export default function Home() {
   ];
 
   const filteredMembers = allMembers.filter(m => 
-    m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase()) || 
-    (m.email && m.email.toLowerCase().includes(collabSearchTerm.toLowerCase()))
+    m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase())
   );
 
   return (
@@ -828,7 +772,7 @@ export default function Home() {
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
             
-            {/* [추후 백엔드 연동 시 주석 해제]
+            {/*
             {mockInvitations.length > 0 && (
               <NotificationBadge />
             )}
@@ -851,22 +795,6 @@ export default function Home() {
                     <ToggleSlider checked={isAutoSaveEnabled} />
                   </ToggleSwitchContainer>
                 </div>
-
-                {/* 나중
-                <div style={{ width: '100%', marginBottom: '16px' }}>
-                  <ProfileActionBtn 
-                    style={{ width: '100%', position: 'relative' }} 
-                    onClick={() => { setIsInviteListModalOpen(true); setIsProfileMenuOpen(false); }}
-                  >
-                    받은 초대 목록
-                    {mockInvitations.length > 0 && (
-                      <span style={{ marginLeft: '8px', background: '#e53e3e', color: 'white', padding: '2px 6px', borderRadius: '10px', fontSize: '11px' }}>
-                        {mockInvitations.length}
-                      </span>
-                    )}
-                  </ProfileActionBtn>
-                </div>
-                */}
 
                 <ProfileActionRow>
                   <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
@@ -992,45 +920,6 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* 나중
-      {/* 
-      {isInviteListModalOpen && (
-        <ModalOverlay onClick={() => setIsInviteListModalOpen(false)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '400px' }}>
-            <ModalTitle>받은 초대 목록</ModalTitle>
-            
-            {mockInvitations.length === 0 ? (
-              <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>
-                <p style={{ fontSize: '14px', color: '#718096' }}>받은 초대가 없습니다.</p>
-              </EmptyState>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto' }}>
-                {mockInvitations.map(inv => (
-                  <div key={inv.inviteId} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', background: 'white' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <div>
-                        <div style={{ fontWeight: 'bold', color: '#2d3748', fontSize: '15px', marginBottom: '4px' }}>{inv.projectName}</div>
-                        <div style={{ fontSize: '12px', color: '#718096' }}>초대자: {inv.ownerNickname}</div>
-                      </div>
-                      <RoleBadge role={inv.role}>{inv.role}</RoleBadge>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <CancelBtn style={{ flex: 1, padding: '8px 0', fontSize: '13px' }} onClick={() => handleRejectInvite(inv.inviteId)}>거절</CancelBtn>
-                      <SubmitBtn style={{ flex: 1, padding: '8px 0', fontSize: '13px' }} onClick={() => handleAcceptInvite(inv)}>수락</SubmitBtn>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            <ModalActions style={{ justifyContent: 'flex-end', marginTop: '20px' }}>
-              <CancelBtn onClick={() => setIsInviteListModalOpen(false)}>닫기</CancelBtn>
-            </ModalActions>
-          </ModalContent>
-        </ModalOverlay>
-      )} 
-      */}
-
       {modalMode !== null && (
         <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1045,7 +934,8 @@ export default function Home() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
-                    disabled={!isEditTargetOwner && modalMode === 'edit'}
+                    /*
+                    disabled={!isEditTargetOwner && modalMode === 'edit'} */
                   />
                   
                   <div style={{ position: 'relative', width: '130px' }}>
@@ -1090,7 +980,7 @@ export default function Home() {
                   placeholder="간단한 설명을 적어주세요." 
                   value={newDesc} 
                   onChange={(e) => setNewDesc(e.target.value)} 
-                  disabled={!isEditTargetOwner && modalMode === 'edit'}
+                  /* disabled={!isEditTargetOwner && modalMode === 'edit'} */
                 />
               </InputGroup>
               <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
@@ -1218,7 +1108,7 @@ export default function Home() {
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexShrink: 0 }}>
                     <Input 
                       type="text" 
-                      placeholder="닉네임 또는 이메일 검색" 
+                      placeholder="닉네임 검색" 
                       value={collabSearchTerm} 
                       onChange={(e) => setCollabSearchTerm(e.target.value)} 
                       style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
@@ -1251,55 +1141,42 @@ export default function Home() {
                           </div>
                           <div className="actions">
                             {!isCollabEditMode || member.isMe ? (
-                              // 나중
-                              // member.isPending ? (
-                              //   <span 
-                              //     style={{ fontSize: '12px', color: '#dd6b20', fontWeight: 'bold', cursor: isCollabOwner ? 'pointer' : 'default', textDecoration: isCollabOwner ? 'underline' : 'none' }}
-                              //     onClick={() => {
-                              //       if (isCollabOwner) handleRemoveCollaborator(member.memberId, true);
-                              //     }}
-                              //     title={isCollabOwner ? "클릭하여 초대 취소" : ""}
-                              //   >
-                              //     수락대기중
-                              //   </span>
-                              // ) : (
                                 <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
-                              // )
-                            ) : (
-                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <div className="action-row-top">
-                                  <div style={{ position: 'relative', width: '100%' }}>
-                                    <div
-                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
-                                    >
-                                      <span>{member.role}</span>
-                                      <span style={{ fontSize: '8px' }}>▼</span>
-                                    </div>
-                                    {openRoleDropdownId === member.memberId && (
-                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >EDITOR</div>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >VIEWER</div>
+                              ) : (
+                                <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <div className="action-row-top">
+                                    <div style={{ position: 'relative', width: '100%' }}>
+                                      <div
+                                        onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
+                                      >
+                                        <span>{member.role}</span>
+                                        <span style={{ fontSize: '8px' }}>▼</span>
                                       </div>
-                                    )}
+                                      {openRoleDropdownId === member.memberId && (
+                                        <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+                                          <div 
+                                            onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                          >EDITOR</div>
+                                          <div 
+                                            onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                          >VIEWER</div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="action-row-bottom">
+                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                    <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
                                   </div>
                                 </div>
-                                <div className="action-row-bottom">
-                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
-                                </div>
-                              </div>
-                            )}
+                              )}
                           </div>
                         </CollabItem>
                       ))
@@ -1399,40 +1276,29 @@ export default function Home() {
             <CVHeader>
               <ModalTitle style={{ margin: 0 }}>생성된 코드 뷰어</ModalTitle>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <ZipDownloadBtn onClick={handleDownloadZip}>ZIP 일괄 다운로드</ZipDownloadBtn>
+                {/* <ZipDownloadBtn onClick={handleDownloadZip}>ZIP 일괄 다운로드</ZipDownloadBtn> */}
                 <CloseBtn onClick={() => setIsCodeViewerOpen(false)}>✕</CloseBtn>
               </div>
             </CVHeader>
 
             <CVBody>
               <CVLeftSidebar>
-                <CVSectionTitle>파일 목록 (클릭하여 다운로드 선택/해제)</CVSectionTitle>
+                <CVSectionTitle>파일 목록</CVSectionTitle>
                 <CVFileList>
                   {codeViewerFiles.map(file => {
-                    const isSelected = downloadSelection.has(file.fileId);
                     const isViewing = selectedViewFile?.fileId === file.fileId;
                     
                     return (
                       <CVFileItem 
                         key={file.fileId} 
-                        $selected={isSelected}
+                        $selected={false}
                         $isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
-                          setDownloadSelection(prev => {
-                            const next = new Set(prev);
-                            if (next.has(file.fileId)) next.delete(file.fileId);
-                            else next.add(file.fileId);
-                            return next;
-                          });
                         }}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight: 8, flexShrink: 0}}>
-                          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
-                          <polyline points="13 2 13 9 20 9"></polyline>
-                        </svg>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
-                          <span style={{ fontSize: '10px', color: isSelected ? '#28b4ad' : '#a0aec0', marginBottom: '2px', opacity: 0.8 }}>{file.folderName}</span>
+                          <span style={{ fontSize: '10px', color: '#a0aec0', marginBottom: '2px', opacity: 0.8 }}>{file.folderName}</span>
                           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{file.fileName}</span>
                         </div>
                       </CVFileItem>
@@ -1544,7 +1410,7 @@ export default function Home() {
   );
 }
 
-// 나중
+
 /*
 const NotificationBadge = styled.div`
   position: absolute;
@@ -2509,7 +2375,7 @@ const CVCodeContainer = styled.pre`
   &::-webkit-scrollbar { display: none; }
 `;
 
-const ZipDownloadBtn = styled.button`
+/*const ZipDownloadBtn = styled.button`
   background: #28b4ad;
   color: white;
   border: none;
@@ -2526,6 +2392,7 @@ const ZipDownloadBtn = styled.button`
     transform: translateY(-1px);
   }
 `;
+*/
 
 const CloseBtn = styled.button`
   background: #f1f3f5;

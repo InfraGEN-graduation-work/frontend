@@ -123,6 +123,8 @@ const MainPage: React.FC = () => {
   const [showTutorial, setShowTutorial] = useState(false);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
+  const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('OWNER');
+
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
 
@@ -328,6 +330,15 @@ const MainPage: React.FC = () => {
     });
   }, [nodes, edges, cloudProvider, includeLocal, cloudSettings, filesStructureDep]);
 
+  useEffect(() => {
+    if (isDataLoaded.current) {
+      const currentFileIds = files.map(f => f.id);
+      if (targetFileIds.length !== currentFileIds.length || !currentFileIds.every(id => targetFileIds.includes(id))) {
+        setTargetFileIds(currentFileIds);
+      }
+    }
+  }, [files, targetFileIds]);
+
   const validationErrors: ValidationError[] = [];
   
   if (nodes.length === 0) {
@@ -386,13 +397,8 @@ const MainPage: React.FC = () => {
       if (!settings.username) validationErrors.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
       else checkNameFormat(settings.username, '사용자 이름', 'username');
 
-      /* 8자리 제한 없는 코드
-      if (!settings.userPassword) validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-      if (!settings.rootPassword) validationErrors.push({ name: 'DB 루트 비밀번호 누락', desc: `'${node.name}' 노드의 [루트 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
-      */
-      
-      if (!settings.userPassword || String(settings.userPassword).length < 8) {
-        validationErrors.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      if (!settings.userPassword) {
+        validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
       }
 
       if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
@@ -403,12 +409,8 @@ const MainPage: React.FC = () => {
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
       
-      /* 8자리 제한 없는 코드
-      if (!settings.password) validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
-      */
-      
-      if (!settings.password || String(settings.password).length < 8) {
-        validationErrors.push({ name: 'Redis 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+      if (!settings.password) {
+        validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
       }
     }
     
@@ -534,6 +536,19 @@ const MainPage: React.FC = () => {
   }, [activityLog]);
 
   useEffect(() => {
+    fetchWithAuth(`${BASE_URL}/projects`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.isSuccess ?? data.is_success) {
+          const currentProject = (data.result.projectList || []).find((p: any) => p.projectId === Number(projectId));
+          if (currentProject) {
+            setMyRole(currentProject.accessRole || currentProject.role || 'OWNER');
+          }
+        }
+      });
+  }, [projectId, fetchWithAuth]);
+
+  useEffect(() => {
     fetchWithAuth(`${BASE_URL}/members/me`)
       .then(res => {
         if (res.status === 401) { navigate('/login'); throw new Error('Unauthorized'); }
@@ -627,7 +642,7 @@ const MainPage: React.FC = () => {
 
                 reconstructedFiles[props.fileId] = {
                   id: props.fileId,
-                  name: props.fileName || '새 폴더',
+                  name: props.fileName || '기본 인프라 파일',
                   isGenerated: String(props.fileIsGenerated) === 'true',
                   nodeIds: [],
                   isExpanded: true,
@@ -829,6 +844,11 @@ const MainPage: React.FC = () => {
   };
 
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
+    if (myRole === 'VIEWER') {
+      if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 프로젝트를 저장할 수 없습니다.' }));
+      return;
+    }
+
     if (!projectId) return;
     if (isAutoSave && !hasUnsavedChanges.current) return;
 
@@ -884,16 +904,17 @@ const MainPage: React.FC = () => {
     }
   };
 
-  useEffect(() => { autoSaveCallback.current = () => { if (hasUnsavedChanges.current) handleSaveCanvas(true); }; }); 
+  useEffect(() => { autoSaveCallback.current = () => { if (hasUnsavedChanges.current && myRole !== 'VIEWER') handleSaveCanvas(true); }; }); 
 
   useEffect(() => {
-    if (!isAutoSaveEnabled || !projectId) return;
+    if (!isAutoSaveEnabled || !projectId || myRole === 'VIEWER') return;
     const tick = () => { if (autoSaveCallback.current) autoSaveCallback.current(); };
     const timerId = setInterval(tick, 10 * 60 * 1000); 
     return () => clearInterval(timerId);
-  }, [isAutoSaveEnabled, projectId]);
+  }, [isAutoSaveEnabled, projectId, myRole]);
 
   const handleUpdateProjectName = async (newName: string) => {
+    if (myRole === 'VIEWER') return;
     if (!newName.trim() || newName === projectName || !projectId) return;
     const previousName = projectName;
     setProjectName(newName);
@@ -946,13 +967,18 @@ const MainPage: React.FC = () => {
   };
 
   const saveHistory = useCallback(() => {
+    if (myRole === 'VIEWER') return;
     setHistory((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
     setRedoStack([]); 
-  }, [nodes, edges, selectedNodeIds, selection, files, targetFileIds]);
+  }, [nodes, edges, selectedNodeIds, selection, files, targetFileIds, myRole]);
 
   const markFilesAsModified = useCallback(() => {}, []);
 
   const handleGenerateClick = () => {
+    if (myRole === 'VIEWER') {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 코드를 생성(Generate)할 수 없습니다.' }));
+      return;
+    }
     if (validationErrors.length > 0) setIsErrorModalOpen(true);
     else setIsConfirmModalOpen(true);
   };
@@ -1088,17 +1114,17 @@ const MainPage: React.FC = () => {
   };
 
   const undo = useCallback(() => {
-    if (history.length === 0) return;
+    if (myRole === 'VIEWER' || history.length === 0) return;
     isUndoRedo.current = true; 
     const previousState = history[history.length - 1];
     setRedoStack((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
     setNodes(previousState.nodes); setEdges(previousState.edges); setSelectedNodeIds(previousState.selectedNodeIds); setSelection(previousState.selection); setFiles(previousState.files); setTargetFileIds(previousState.targetFileIds);
     setHistory((prev) => prev.slice(0, -1));
     setTimeout(() => { isUndoRedo.current = false; }, 100); 
-  }, [history, nodes, edges, selectedNodeIds, selection, files, targetFileIds]);
+  }, [history, nodes, edges, selectedNodeIds, selection, files, targetFileIds, myRole]);
 
   const redo = () => {
-    if (redoStack.length === 0) return;
+    if (myRole === 'VIEWER' || redoStack.length === 0) return;
     isUndoRedo.current = true; 
     const nextState = redoStack[redoStack.length - 1];
     setHistory((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
@@ -1112,6 +1138,7 @@ const MainPage: React.FC = () => {
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
 
   const addNode = (type: string, baseName: string, x: number, y: number) => {
+    if (myRole === 'VIEWER') return;
     saveHistory();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
@@ -1130,11 +1157,22 @@ const MainPage: React.FC = () => {
 
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
     setNodes((prev) => [...prev, newNode]);
+
+    setFiles((prevFiles) => {
+      const updatedFiles = [...prevFiles];
+      if (updatedFiles.length === 0) {
+        updatedFiles.push({ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
+      } else {
+        updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, newNode.id] };
+      }
+      return updatedFiles;
+    });
+
     setActivityLog(prev => [...prev, `[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`]);
   };
 
   const deleteSelected = useCallback(() => {
-    if (selectedNodeIds.length === 0) return;
+    if (myRole === 'VIEWER' || selectedNodeIds.length === 0) return;
     saveHistory();
     const deletedNodes = nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.name);
     if (deletedNodes.length > 0) setActivityLog(prev => [...prev, `[삭제] 캔버스에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`]);
@@ -1142,7 +1180,7 @@ const MainPage: React.FC = () => {
     setEdges((prev) => prev.filter(edge => !selectedNodeIds.includes(edge.sourceId) && !selectedNodeIds.includes(edge.targetId)));
     setFiles((prev) => prev.map(f => ({ ...f, nodeIds: f.nodeIds.filter(id => !selectedNodeIds.includes(id)) })));
     setSelectedNodeIds([]); setSelectedFileId(null); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
-  }, [selectedNodeIds, nodes, saveHistory]);
+  }, [selectedNodeIds, nodes, saveHistory, myRole]);
 
   const onCancelSelection = () => {
     saveHistory(); setIsSelectMode(false); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
@@ -1150,7 +1188,7 @@ const MainPage: React.FC = () => {
   };
 
   const deleteRightPanelItems = (fileIdsToDelete: string[], nodeIdsToDelete: string[]) => {
-    if (fileIdsToDelete.length === 0 && nodeIdsToDelete.length === 0) return;
+    if (myRole === 'VIEWER' || (fileIdsToDelete.length === 0 && nodeIdsToDelete.length === 0)) return;
     saveHistory();
     if (selectedFileId && fileIdsToDelete.includes(selectedFileId)) setSelectedFileId(null);
     const deletedFiles = files.filter(f => fileIdsToDelete.includes(f.id)).map(f => f.name);
@@ -1168,6 +1206,8 @@ const MainPage: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      
+      if (myRole === 'VIEWER') return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault(); undo();
@@ -1219,6 +1259,17 @@ const MainPage: React.FC = () => {
           
           setNodes(prev => [...prev, ...newNodes]);
           setSelectedNodeIds(newSelectedIds);
+          
+          setFiles((prev) => {
+            const updatedFiles = [...prev];
+            if (updatedFiles.length === 0) {
+              updatedFiles.push({ id: `file-${Date.now()}`, name: '기본 인프라 파일', isGenerated: false, nodeIds: newNodes.map(n => n.id), isExpanded: true });
+            } else {
+              updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, ...newNodes.map(n => n.id)] };
+            }
+            return updatedFiles;
+          });
+
           setActivityLog(prev => [...prev, `[붙여넣기] ${newNodes.length}개의 노드를 캔버스에 붙여넣었습니다.`]);
         }
       }
@@ -1229,7 +1280,7 @@ const MainPage: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory]);
+  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory, myRole]);
 
   const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
   const nodeErrorsMap = new Map<string, typeof validationErrors>();
@@ -1241,11 +1292,45 @@ const MainPage: React.FC = () => {
     }
   });
 
+  const unassignedNodeIds = nodes.filter(n => !files.some(f => f.nodeIds.includes(n.id))).map(n => n.id);
+
   return (
-    <div className="app-container">
+    <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
+      <style>
+        {unassignedNodeIds.map(id => `
+          div[data-id="${id}"], div[id="${id}"] {
+            opacity: 0.4 !important;
+            filter: grayscale(100%) !important;
+            transition: all 0.3s ease;
+          }
+        `).join('\n')}
+
+        {myRole === 'VIEWER' && `
+          .react-flow__node { pointer-events: none !important; }
+          .react-flow__edge { pointer-events: none !important; }
+          .react-flow__connection-line { display: none !important; }
+          
+          .left-panel [draggable="true"] {
+            pointer-events: none !important;
+            opacity: 0.5 !important;
+          }
+
+          header button:nth-child(n+2) {
+            opacity: 0.5;
+            cursor: not-allowed;
+          }
+          header button.logo-btn, header button.refresh-btn {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+          }
+        `}
+      </style>
+
      <Header 
-      onGenerate={handleGenerateClick} isGenerateMode={appMode === 'generating'} 
-      onResetUI={handleResetUI} onSaveCanvas={() => handleSaveCanvas(false)}
+      onGenerate={myRole === 'VIEWER' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어는 코드를 생성(Generate)할 수 없습니다.' })) : handleGenerateClick} 
+      isGenerateMode={appMode === 'generating'} 
+      onResetUI={handleResetUI} 
+      onSaveCanvas={myRole === 'VIEWER' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어는 프로젝트를 저장할 수 없습니다.' })) : () => handleSaveCanvas(false)}
       onOpenTutorial={() => setShowTutorial(true)}
       onGoHome={handleGoHome}
     />
@@ -1258,7 +1343,7 @@ const MainPage: React.FC = () => {
             onSelectCategory={() => {}} onToggleRightSidebar={toggleRightSidebar}
             showRightSidebar={showRightSidebar} setShowRightSidebar={setShowRightSidebar}
             onZoomIn={handleZoomIn} onZoomOut={handleZoomOut}
-            onSelectMode={() => { saveHistory(); setIsSelectMode(true); }}
+            onSelectMode={() => { if(myRole !== 'VIEWER') { saveHistory(); setIsSelectMode(true); } }}
             onCancelSelection={onCancelSelection} onDelete={deleteSelected}
             onUndo={undo} onRedo={redo} canUndo={history.length > 0} canRedo={redoStack.length > 0}
             isSelectMode={isSelectMode} resetTrigger={uiResetTrigger} userInfo={userInfo}
@@ -1271,17 +1356,22 @@ const MainPage: React.FC = () => {
             onMouseDown={(e) => { e.preventDefault(); setIsResizingLeft(true); }} 
           />
 
-          <Canvas 
-            nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges}
-            selectedNodeIds={selectedNodeIds} setSelectedNodeIds={setSelectedNodeIds}
-            addNode={addNode} zoomLevel={zoomLevel} isSelectMode={isSelectMode}
-            selection={selection} setSelection={setSelection} saveHistory={saveHistory}
-            markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
-            setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
-            setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
-            otherCursors={otherCursors}
-            onCursorMove={handleCursorMove}
-          />
+          <div style={{ flex: 1, position: 'relative' }}>
+            <Canvas 
+              nodes={nodes} setNodes={myRole === 'VIEWER' ? () => {} : setNodes} 
+              edges={edges} setEdges={myRole === 'VIEWER' ? () => {} : setEdges}
+              selectedNodeIds={selectedNodeIds} setSelectedNodeIds={myRole === 'VIEWER' ? () => {} : setSelectedNodeIds}
+              addNode={myRole === 'VIEWER' ? () => {} : addNode} 
+              zoomLevel={zoomLevel} isSelectMode={isSelectMode}
+              selection={selection} setSelection={myRole === 'VIEWER' ? () => {} : setSelection} 
+              saveHistory={saveHistory}
+              markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
+              setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
+              setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
+              otherCursors={otherCursors}
+              onCursorMove={handleCursorMove}
+            />
+          </div>
           
           {selectedFileId && (
             <>
@@ -1350,12 +1440,13 @@ const MainPage: React.FC = () => {
                 cloudProvider={cloudProvider} includeLocal={includeLocal} setIncludeLocal={setIncludeLocal}
                 cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
                 width={rightWidth}
+                isViewer={myRole === 'VIEWER'}
               />
             </>
           )}
         </div>
       ) : (
-        <Generate genProgress={genProgress} targetFileIds={targetFileIds} files={files} projectName={projectName} onBack={() => { setAppMode('editor'); setTargetFileIds([]); }} />
+        <Generate genProgress={genProgress} targetFileIds={targetFileIds} files={files} projectName={projectName} onBack={() => { setAppMode('editor'); }} />
       )}
 
       {isErrorModalOpen && (
