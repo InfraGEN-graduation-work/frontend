@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -122,7 +122,7 @@ const MainPage: React.FC = () => {
 
   const [showTutorial, setShowTutorial] = useState(false);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
-
+  
   const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('OWNER');
 
   const [projectName, setProjectName] = useState('로딩중...');
@@ -1207,7 +1207,7 @@ const MainPage: React.FC = () => {
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       
-      if (myRole === 'VIEWER') return;
+      if (myRole === 'VIEWER') return; 
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault(); undo();
@@ -1304,24 +1304,11 @@ const MainPage: React.FC = () => {
             transition: all 0.3s ease;
           }
         `).join('\n')}
-
         {myRole === 'VIEWER' && `
-          .react-flow__node { pointer-events: none !important; }
-          .react-flow__edge { pointer-events: none !important; }
           .react-flow__connection-line { display: none !important; }
-          
           .left-panel [draggable="true"] {
-            pointer-events: none !important;
             opacity: 0.5 !important;
-          }
-
-          header button:nth-child(n+2) {
-            opacity: 0.5;
-            cursor: not-allowed;
-          }
-          header button.logo-btn, header button.refresh-btn {
-            opacity: 1 !important;
-            pointer-events: auto !important;
+            cursor: not-allowed !important;
           }
         `}
       </style>
@@ -1356,22 +1343,20 @@ const MainPage: React.FC = () => {
             onMouseDown={(e) => { e.preventDefault(); setIsResizingLeft(true); }} 
           />
 
-          <div style={{ flex: 1, position: 'relative' }}>
-            <Canvas 
-              nodes={nodes} setNodes={myRole === 'VIEWER' ? () => {} : setNodes} 
-              edges={edges} setEdges={myRole === 'VIEWER' ? () => {} : setEdges}
-              selectedNodeIds={selectedNodeIds} setSelectedNodeIds={myRole === 'VIEWER' ? () => {} : setSelectedNodeIds}
-              addNode={myRole === 'VIEWER' ? () => {} : addNode} 
-              zoomLevel={zoomLevel} isSelectMode={isSelectMode}
-              selection={selection} setSelection={myRole === 'VIEWER' ? () => {} : setSelection} 
-              saveHistory={saveHistory}
-              markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
-              setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
-              setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
-              otherCursors={otherCursors}
-              onCursorMove={handleCursorMove}
-            />
-          </div>
+          <Canvas 
+            nodes={nodes} setNodes={myRole === 'VIEWER' ? () => {} : setNodes} 
+            edges={edges} setEdges={myRole === 'VIEWER' ? () => {} : setEdges}
+            selectedNodeIds={selectedNodeIds} setSelectedNodeIds={setSelectedNodeIds}
+            addNode={myRole === 'VIEWER' ? () => {} : addNode} 
+            zoomLevel={zoomLevel} isSelectMode={isSelectMode}
+            selection={selection} setSelection={setSelection} 
+            saveHistory={saveHistory}
+            markFilesAsModified={markFilesAsModified} setSelectedFileId={setSelectedFileId}
+            setViewport={setViewport} focusNodeId={focusNodeId} setFocusNodeId={setFocusNodeId} resetTrigger={uiResetTrigger}
+            setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
+            otherCursors={otherCursors}
+            onCursorMove={handleCursorMove}
+          />
           
           {selectedFileId && (
             <>
@@ -1440,7 +1425,7 @@ const MainPage: React.FC = () => {
                 cloudProvider={cloudProvider} includeLocal={includeLocal} setIncludeLocal={setIncludeLocal}
                 cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
                 width={rightWidth}
-                isViewer={myRole === 'VIEWER'}
+                isViewer={myRole === 'VIEWER'} 
               />
             </>
           )}
