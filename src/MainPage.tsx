@@ -346,7 +346,7 @@ const MainPage: React.FC = () => {
   const validationErrors: ValidationError[] = [];
   
   if (activeNodes.length === 0 && nodes.length > 0) {
-    validationErrors.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 코드 목록]으로 이동해주세요.', isProjectTab: true });
+    validationErrors.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 노드 목록]으로 이동해주세요.', isProjectTab: true });
   } else if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
@@ -354,7 +354,7 @@ const MainPage: React.FC = () => {
   if (targetFileIds.length === 0) {
     validationErrors.push({ 
       name: '생성 대상 없음', 
-      desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.', 
+      desc: '생성할 노드 목록(Target)이 존재하지 않습니다.', 
       isProjectTab: true, 
       targetField: 'target-file-box' 
     });
@@ -648,7 +648,7 @@ const MainPage: React.FC = () => {
 
                 reconstructedFiles[props.fileId] = {
                   id: props.fileId,
-                  name: props.fileName || '생성할 코드 목록',
+                  name: props.fileName || '생성할 노드 목록',
                   isGenerated: String(props.fileIsGenerated) === 'true',
                   nodeIds: [],
                   isExpanded: true,
@@ -1167,7 +1167,7 @@ const MainPage: React.FC = () => {
     setFiles((prevFiles) => {
       const updatedFiles = [...prevFiles];
       if (updatedFiles.length === 0) {
-        updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
+        updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 노드 목록', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
       } else {
         updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, newNode.id] };
       }
@@ -1269,7 +1269,7 @@ const MainPage: React.FC = () => {
           setFiles((prev) => {
             const updatedFiles = [...prev];
             if (updatedFiles.length === 0) {
-              updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds: newNodes.map(n => n.id), isExpanded: true });
+              updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 노드 목록', isGenerated: false, nodeIds: newNodes.map(n => n.id), isExpanded: true });
             } else {
               updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, ...newNodes.map(n => n.id)] };
             }
@@ -1303,8 +1303,8 @@ const MainPage: React.FC = () => {
       <style>
         {unassignedNodeIds.map(id => `
           div[data-id="${id}"], div[id="${id}"] {
-            opacity: 0.4 !important;
-            filter: grayscale(100%) !important;
+            opacity: 0.75 !important;
+            filter: grayscale(60%) !important;
             transition: all 0.3s ease;
           }
         `).join('\n')}

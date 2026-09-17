@@ -47,7 +47,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
   const [isDragOverUnassigned, setIsDragOverUnassigned] = useState(false);
   
-  const [isTargetBoxCollapsed, setIsTargetBoxCollapsed] = useState(false);
   const [isUnassignedCollapsed, setIsUnassignedCollapsed] = useState(false);
 
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -67,7 +66,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     if (resetTrigger > 0) {
       setIsMultiSelectMode(false);
       setCheckedItems(new Set());
-      setIsTargetBoxCollapsed(true);
       setIsUnassignedCollapsed(true);
       setOpenDropdownKey(null);
       setHighlightedField(null);
@@ -260,7 +258,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         setSelectedNodeIds([]); setSelectedFileId(null);
       } else {
         setSelectedNodeIds([nodeId]); setSelectedFileId(null); setFocusNodeId(nodeId);
-        setActiveTab('Settings');
       }
   };
 
@@ -381,13 +378,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const validationErrorsForRightPanel: { name: string; desc: string; targetNodeId?: string; isGlobal?: boolean; targetField?: string; isProjectTab?: boolean }[] = [];
   
   if (activeNodes.length === 0 && nodes.length > 0) {
-    validationErrorsForRightPanel.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 코드 목록]으로 이동해주세요.', isProjectTab: true });
+    validationErrorsForRightPanel.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 노드 목록]으로 이동해주세요.', isProjectTab: true });
   } else if (nodes.length === 0) {
     validationErrorsForRightPanel.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
   
   if (targetFileIds.length === 0) {
-    validationErrorsForRightPanel.push({ name: '생성 대상 없음', desc: '생성할 파일 목록(Target)에 폴더를 배치하지 않았습니다.', isProjectTab: true, targetField: 'target-file-box' });
+    validationErrorsForRightPanel.push({ name: '생성 대상 없음', desc: '생성할 노드 목록(Target)이 존재하지 않습니다.', isProjectTab: true, targetField: 'target-file-box' });
   }
 
   const nameRegex = /^[a-zA-Z0-9_-]+$/;
@@ -469,23 +466,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         validationErrorsForRightPanel.push({ name: '잘못된 노드 연결 방향', desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`, targetNodeId: sNode.id });
       }
     }
-  });
-
-  const springNodes = activeNodes.filter(n => n.type === 'Spring Boot');
-  springNodes.forEach(springNode => {
-    const connectedMysqlCount = activeEdges.filter(e => {
-      const s = activeNodes.find(n => n.id === e.sourceId);
-      const t = activeNodes.find(n => n.id === e.targetId);
-      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
-    }).length;
-    if (connectedMysqlCount > 1) validationErrorsForRightPanel.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
-
-    const connectedRedisCount = activeEdges.filter(e => {
-      const s = activeNodes.find(n => n.id === e.sourceId);
-      const t = activeNodes.find(n => n.id === e.targetId);
-      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
-    }).length;
-    if (connectedRedisCount > 1) validationErrorsForRightPanel.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
   });
 
   const checkCloudNameFormat = (val: string | undefined, label: string, key: string) => {
@@ -673,76 +653,66 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           </div>
           <div className="tree-content">
             
-            <div 
-              id="field-target-file-box"
-              className={`target-box ${isDragOverTarget ? 'drag-over' : ''} ${highlightedField === 'target-file-box' ? 'highlight-flash' : ''}`}
-              onDragOver={handleDragOver} 
-              onDragEnter={() => { if (!isViewer) setIsDragOverTarget(true); }} 
-              onDragLeave={() => { if (!isViewer) setIsDragOverTarget(false); }} 
-              onDrop={(e) => {
-                if (isViewer) return;
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDragOverTarget(false);
-                const data = e.dataTransfer.getData('rightBarNodeIds');
-                if (data) {
-                  const nodeIds: string[] = JSON.parse(data);
-                  saveHistory();
-                  markFilesAsModified();
-                  setFiles((prev) => {
-                    if (prev.length === 0) {
-                      return [{ id: `file-${Date.now()}`, name: '생성할 코드 목록', isGenerated: false, nodeIds, isExpanded: true }];
-                    }
-                    return prev.map((f, idx) => {
-                      if (idx === 0) {
-                        const newNodes = nodeIds.filter(id => !f.nodeIds.includes(id));
-                        return { ...f, nodeIds: [...f.nodeIds, ...newNodes] };
-                      }
-                      return { ...f, nodeIds: f.nodeIds.filter(id => !nodeIds.includes(id)) };
-                    });
-                  });
-                  if (isMultiSelectMode) setCheckedItems(new Set());
-                }
-              }}
-              style={{ minHeight: isTargetBoxCollapsed ? '0' : '80px', padding: isTargetBoxCollapsed ? '8px 12px' : '10px' }}
-            >
-              <div className="target-box-title" onClick={(e) => { e.stopPropagation(); setIsTargetBoxCollapsed(!isTargetBoxCollapsed); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', userSelect: 'none' }}>
-                <span className="toggle-icon" style={{ marginRight: '6px', fontSize: '10px' }}>{isTargetBoxCollapsed ? '▶' : '▼'}</span>
-                생성할 파일 목록
-              </div>
-              
-              {!isTargetBoxCollapsed && (
-                <div className="file-list-container" style={{ padding: 0, marginTop: '8px', border: 'none', background: 'transparent' }}>
-                  {files.length === 0 && <div className="empty-info-zone">노드가 없습니다.</div>}
-                  {files.map(file => (
-                    <div 
-                      key={file.id} 
-                      className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${isMultiSelectMode ? (checkedItems.has(file.id) ? 'selected' : '') : (selectedFileId === file.id ? 'selected' : '')}`} 
-                      onDragOver={handleDragOver} 
-                      onDragEnter={() => { if (!isViewer) setDragOverFileId(file.id); }} 
-                      onDragLeave={() => { if (!isViewer) setDragOverFileId(null); }} 
-                      onDrop={(e) => { if (!isViewer) { e.stopPropagation(); handleDropNodeToFile(e, file.id); } }}
-                    >
-                      <div className="file-header" onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}>
-                        <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>{file.isExpanded ? '▼' : '▶'}</span>
-                        <div className="file-name-editable" style={{ cursor: 'default' }}>{file.name}</div>
-                      </div>
+            <div id="field-target-file-box" className="file-list-container" style={{ padding: 0, border: 'none', background: 'transparent' }}>
+              {files.length === 0 ? (
+                 <div 
+                   className={`file-box ${isDragOverTarget ? 'drag-over' : ''} ungenerated`}
+                   style={{ minHeight: '80px', display: 'flex', flexDirection: 'column' }}
+                   onDragOver={handleDragOver}
+                   onDragEnter={() => { if (!isViewer) setIsDragOverTarget(true); }}
+                   onDragLeave={() => { if (!isViewer) setIsDragOverTarget(false); }}
+                   onDrop={(e) => {
+                     if (isViewer) return;
+                     e.preventDefault();
+                     e.stopPropagation();
+                     setIsDragOverTarget(false);
+                     const data = e.dataTransfer.getData('rightBarNodeIds');
+                     if (data) {
+                       const nodeIds: string[] = JSON.parse(data);
+                       saveHistory();
+                       markFilesAsModified();
+                       setFiles([{ id: `file-${Date.now()}`, name: '생성할 노드 목록', isGenerated: false, nodeIds, isExpanded: true }]);
+                       if (isMultiSelectMode) setCheckedItems(new Set());
+                     }
+                   }}
+                 >
+                   <div className="file-header">
+                     <span className="toggle-icon">▼</span>
+                     <div className="file-name-editable" style={{ cursor: 'default' }}>생성할 노드 목록</div>
+                   </div>
+                   <div className="file-children" style={{ flex: 1, justifyContent: 'center' }}>
+                     <div className="empty-drop-zone">노드를 드래그하여 추가하세요.</div>
+                   </div>
+                 </div>
+              ) : (
+                 files.map(file => (
+                   <div 
+                     key={file.id} 
+                     className={`file-box ${dragOverFileId === file.id ? 'drag-over' : ''} ${!file.isGenerated ? 'ungenerated' : ''} ${isMultiSelectMode ? (checkedItems.has(file.id) ? 'selected' : '') : (selectedFileId === file.id ? 'selected' : '')}`} 
+                     onDragOver={handleDragOver} 
+                     onDragEnter={() => { if (!isViewer) setDragOverFileId(file.id); }} 
+                     onDragLeave={() => { if (!isViewer) setDragOverFileId(null); }} 
+                     onDrop={(e) => { if (!isViewer) { e.stopPropagation(); handleDropNodeToFile(e, file.id); } }}
+                   >
+                     <div className="file-header" onClick={(e) => handleFileClick(e, file.id, file.nodeIds)}>
+                       <span className="toggle-icon" onClick={(e) => { e.stopPropagation(); toggleMainExpand(e, file.id); }}>{file.isExpanded ? '▼' : '▶'}</span>
+                       <div className="file-name-editable" style={{ cursor: 'default' }}>{file.name}</div>
+                     </div>
 
-                      {file.isExpanded && (
-                        <div className="file-children">
-                          {file.nodeIds.map(nodeId => {
-                            const node = nodes.find(n => n.id === nodeId);
-                            if (!node) return null;
-                            return (
-                              <div key={node.id} className={`tree-node-item assigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={!isViewer} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
-                            );
-                          })}
-                          {file.nodeIds.length === 0 && <div className="empty-drop-zone">노드가 없습니다.</div>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                     {file.isExpanded && (
+                       <div className="file-children">
+                         {file.nodeIds.map(nodeId => {
+                           const node = nodes.find(n => n.id === nodeId);
+                           if (!node) return null;
+                           return (
+                             <div key={node.id} className={`tree-node-item assigned ${isMultiSelectMode ? (checkedItems.has(node.id) ? 'selected' : '') : (selectedFileId === null && selectedNodeIds.includes(node.id) ? 'selected' : '')}`} draggable={!isViewer} onDragStart={(e) => handleNodeDragStart(e, node.id)} onClick={(e) => handleNodeClick(e, node.id)} style={{ display: 'flex', alignItems: 'center' }}>● {node.name}</div>
+                           );
+                         })}
+                         {file.nodeIds.length === 0 && <div className="empty-drop-zone">노드가 없습니다.</div>}
+                       </div>
+                     )}
+                   </div>
+                 ))
               )}
             </div>
 
