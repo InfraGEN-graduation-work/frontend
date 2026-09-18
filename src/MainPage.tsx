@@ -458,25 +458,6 @@ const MainPage: React.FC = () => {
     }
   });
 
-  const springNodes = activeNodes.filter(n => n.type === 'Spring Boot');
-  springNodes.forEach(springNode => {
-    const connectedMysqlCount = activeEdges.filter(e => {
-      const s = activeNodes.find(n => n.id === e.sourceId);
-      const t = activeNodes.find(n => n.id === e.targetId);
-      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'MySQL' || t?.type === 'MySQL');
-    }).length;
-
-    if (connectedMysqlCount > 1) validationErrors.push({ name: 'MySQL 중복 연결', desc: `'${springNode.name}'에 MySQL이 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
-
-    const connectedRedisCount = activeEdges.filter(e => {
-      const s = activeNodes.find(n => n.id === e.sourceId);
-      const t = activeNodes.find(n => n.id === e.targetId);
-      return (s?.id === springNode.id || t?.id === springNode.id) && (s?.type === 'Redis' || t?.type === 'Redis');
-    }).length;
-
-    if (connectedRedisCount > 1) validationErrors.push({ name: 'Redis 중복 연결', desc: `'${springNode.name}'에 Redis가 2개 이상 연결되어 있습니다. (1개만 허용)`, targetNodeId: springNode.id });
-  });
-
   const checkCloudNameFormat = (val: string | undefined, label: string, key: string) => {
     if (val && !nameRegex.test(val)) {
       validationErrors.push({ name: `클라우드 이름 형식 오류`, desc: `Settings 탭의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, isGlobal: true, targetField: key });
@@ -822,6 +803,7 @@ const MainPage: React.FC = () => {
   };
 
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
+    if (appMode !== 'editor') return;
     if (myRole === 'VIEWER') {
       if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 프로젝트를 저장할 수 없습니다.' }));
       return;
@@ -882,7 +864,13 @@ const MainPage: React.FC = () => {
     }
   };
 
-  useEffect(() => { autoSaveCallback.current = () => { if (hasUnsavedChanges.current && myRole !== 'VIEWER') handleSaveCanvas(true); }; }); 
+  useEffect(() => { 
+    autoSaveCallback.current = () => { 
+      if (appMode === 'editor' && hasUnsavedChanges.current && myRole !== 'VIEWER') {
+        handleSaveCanvas(true); 
+      }
+    }; 
+  }); 
 
   useEffect(() => {
     if (!isAutoSaveEnabled || !projectId || myRole === 'VIEWER') return;
@@ -1210,6 +1198,7 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (appMode !== 'editor') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       
@@ -1286,7 +1275,7 @@ const MainPage: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory, myRole, logActivity]);
+  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory, myRole, logActivity, appMode]);
 
   const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
   const nodeErrorsMap = new Map<string, typeof validationErrors>();

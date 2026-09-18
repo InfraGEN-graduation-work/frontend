@@ -397,7 +397,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     
     const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
       if (val && !nameRegex.test(val)) {
-        validationErrorsForRightPanel.push({ name: `${label} 형식 오류`, desc: `'${node.name}' 노드의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 일습니다.`, targetNodeId: node.id, targetField: fieldKey });
+        validationErrorsForRightPanel.push({ name: `${label} 형식 오류`, desc: `'${node.name}' 노드의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, targetNodeId: node.id, targetField: fieldKey });
       }
     };
 
