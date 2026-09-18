@@ -814,10 +814,10 @@ const MainPage: React.FC = () => {
 
     let currentVersion = 0;
     try {
-      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
       if (collabRes.ok) {
         const collabData = await collabRes.json();
-        currentVersion = collabData.result?.graphVersion ?? 0;
+        currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
       }
     } catch (e) {}
 
@@ -889,10 +889,10 @@ const MainPage: React.FC = () => {
 
     let currentVersion = 0;
     try {
-      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
       if (collabRes.ok) {
         const collabData = await collabRes.json();
-        currentVersion = collabData.result?.graphVersion ?? 0;
+        currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
       }
     } catch (e) {}
 
@@ -961,10 +961,10 @@ const MainPage: React.FC = () => {
         
         let currentVersion = 0;
         try {
-          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration`);
+          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
           if (collabRes.ok) {
             const collabData = await collabRes.json();
-            currentVersion = collabData.result?.graphVersion ?? 0;
+            currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
           }
         } catch (e) {}
 
@@ -1084,6 +1084,15 @@ const MainPage: React.FC = () => {
           hasUnsavedChanges.current = false;
           
           const finalMapped = getMappedCanvasData(updatedFilesList); 
+          
+          try {
+            const collabResAfterGen = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
+            if (collabResAfterGen.ok) {
+              const collabDataAfterGen = await collabResAfterGen.json();
+              currentVersion = collabDataAfterGen.result?.serverVersion ?? collabDataAfterGen.result?.graphVersion ?? 0;
+            }
+          } catch (e) {}
+
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
