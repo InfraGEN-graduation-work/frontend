@@ -1,4 +1,4 @@
-import React, { useState, useEffect  } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
@@ -29,15 +29,15 @@ export default function Home() {
 
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
-  
+
   const [filterMode, setFilterMode] = useState<'ALL' | 'OWNER' | 'PARTICIPANT'>('ALL');
-  
+
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [modalProvider, setModalProvider] = useState<CloudProvider | ''>('LOCAL');
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
-  
+
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
   const [editNodes, setEditNodes] = useState<any[]>([]);
   const [editEdges, setEditEdges] = useState<any[]>([]);
@@ -52,10 +52,10 @@ export default function Home() {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [inviteMemberId, setInviteMemberId] = useState('');
   const [inviteRole, setInviteRole] = useState<'EDITOR' | 'VIEWER'>('VIEWER');
-  
+
   const [collabSearchTerm, setCollabSearchTerm] = useState('');
   const [isCollabEditMode, setIsCollabEditMode] = useState(false);
-  
+
   const [openRoleDropdownId, setOpenRoleDropdownId] = useState<number | null>(null);
   const [openInviteRoleDropdown, setOpenInviteRoleDropdown] = useState(false);
 
@@ -118,7 +118,7 @@ export default function Home() {
           email: userData.result.email,
           provider: String(rawProvider).toUpperCase()
         });
-        
+
         if(userData.result.autoSaveEnabled !== undefined) {
           setIsAutoSaveEnabled(userData.result.autoSaveEnabled);
         }
@@ -126,7 +126,7 @@ export default function Home() {
 
       const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
       const projData = await projRes.json();
-      
+
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
         const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ 
           ...p, 
@@ -173,7 +173,7 @@ export default function Home() {
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!collabProjectId || !inviteMemberId.trim()) return;
-    
+
     const parsedId = parseInt(inviteMemberId, 10);
     if (isNaN(parsedId)) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '숫자로 된 식별 ID를 입력해주세요.' }));
@@ -183,7 +183,7 @@ export default function Home() {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
       return;
     }
-    
+
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
         method: 'POST',
@@ -345,7 +345,7 @@ export default function Home() {
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}`);
       const data = await res.json();
-      
+
       if (res.ok && (data.isSuccess ?? data.is_success)) {
         setNewTitle(data.result.title);
         setNewDesc(data.result.description || '');
@@ -380,13 +380,13 @@ export default function Home() {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { 
         method: 'DELETE'
       });
-      
+
       const text = await res.text();
       let data: any = {};
       try {
         data = text ? JSON.parse(text) : {};
       } catch(e) {}
-      
+
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (res.ok && isSuccess) {
@@ -435,7 +435,7 @@ export default function Home() {
             const endpoint = isOwner 
               ? `${BASE_URL}/projects/${id}`
               : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
-            
+
             const res = await fetchWithAuth(endpoint, { method: 'DELETE' });
             const text = await res.text();
             let data: any = {};
@@ -445,9 +445,9 @@ export default function Home() {
           } catch(e) { return { id, isSuccess: false }; }
         })
       );
-      
+
       const successIds = results.filter(r => r.isSuccess).map(r => r.id);
-      
+
       if (successIds.length > 0) {
         setProjects(prev => prev.filter(p => !successIds.includes(p.projectId)));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: `${successIds.length}개의 프로젝트가 정리되었습니다.` }));
@@ -492,7 +492,7 @@ export default function Home() {
     try {
       const payload: any = { nickname: editProfileForm.nickname };
       if (userInfo.provider !== 'KAKAO' && editProfileForm.password) payload.password = editProfileForm.password;
-      
+
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' }, 
@@ -536,11 +536,11 @@ export default function Home() {
     setIsHistoryModalOpen(true);
     setIsHistoryLoading(true);
     setHistorySortOrder('desc');
-    
+
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
       const data = await res.json();
-      
+
       if (res.ok && (data.isSuccess ?? data.is_success)) {
         let list = [];
         if (Array.isArray(data.result)) {
@@ -575,7 +575,7 @@ export default function Home() {
         if (typeof props === 'string') {
           try { props = JSON.parse(props); } catch (err) {}
         }
-        
+
         if (props.fileId && (String(props.fileIsGenerated) === 'true' || props.fileIsGenerated === true)) {
           if (!folderMap.has(props.fileId)) {
             let parsedFiles = [];
@@ -584,9 +584,9 @@ export default function Home() {
                 ? JSON.parse(props.fileGeneratedCodes) 
                 : (props.fileGeneratedCodes || []);
             } catch(err) {}
-            
+
             folderMap.set(props.fileId, true);
-            
+
             parsedFiles.forEach((gf: any, idx: number) => {
               allFiles.push({
                 fileId: `${props.fileId}-${idx}`,
@@ -604,15 +604,15 @@ export default function Home() {
           const histRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
           const histData = await histRes.json();
           let histList = Array.isArray(histData.result) ? histData.result : (histData.result?.historyList || []);
-          
+
           histList = histList.sort((a: any, b: any) => b.historyId - a.historyId);
-          
+
           for (const hist of histList) {
             const detailRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories/${hist.historyId}`);
             const detailData = await detailRes.json();
             const detailResult = detailData.result || {};
             const genFiles = detailResult.generatedFileList || detailResult.files || [];
-            
+
             if (genFiles.length > 0) {
               genFiles.forEach((gf: any, idx: number) => {
                 allFiles.push({
@@ -681,7 +681,7 @@ export default function Home() {
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
-  
+
   const allMembers = [
     { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
     ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
@@ -715,9 +715,9 @@ export default function Home() {
                 </ProfileAvatarLg>
                 <ProfileName>{userInfo.nickname}</ProfileName>
                 <ProfileEmail>{userInfo.email}</ProfileEmail>
-                
+
                 <div style={{ width: '100%', borderBottom: '1px solid #e2e8f0', margin: '12px 0' }} />
-                
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px', padding: '0 4px' }}>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: '#4a5568' }}>자동 저장 (10분)</span>
                   <ToggleSwitchContainer>
@@ -782,7 +782,7 @@ export default function Home() {
               {filteredProjects.map((proj) => {
                 const isSelected = selectedIds.includes(proj.projectId);
                 const isProjOwner = proj.myRole === 'OWNER';
-                
+
                 return (
                   <ProjectCard 
                     key={proj.projectId} 
@@ -798,7 +798,7 @@ export default function Home() {
                         <RoleBadge role={proj.myRole || 'VIEWER'}>{proj.myRole || 'VIEWER'}</RoleBadge>
                         <ProjectStatus status={proj.status}>{proj.status}</ProjectStatus>
                       </div>
-                      
+
                       {isSelectMode ? (
                         <Checkbox isChecked={isSelected}>
                           {isSelected && (
@@ -865,35 +865,35 @@ export default function Home() {
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
                   />
-                  
-                  <div style={{ position: 'relative', width: '130px' }}>
+
+                  <div style={{ position: 'relative', width: '90px' }}>
                     <div
                       onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
-                      style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
+                      style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 12px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
                     >
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {modalProvider === 'LOCAL' ? 'LOCAL' : modalProvider}
                       </span>
-                      <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '8px', flexShrink: 0 }}>▼</span>
+                      <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '4px', flexShrink: 0 }}>▼</span>
                     </div>
-                    
+
                     {isProviderDropdownOpen && (
                       <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
                         <div 
                           onClick={() => { setModalProvider('LOCAL'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                         >LOCAL</div>
                         <div 
                           onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                         >AWS</div>
                         <div 
                           onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 14px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
+                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
                           onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                           onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                         >OCI</div>
@@ -924,7 +924,7 @@ export default function Home() {
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalTitle>회원정보 관리</ModalTitle>
             <form onSubmit={handleUpdateUserInfo}>
-              
+
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
                 <ProfileAvatarLg style={{ marginBottom: 0, width: '80px', height: '80px', cursor: 'default' }}>
                   {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
@@ -960,7 +960,7 @@ export default function Home() {
                   </InputGroup>
                 </>
               )}
-              
+
               <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
                 <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
                 <div style={{ display: 'flex', gap: '10px' }}>
@@ -982,7 +982,7 @@ export default function Home() {
                 <CollabTab $active={collabTab === 'invite'} onClick={() => setCollabTab('invite')}>직접 초대하기</CollabTab>
               )}
             </TabContainer>
-            
+
             <div style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}>
               {collabTab === 'invite' && isCollabOwner ? (
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1025,7 +1025,7 @@ export default function Home() {
                       </div>
                     </InputGroup>
                   </div>
-                  
+
                   <ModalActions style={{ marginTop: 'auto' }}>
                     <SubmitBtn type="submit" style={{ width: '100%' }}>초대하기</SubmitBtn>
                   </ModalActions>
@@ -1046,7 +1046,7 @@ export default function Home() {
                       </FilterBtn>
                     )}
                   </div>
-                  
+
                   <CollabListWrapper>
                     {filteredMembers.length === 0 ? (
                       <EmptyState style={{ padding: '30px 0', border: 'none', background: 'transparent' }}>
@@ -1125,7 +1125,7 @@ export default function Home() {
                 {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
               </SortToggleBtn>
             </HistoryHeaderRow>
-            
+
             <HistoryListWrapper>
               {isHistoryLoading ? (
                 <EmptyHistory>로딩중...</EmptyHistory>
@@ -1172,7 +1172,7 @@ export default function Home() {
                 <CVFileList>
                   {codeViewerFiles.map(file => {
                     const isViewing = selectedViewFile?.fileId === file.fileId;
-                    
+
                     return (
                       <CVFileItem 
                         key={file.fileId} 
@@ -1381,7 +1381,7 @@ const Avatar = styled.div`
   align-items: center;
   justify-content: center;
   transition: transform 0.2s, box-shadow 0.2s;
-  
+
   &:hover {
     transform: scale(1.05);
     box-shadow: 0 2px 8px rgba(40, 180, 173, 0.3);
@@ -1585,7 +1585,7 @@ const EmptyState = styled.div`
   border-radius: 12px;
   border: 1px dashed #cbd5e0;
   color: #718096;
-  
+
   p { font-size: 18px; font-weight: 600; margin: 0 0 8px 0; color: #4a5568; }
   span { font-size: 14px; }
 `;
@@ -1668,7 +1668,7 @@ const KebabMenuWrapper = styled.div`
   border-radius: 4px;
   color: #a0aec0;
   transition: 0.2s;
-  
+
   &:hover { background: #edf2f7; color: #4a5568; }
 `;
 
@@ -1898,12 +1898,12 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     color: #a0aec0; font-size: 12px; 
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
   }
-  
+
   .actions { 
     display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; 
     flex-shrink: 0; 
   }
-  
+
   .action-row-top { display: flex; justify-content: flex-end; width: 100%; }
   .action-row-bottom { display: flex; gap: 4px; justify-content: flex-end; width: 100%; }
 
@@ -1911,7 +1911,7 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .role-text.owner { color: #c05621; }
   .role-text.editor { color: #553c9a; }
   .role-text.viewer { color: #718096; }
-  
+
   .remove-btn {
     flex: 1;
     display: flex;
@@ -1929,7 +1929,7 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     box-sizing: border-box;
   }
   .remove-btn:hover { background: #fed7d7; }
-    
+
   .delegate-btn {
     flex: 1;
     display: flex;
@@ -2036,7 +2036,7 @@ const HistoryDescList = styled.ul`
   font-size: 13px;
   color: #4a5568;
   line-height: 1.6;
-  
+
   li { margin-bottom: 4px; }
 `;
 
@@ -2104,12 +2104,13 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   align-items: center;
   transition: 0.2s;
   position: relative;
-  
-  background: ${({ $selected }) => $selected ? '#f0fdfc' : 'transparent'};
-  color: ${({ $selected }) => $selected ? '#28b4ad' : '#4a5568'};
-  border: 1px solid ${({ $selected }) => $selected ? 'var(--mint)' : 'transparent'};
+
+  background: ${({ $isViewing }) => $isViewing ? '#f0fdfc' : 'transparent'};
+  color: ${({ $isViewing }) => $isViewing ? '#28b4ad' : '#4a5568'};
+  border: 1px solid rgba(40, 180, 173, 0.3);
 
   ${({ $isViewing }) => $isViewing && css`
+    border-color: rgba(40, 180, 173, 0.6);
     &::before {
       content: '';
       position: absolute;
@@ -2124,7 +2125,8 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   `}
 
   &:hover {
-    background: ${({ $selected }) => $selected ? '#e6fcfb' : '#f1f3f5'};
+    background: ${({ $isViewing }) => $isViewing ? '#e6fcfb' : 'rgba(40, 180, 173, 0.05)'};
+    border-color: rgba(40, 180, 173, 0.5);
   }
 `;
 
@@ -2153,7 +2155,7 @@ const CVNodeBadge = styled.div`
   border: 1px solid #cbd5e0;
   border-radius: 20px;
   padding: 4px 12px 4px 4px;
-  
+
   .type {
     background: #edf2f7;
     color: #4a5568;
@@ -2183,7 +2185,7 @@ const CVCodeContainer = styled.pre`
   white-space: pre-wrap;
   word-break: break-all;
   overflow-y: auto;
-  
+
   -ms-overflow-style: none;
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
