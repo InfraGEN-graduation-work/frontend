@@ -1106,6 +1106,48 @@ const MainPage: React.FC = () => {
     if (!showRightSidebar) setShowRightSidebar(true);
   };
 
+  const [highlightFieldRequest, setHighlightFieldRequest] = useState<{ fields: string[]; token: number } | null>(null);
+
+  const jumpToNextError = useCallback(() => {
+    if (validationErrors.length === 0) return;
+    const err = validationErrors[0];
+
+    if (err.targetNodeId && err.targetField) {
+      // 입력 필드로 고칠 수 있는 오류: 해당 노드의 Settings로 이동하고
+      // 같은 노드에 걸린 빈 필수 필드를 전부 한 번에 강조한다.
+      setSelectedNodeIds([err.targetNodeId]);
+      setSelectedFileId(null);
+      setFocusNodeId(err.targetNodeId);
+      setLeftActiveTab('Settings');
+
+      const fieldsForNode = Array.from(new Set(
+        validationErrors
+          .filter(e => e.targetNodeId === err.targetNodeId && e.targetField)
+          .map(e => e.targetField as string)
+      ));
+      if (fieldsForNode.length > 0) {
+        setHighlightFieldRequest({ fields: fieldsForNode, token: Date.now() });
+      }
+    } else if (err.targetNodeId && !err.targetField) {
+      // 필드로는 고칠 수 없는 오류(예: 잘못된 노드 연결 방향) - 캔버스에서
+      // 연결선을 다시 그려야 하므로 Settings가 아니라 Validation 탭으로 보내고,
+      // 문제가 된 노드로 캔버스 포커스를 옮긴 뒤 무엇이 문제인지 토스트로 안내한다.
+      setSelectedNodeIds([err.targetNodeId]);
+      setSelectedFileId(null);
+      setFocusNodeId(err.targetNodeId);
+      setLeftActiveTab('Validation');
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.desc }));
+    } else if (err.isProjectTab) {
+      setLeftActiveTab('Project');
+      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
+    } else {
+      setLeftActiveTab('Settings');
+      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
+    }
+
+    if (!showRightSidebar) setShowRightSidebar(true);
+  }, [validationErrors, showRightSidebar]);
+
   const undo = useCallback(() => {
     if (myRole === 'VIEWER' || history.length === 0) return;
     isUndoRedo.current = true; 
@@ -1417,6 +1459,7 @@ const MainPage: React.FC = () => {
                 cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
                 width={rightWidth}
                 isViewer={myRole === 'VIEWER'} 
+                highlightFieldRequest={highlightFieldRequest}
               />
             </>
           )}
@@ -1472,7 +1515,7 @@ const MainPage: React.FC = () => {
               })}
             </div>
             <div className="modal-actions">
-              <button className="modal-btn confirm" onClick={closeErrorModalAndShowValidation}>확인</button>
+              <button className="modal-btn confirm" id="error-modal-confirm-btn" onClick={closeErrorModalAndShowValidation}>확인</button>
             </div>
           </div>
         </div>
@@ -1492,13 +1535,22 @@ const MainPage: React.FC = () => {
             </div>
             <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsConfirmModalOpen(false)}>취소</button>
-              <button className="modal-btn confirm" onClick={confirmGenerate}>생성</button>
+              <button className="modal-btn confirm" id="generate-confirm-btn" onClick={confirmGenerate}>생성</button>
             </div>
           </div>
         </div>
       )}
 
-      {showTutorial && <Tutorial nodes={nodes} onFinish={() => setShowTutorial(false)} onSkip={() => setShowTutorial(false)} />}
+      {showTutorial && (
+        <Tutorial
+          nodes={nodes}
+          selectedNodeIds={selectedNodeIds}
+          hasErrors={validationErrors.length > 0}
+          onJumpToNextError={jumpToNextError}
+          onFinish={() => setShowTutorial(false)}
+          onSkip={() => setShowTutorial(false)}
+        />
+        )}
       {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </div>
   );

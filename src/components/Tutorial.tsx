@@ -8,7 +8,7 @@ interface HighlightRect {
   height: number;
 }
 
-type TooltipPlacement = 'right' | 'bottom' | 'left' | 'top' | 'bottom-center' | 'top-right';
+type TooltipPlacement = 'right' | 'bottom' | 'left' | 'top' | 'bottom-center' | 'top-right' | 'center';
 
 interface TutorialStepConfig {
   step: string;
@@ -58,14 +58,24 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '4',
     title: '튜토리얼 4단계',
+    description: '먼저 설정할 노드 하나를 클릭하세요',
+    targetSelector: '.deployed-nodes-group',
+    tooltipPlacement: 'left',
+    noDim: true,
+    // 노드를 클릭했는지는 goNext에서 selectedNodeIds로 확인한다.
+    // 클릭하지 않고 '다음'을 누르면 경고 문구만 띄우고 진행하지 않는다.
+  },
+  {
+    step: '5',
+    title: '튜토리얼 5단계',
     description: 'Settings 버튼을 클릭하세요',
     targetSelector: '.tabs .tab:nth-child(2)',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.tabs .tab:nth-child(2)', event: 'click' },
   },
   {
-    step: '5',
-    title: '튜토리얼 5단계',
+    step: '6',
+    title: '튜토리얼 6단계',
     description: '노드를 설정하세요',
     subText: "설정을 입력한 후 '다음' 버튼을 누르세요",
     targetSelector: '.settings-panel',
@@ -74,15 +84,79 @@ const STEPS: TutorialStepConfig[] = [
     arrowDirection: 'down',
   },
   {
-    step: '6',
-    title: '튜토리얼 6단계',
+    step: '7',
+    title: '튜토리얼 7단계',
+    description: 'Project 버튼을 클릭하세요',
+    targetSelector: '.tabs .tab:nth-child(1)',
+    tooltipPlacement: 'bottom',
+    advanceOn: { selector: '.tabs .tab:nth-child(1)', event: 'click' },
+  },
+  {
+    step: '8',
+    title: '튜토리얼 8단계',
+    description: '생성할 노드 목록을 확인해주세요',
+    subText: '확인하였으면 다음 버튼을 눌러주세요',
+    targetSelector: '.tree-content',
+    tooltipPlacement: 'left',
+  },
+  {
+    step: '9',
+    title: '튜토리얼 9단계',
     description: '노드를 완성하셨으면\nGenerate 버튼을 클릭하세요',
+    targetSelector: '.generate-btn',
+    tooltipPlacement: 'bottom',
+    // goNext에서 hasErrors 값을 보고 10단계(오류) 또는 14단계(생성 확인)로 분기한다.
+    advanceOn: { selector: '.generate-btn', event: 'click' },
+  },
+  {
+    step: '10',
+    title: '튜토리얼 10단계',
+    description: '오류가 있어 프로젝트를 생성할 수 없습니다.\n확인 버튼을 클릭하세요',
+    targetSelector: '#error-modal-confirm-btn',
+    tooltipPlacement: 'left',
+    noDim: true,
+    advanceOn: { selector: '#error-modal-confirm-btn', event: 'click' },
+  },
+  {
+    step: '11',
+    title: '튜토리얼 11단계',
+    description: '오류 항목을 클릭하면\n문제가 있는 위치로 이동합니다',
+    subText: '오류 목록에서 항목을 하나 클릭해주세요',
+    targetSelector: '.validation-panel',
+    tooltipPlacement: 'left',
+    advanceOn: { selector: '.error-box', event: 'click' },
+  },
+  {
+    step: '12',
+    title: '튜토리얼 12단계',
+    description: '표시된 위치에서\n오류를 모두 수정해주세요',
+    subText: "수정이 끝나면 '다음' 버튼을 눌러주세요",
+    targetSelector: '.right-sidebar',
+    tooltipPlacement: 'left',
+    noDim: true,
+    // 별도 advanceOn 없음: '다음' 클릭 시 goNext에서 hasErrors를 검사해
+    // 아직 오류가 남아있으면 경고 문구만 띄우고 진행하지 않는다.
+  },
+  {
+    step: '13',
+    title: '튜토리얼 13단계',
+    description: '모든 준비가 끝났다면\nGenerate 버튼을 다시 클릭하세요',
     targetSelector: '.generate-btn',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.generate-btn', event: 'click' },
   },
   {
-    step: '7',
+    step: '14',
+    title: '튜토리얼 14단계',
+    description: '생성 버튼을 클릭하세요',
+    subText: '프로젝트 생성이 시작됩니다',
+    targetSelector: '#generate-confirm-btn',
+    tooltipPlacement: 'left',
+    noDim: true,
+    advanceOn: { selector: '#generate-confirm-btn', event: 'click' },
+  },
+  {
+    step: '15',
     title: '튜토리얼 완료!',
     description: 'Generate까지 완료했습니다.\n이제 infraGEN을 자유롭게 사용해 보세요.',
     targetSelector: '',
@@ -95,15 +169,23 @@ const TOTAL_VISIBLE = STEPS.filter(s => !s.isFinale).length;
 const PADDING = 8;
 const TOOLTIP_GAP = 14;
 
-interface Props { onFinish: () => void; onSkip?: () => void; nodes?: { id: string }[]; }
+interface Props {
+  onFinish: () => void;
+  onSkip?: () => void;
+  nodes?: { id: string }[];
+  selectedNodeIds?: string[];
+  hasErrors?: boolean;
+  onJumpToNextError?: () => void;
+}
 
-const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
+const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeIds = [], hasErrors = false, onJumpToNextError }) => {
   const [idx, setIdx] = useState(0);
   const [visible, setVisible] = useState(false);
   const [hl, setHl] = useState<HighlightRect | null>(null);
   const [canvasCenter, setCanvasCenter] = useState<{ x: number; y: number } | null>(null);
   const [dropTargetVisible, setDropTargetVisible] = useState(true);
   const [showNodeWarning, setShowNodeWarning] = useState(false);
+  const [warningMessage, setWarningMessage] = useState('');
 
   const step = STEPS[idx];
   const isLast = idx === STEPS.length - 1;
@@ -144,17 +226,55 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     }
   }, [step]);
 
+  const showWarning = useCallback((message: string) => {
+    setWarningMessage(message);
+    setShowNodeWarning(true);
+    setTimeout(() => setShowNodeWarning(false), 2500);
+  }, []);
+
   const goNext = useCallback(() => {
-    if (STEPS[idx].step === '2' && nodes.length < 2) {
-      setShowNodeWarning(true);
-      setTimeout(() => setShowNodeWarning(false), 2500);
+    const currentStep = STEPS[idx].step;
+
+    if (currentStep === '2' && nodes.length < 2) {
+      showWarning('2개 이상의 노드를 보드에 놓아주세요!');
       return;
     }
+
+    if (currentStep === '4' && selectedNodeIds.length === 0) {
+      showWarning('설정할 노드를 먼저 클릭해주세요!');
+      return;
+    }
+
+    if (currentStep === '12' && hasErrors) {
+      if (onJumpToNextError) {
+        // 경고를 띄우는 대신, 아직 설정이 안 된 다음 노드의 Settings로 바로 이동한다.
+        // 12단계는 그대로 유지되고(advance하지 않음), 모든 오류가 사라지면
+        // 그다음 '다음' 클릭에서 13단계로 넘어간다.
+        onJumpToNextError();
+      } else {
+        showWarning('아직 수정되지 않은 오류가 있습니다!');
+      }
+      return;
+    }
+
     setShowNodeWarning(false);
+
+    // Generate 버튼 클릭 분기: 오류가 있으면 오류 안내(10단계)로,
+    // 없으면 생성 확인(14단계)로 바로 이동한다.
+    if (currentStep === '9' || currentStep === '13') {
+      const targetStepId = hasErrors ? '10' : '14';
+      const targetIdx = STEPS.findIndex(s => s.step === targetStepId);
+      if (targetIdx !== -1) {
+        setVisible(false);
+        setTimeout(() => { setIdx(targetIdx); setVisible(false); }, 320);
+        return;
+      }
+    }
+
     if (isLast) { setVisible(false); setTimeout(onFinish, 300); return; }
     setVisible(false);
     setTimeout(() => { setIdx(p => p + 1); setVisible(false); }, 320);
-  }, [isLast, onFinish, idx, nodes.length]);
+  }, [isLast, onFinish, idx, nodes.length, selectedNodeIds, hasErrors, showWarning, onJumpToNextError]);
 
   useEffect(() => {
     if (!step.advanceOn) return;
@@ -220,7 +340,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
   }, [idx, measure]);
 
   useEffect(() => {
-    setVisible(false); setHl(null); setCanvasCenter(null); setDropTargetVisible(true);
+    setVisible(false); setHl(null); setCanvasCenter(null); setDropTargetVisible(true); setShowNodeWarning(false);
     measure();
     window.addEventListener('resize', measure);
     const t = setTimeout(() => setVisible(true), 100);
@@ -232,11 +352,12 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
     const { top, left, width, height } = hl;
     switch (step.tooltipPlacement) {
       case 'right':        return { top, left: left + width + TOOLTIP_GAP };
-      case 'left':         return { top, right: window.innerWidth - left + TOOLTIP_GAP };
+      case 'left':         return { top: top + (step.step === '12' ? 120 : 0), right: window.innerWidth - left + TOOLTIP_GAP };
       case 'bottom':       return { top: top + height + TOOLTIP_GAP, left };
       case 'top':          return { bottom: window.innerHeight - top + TOOLTIP_GAP, left };
       case 'bottom-center':return { top: top + height + TOOLTIP_GAP, left: left + width / 2, transform: 'translateX(-50%)' };
       case 'top-right':    return { bottom: window.innerHeight - top + TOOLTIP_GAP, right: window.innerWidth - (left + width) };
+      case 'center':        return { top: top + height / 2, left: left + width / 2, transform: 'translate(-50%,-50%)' };
       default:             return { top, left: left + width + TOOLTIP_GAP };
     }
   };
@@ -333,7 +454,8 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
               <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={handleSkip}>
                 건너뛰기
               </button>
-              {step.step !== '6' && step.step !== '4' && (
+              {step.step !== '5' && step.step !== '7' && step.step !== '9' &&
+               step.step !== '10' && step.step !== '11' && step.step !== '13' && step.step !== '14' && (
                 <button type="button" className="tutorial-next-btn tutorial-next-inline" onClick={goNext}>
                   {isLast ? '완료' : '다음'}
                 </button>
@@ -342,7 +464,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
           </div>
           {showNodeWarning && (
             <div className="tutorial-inline-warning">
-              2개 이상의 노드를 보드에 놓아주세요!
+              {warningMessage}
             </div>
           )}
         </div>
@@ -362,4 +484,3 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [] }) => {
 };
 
 export default Tutorial;
-
