@@ -880,7 +880,10 @@ const MainPage: React.FC = () => {
   }, [isAutoSaveEnabled, projectId, myRole]);
 
   const handleUpdateProjectName = async (newName: string) => {
-    if (myRole === 'VIEWER') return;
+    if (myRole !== 'OWNER') {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름은 방장(OWNER)만 수정할 수 있습니다.' }));
+      return;
+    }
     if (!newName.trim() || newName === projectName || !projectId) return;
     const previousName = projectName;
     setProjectName(newName);
@@ -1337,6 +1340,7 @@ const MainPage: React.FC = () => {
             isSelectMode={isSelectMode} resetTrigger={uiResetTrigger} userInfo={userInfo}
             onGoHome={handleGoHome} cloudProvider={cloudProvider} setCloudProvider={setCloudProvider}
             width={leftWidth}
+            myRole={myRole}
           />
 
           <div 

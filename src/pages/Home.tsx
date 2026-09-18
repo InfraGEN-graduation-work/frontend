@@ -1,3 +1,4 @@
+// src/pages/Home.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
@@ -21,6 +22,14 @@ interface Collaborator {
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
+  status?: 'PENDING' | 'ACCEPTED';
+}
+
+interface Invitation {
+  invitationId: number;
+  projectId: number;
+  projectTitle: string;
+  inviterNickname: string;
 }
 
 export default function Home() {
@@ -29,6 +38,7 @@ export default function Home() {
 
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
   const [projects, setProjects] = useState<Project[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
 
   const [filterMode, setFilterMode] = useState<'ALL' | 'OWNER' | 'PARTICIPANT'>('ALL');
 
@@ -61,6 +71,7 @@ export default function Home() {
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isUserInfoModalOpen, setIsUserInfoModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [editProfileForm, setEditProfileForm] = useState({ nickname: '', password: '', passwordConfirm: '' });
 
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
@@ -134,6 +145,14 @@ export default function Home() {
         }));
         setProjects(mappedProjects);
       }
+
+      const invRes = await fetchWithAuth(`${BASE_URL}/members/me/invitations`);
+      if (invRes.ok) {
+        const invData = await invRes.json();
+        if (invData.isSuccess ?? invData.is_success) {
+          setInvitations(invData.result.invitations || []);
+        }
+      }
     } catch (err) {}
   };
 
@@ -192,7 +211,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 등록되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 초대되었습니다.' }));
         setInviteMemberId('');
         setCollabTab('list');
         fetchCollaborators(collabProjectId); 
@@ -206,7 +225,7 @@ export default function Home() {
 
   const handleRemoveCollaborator = async (memberId: number) => {
     if (!collabProjectId) return;
-    if (!window.confirm('정말 이 참여자를 퇴출하시겠습니까?')) return;
+    if (!window.confirm('정말 이 참여자를 퇴출/취소하시겠습니까?')) return;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
@@ -253,6 +272,30 @@ export default function Home() {
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleAcceptInvite = async (invitationId: number) => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/invitations/${invitationId}/accept`, { method: 'POST' });
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 수락했습니다.' }));
+        fetchDashboardData(); 
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '수락 처리 중 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleRejectInvite = async (invitationId: number) => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/invitations/${invitationId}/reject`, { method: 'POST' });
+      if (res.ok) {
+        setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 거절했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '거절 처리 중 오류가 발생했습니다.' }));
     }
   };
 
@@ -514,6 +557,22 @@ export default function Home() {
 
   const executeWithdraw = async () => {
     try {
+      // 1. 소유한 프로젝트는 전체 삭제, 참여 중인 프로젝트는 나가기 처리
+      await Promise.all(
+        projects.map(async (proj) => {
+          try {
+            if (proj.myRole === 'OWNER') {
+              await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}`, { method: 'DELETE' });
+            } else {
+              await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}/collaborators/${userInfo.id}`, { method: 'DELETE' });
+            }
+          } catch (err) {
+            console.error(`프로젝트 처리 중 오류 발생 (ID: ${proj.projectId})`, err);
+          }
+        })
+      );
+
+      // 2. 회원 탈퇴 API 호출
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
@@ -682,9 +741,16 @@ export default function Home() {
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
 
-  const allMembers = [
-    { isMe: true, memberId: userInfo.id, nickname: userInfo.nickname, email: userInfo.email, role: currentCollabProject?.myRole || 'VIEWER' },
-    ...sortedCollaborators.map(c => ({ isMe: false, email: c.email, ...c }))
+  const allMembers: (Collaborator & { isMe: boolean })[] = [
+    { 
+      isMe: true, 
+      memberId: userInfo.id, 
+      nickname: userInfo.nickname, 
+      email: userInfo.email, 
+      role: (currentCollabProject?.myRole as 'OWNER' | 'EDITOR' | 'VIEWER') || 'VIEWER',
+      status: 'ACCEPTED'
+    },
+    ...sortedCollaborators.map(c => ({ isMe: false, ...c, email: c.email || '' }))
   ];
 
   const filteredMembers = allMembers.filter(m => 
@@ -726,6 +792,15 @@ export default function Home() {
                   </ToggleSwitchContainer>
                 </div>
 
+                <ProfileActionRow style={{ marginBottom: '8px' }}>
+                  <ProfileActionBtn 
+                    style={{ position: 'relative' }} 
+                    onClick={() => { setIsInviteModalOpen(true); setIsProfileMenuOpen(false); }}
+                  >
+                    초대 목록 {invitations.length > 0 && <BadgeIndicator>{invitations.length}</BadgeIndicator>}
+                  </ProfileActionBtn>
+                </ProfileActionRow>
+
                 <ProfileActionRow>
                   <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
                   <ProfileActionBtn className="danger" onClick={logout}>로그아웃</ProfileActionBtn>
@@ -747,7 +822,7 @@ export default function Home() {
 
               {projects.length > 0 && (
                 <SelectModeBtn 
-                  active={isSelectMode} 
+                  $active={isSelectMode} 
                   onClick={() => {
                     setIsSelectMode(!isSelectMode);
                     setSelectedIds([]);
@@ -790,17 +865,17 @@ export default function Home() {
                       if (isSelectMode) setSelectedIds(prev => prev.includes(proj.projectId) ? prev.filter(id => id !== proj.projectId) : [...prev, proj.projectId]);
                       else navigate(`/project/${proj.projectId}`);
                     }}
-                    isSelected={isSelected}
-                    isSelectMode={isSelectMode}
+                    $isSelected={isSelected}
+                    $isSelectMode={isSelectMode}
                   >
                     <CardHeader>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <RoleBadge role={proj.myRole || 'VIEWER'}>{proj.myRole || 'VIEWER'}</RoleBadge>
-                        <ProjectStatus status={proj.status}>{proj.status}</ProjectStatus>
+                        <RoleBadge $role={proj.myRole || 'VIEWER'}>{proj.myRole || 'VIEWER'}</RoleBadge>
+                        <ProjectStatus $status={proj.status}>{proj.status}</ProjectStatus>
                       </div>
 
                       {isSelectMode ? (
-                        <Checkbox isChecked={isSelected}>
+                        <Checkbox $isChecked={isSelected}>
                           {isSelected && (
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12"></polyline>
@@ -850,81 +925,92 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {modalMode !== null && (
-        <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
-            <form onSubmit={handleSubmitProject}>
-              <InputGroup>
-                <label>프로젝트 이름 및 클라우드 환경</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <Input
-                    autoFocus
-                    placeholder="예: My E-commerce Infra"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
+      {/* 새 프로젝트 생성 / 수정 모달 */}
+      {modalMode !== null && (() => {
+        const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
+        return (
+          <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
+            <ModalContent onClick={(e) => e.stopPropagation()}>
+              <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
+              <form onSubmit={handleSubmitProject}>
+                <InputGroup>
+                  <label>프로젝트 이름 및 클라우드 환경</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <Input
+                      autoFocus
+                      placeholder="예: My E-commerce Infra"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
 
-                  <div style={{ position: 'relative', width: '90px' }}>
-                    <div
-                      onClick={(e) => { e.stopPropagation(); setIsProviderDropdownOpen(!isProviderDropdownOpen); }}
-                      style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 12px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor:'pointer', transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
-                    >
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {modalProvider === 'LOCAL' ? 'LOCAL' : modalProvider}
-                      </span>
-                      <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '4px', flexShrink: 0 }}>▼</span>
-                    </div>
-
-                    {isProviderDropdownOpen && (
-                      <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
-                        <div 
-                          onClick={() => { setModalProvider('LOCAL'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
-                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >LOCAL</div>
-                        <div 
-                          onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
-                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >AWS</div>
-                        <div 
-                          onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
-                          style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
-                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                        >OCI</div>
+                    <div style={{ position: 'relative', width: '90px' }}>
+                      <div
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          if (!isEditingTargetOwner) {
+                            window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경 옵션은 방장(OWNER)만 수정할 수 있습니다.' }));
+                            return;
+                          }
+                          setIsProviderDropdownOpen(!isProviderDropdownOpen); 
+                        }}
+                        style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 12px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor: isEditingTargetOwner ? 'pointer' : 'not-allowed', opacity: isEditingTargetOwner ? 1 : 0.6, transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
+                      >
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {modalProvider === 'LOCAL' ? 'LOCAL' : modalProvider}
+                        </span>
+                        <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '4px', flexShrink: 0 }}>▼</span>
                       </div>
-                    )}
-                  </div>
-                </div>
-              </InputGroup>
-              <InputGroup>
-                <label>설명 (선택)</label>
-                <TextArea 
-                  placeholder="간단한 설명을 적어주세요." 
-                  value={newDesc} 
-                  onChange={(e) => setNewDesc(e.target.value)} 
-                />
-              </InputGroup>
-              <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
-                <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
-                <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
-              </ModalActions>
-            </form>
-          </ModalContent>
-        </ModalOverlay>
-      )}
 
+                      {isProviderDropdownOpen && (
+                        <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
+                          <div 
+                            onClick={() => { setModalProvider('LOCAL'); setIsProviderDropdownOpen(false); }} 
+                            style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'LOCAL' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'LOCAL' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >LOCAL</div>
+                          <div 
+                            onClick={() => { setModalProvider('AWS'); setIsProviderDropdownOpen(false); }} 
+                            style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'AWS' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'AWS' ? 'bold' : 'normal', borderBottom: '1px solid #edf2f7', transition: '0.2s' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >AWS</div>
+                          <div 
+                            onClick={() => { setModalProvider('OCI'); setIsProviderDropdownOpen(false); }} 
+                            style={{ padding:'10px 12px', fontSize:'13px', cursor:'pointer', color: modalProvider === 'OCI' ? '#28b4ad' : '#2d3748', fontWeight: modalProvider === 'OCI' ? 'bold' : 'normal', transition: '0.2s' }}
+                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                          >OCI</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </InputGroup>
+                <InputGroup>
+                  <label>설명 (선택)</label>
+                  <TextArea 
+                    placeholder="간단한 설명을 적어주세요." 
+                    value={newDesc} 
+                    onChange={(e) => setNewDesc(e.target.value)} 
+                  />
+                </InputGroup>
+                <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
+                  <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
+                  <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
+                </ModalActions>
+              </form>
+            </ModalContent>
+          </ModalOverlay>
+        );
+      })()}
+
+      {/* 회원 정보 관리 모달 */}
       {isUserInfoModalOpen && (
         <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalTitle>회원정보 관리</ModalTitle>
             <form onSubmit={handleUpdateUserInfo}>
-
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
                 <ProfileAvatarLg style={{ marginBottom: 0, width: '80px', height: '80px', cursor: 'default' }}>
                   {editProfileForm.nickname.charAt(0).toUpperCase() || '?'}
@@ -973,6 +1059,37 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {/* 초대 목록 모달 */}
+      {isInviteModalOpen && (
+        <ModalOverlay onClick={() => setIsInviteModalOpen(false)}>
+          <ModalContent onClick={e => e.stopPropagation()} style={{ width: '400px' }}>
+            <ModalTitle>받은 초대 목록</ModalTitle>
+            <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
+              {invitations.length === 0 ? (
+                <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>새로운 초대가 없습니다.</EmptyState>
+              ) : (
+                invitations.map(inv => (
+                  <InviteItem key={inv.invitationId}>
+                    <div className="info">
+                      <div className="proj-title">{inv.projectTitle}</div>
+                      <div className="inviter">초대자: {inv.inviterNickname}</div>
+                    </div>
+                    <div className="actions">
+                      <button className="accept" onClick={() => handleAcceptInvite(inv.invitationId)}>수락</button>
+                      <button className="reject" onClick={() => handleRejectInvite(inv.invitationId)}>거절</button>
+                    </div>
+                  </InviteItem>
+                ))
+              )}
+            </div>
+            <ModalActions style={{ justifyContent: 'flex-end', marginTop: '20px' }}>
+              <CancelBtn onClick={() => setIsInviteModalOpen(false)}>닫기</CancelBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {/* 참여자 관리 모달 */}
       {isCollabModalOpen && (
         <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
@@ -1067,43 +1184,45 @@ export default function Home() {
                             </div>
                           </div>
                           <div className="actions">
-                            {!isCollabEditMode || member.isMe ? (
-                                <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
-                              ) : (
-                                <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                  <div className="action-row-top">
-                                    <div style={{ position: 'relative', width: '100%' }}>
-                                      <div
-                                        onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
-                                      >
-                                        <span>{member.role}</span>
-                                        <span style={{ fontSize: '8px' }}>▼</span>
-                                      </div>
-                                      {openRoleDropdownId === member.memberId && (
-                                        <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
-                                          <div 
-                                            onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                          >EDITOR</div>
-                                          <div 
-                                            onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                            style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                            onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                            onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                          >VIEWER</div>
-                                        </div>
-                                      )}
+                            {member.status === 'PENDING' ? (
+                              <span className="role-text pending" style={{ color: '#d69e2e' }}>수락대기</span>
+                            ) : !isCollabEditMode || member.isMe ? (
+                              <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
+                            ) : (
+                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                <div className="action-row-top">
+                                  <div style={{ position: 'relative', width: '100%' }}>
+                                    <div
+                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
+                                    >
+                                      <span>{member.role}</span>
+                                      <span style={{ fontSize: '8px' }}>▼</span>
                                     </div>
-                                  </div>
-                                  <div className="action-row-bottom">
-                                    <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                    <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                    {openRoleDropdownId === member.memberId && (
+                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >EDITOR</div>
+                                        <div 
+                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
+                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                        >VIEWER</div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              )}
+                                <div className="action-row-bottom">
+                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>취소</button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </CollabItem>
                       ))
@@ -1116,6 +1235,7 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {/* 활동 기록 모달 */}
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -1156,6 +1276,7 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {/* 코드 뷰어 모달 */}
       {isCodeViewerOpen && (
         <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
           <CodeViewerModal onClick={(e) => e.stopPropagation()}>
@@ -1226,6 +1347,7 @@ export default function Home() {
         </ModalOverlay>
       )}
 
+      {/* 기타 확인 모달들 */}
       {projectToDelete !== null && (
         <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1293,6 +1415,8 @@ export default function Home() {
     </PageContainer>
   );
 }
+
+// ============== Styled Components ==============
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
@@ -1492,6 +1616,18 @@ const ProfileActionBtn = styled.button`
   }
 `;
 
+const BadgeIndicator = styled.span`
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #e53e3e;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 6px;
+  border-radius: 10px;
+`;
+
 const ContentArea = styled.main`
   flex: 1;
   overflow-y: auto;
@@ -1537,8 +1673,8 @@ const FilterBtn = styled.button`
   &:hover { background: #f8f9fa; border-color: #a0aec0; }
 `;
 
-const SelectModeBtn = styled.button<{ active: boolean }>`
-  background: ${({ active }) => active ? '#edf2f7' : 'white'};
+const SelectModeBtn = styled.button<{ $active: boolean }>`
+  background: ${({ $active }) => $active ? '#edf2f7' : 'white'};
   color: #4a5568;
   border: 1px solid #cbd5e0;
   padding: 10px 16px;
@@ -1597,11 +1733,11 @@ const Grid = styled.div`
   padding-bottom: 40px; 
 `;
 
-const ProjectCard = styled.div<{ isSelected: boolean; isSelectMode: boolean }>`
+const ProjectCard = styled.div<{ $isSelected: boolean; $isSelectMode: boolean }>`
   background: white;
   border-radius: 12px;
   padding: 20px;
-  border: 2px solid ${({ isSelected }) => isSelected ? '#28b4ad' : '#e2e8f0'};
+  border: 2px solid ${({ $isSelected }) => $isSelected ? '#28b4ad' : '#e2e8f0'};
   box-shadow: 0 4px 6px rgba(0,0,0,0.02);
   cursor: pointer;
   transition: all 0.2s;
@@ -1610,21 +1746,21 @@ const ProjectCard = styled.div<{ isSelected: boolean; isSelectMode: boolean }>`
   flex-direction: column;
   position: relative;
 
-  ${({ isSelected }) => isSelected && css`background: #f0fdfc;`}
+  ${({ $isSelected }) => $isSelected && css`background: #f0fdfc;`}
 
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 10px 20px rgba(0,0,0,0.06);
-    ${({ isSelectMode, isSelected }) => !isSelectMode && !isSelected && css`border-color: #28b4ad;`}
+    ${({ $isSelectMode, $isSelected }) => !$isSelectMode && !$isSelected && css`border-color: #28b4ad;`}
   }
 `;
 
-const Checkbox = styled.div<{ isChecked: boolean }>`
+const Checkbox = styled.div<{ $isChecked: boolean }>`
   width: 20px;
   height: 20px;
   border-radius: 4px;
-  border: 1px solid ${({ isChecked }) => isChecked ? '#28b4ad' : '#cbd5e0'};
-  background: ${({ isChecked }) => isChecked ? '#28b4ad' : 'white'};
+  border: 1px solid ${({ $isChecked }) => $isChecked ? '#28b4ad' : '#cbd5e0'};
+  background: ${({ $isChecked }) => $isChecked ? '#28b4ad' : 'white'};
   color: white;
   display: flex;
   align-items: center;
@@ -1640,22 +1776,22 @@ const CardHeader = styled.div`
   min-height: 24px;
 `;
 
-const ProjectStatus = styled.span<{ status: string }>`
+const ProjectStatus = styled.span<{ $status: string }>`
   font-size: 11px;
   font-weight: 700;
   padding: 4px 8px;
   border-radius: 6px;
-  background: ${({ status }) => status === 'DRAFT' ? '#edf2f7' : '#e6fffa'};
-  color: ${({ status }) => status === 'DRAFT' ? '#4a5568' : '#234e52'};
+  background: ${({ $status }) => $status === 'DRAFT' ? '#edf2f7' : '#e6fffa'};
+  color: ${({ $status }) => $status === 'DRAFT' ? '#4a5568' : '#234e52'};
 `;
 
-const RoleBadge = styled.span<{ role: string }>`
+const RoleBadge = styled.span<{ $role: string }>`
   font-size: 11px;
   font-weight: 700;
   padding: 4px 8px;
   border-radius: 6px;
-  background: ${({ role }) => role === 'OWNER' ? '#feebc8' : role === 'EDITOR' ? '#e9d8fd' : '#e2e8f0'};
-  color: ${({ role }) => role === 'OWNER' ? '#c05621' : role === 'EDITOR' ? '#553c9a' : '#4a5568'};
+  background: ${({ $role }) => $role === 'OWNER' ? '#feebc8' : $role === 'EDITOR' ? '#e9d8fd' : '#e2e8f0'};
+  color: ${({ $role }) => $role === 'OWNER' ? '#c05621' : $role === 'EDITOR' ? '#553c9a' : '#4a5568'};
 `;
 
 const KebabMenuWrapper = styled.div`
@@ -1701,6 +1837,9 @@ const ProjectTitle = styled.h3`
   font-size: 18px;
   margin: 0 0 8px 0;
   color: #2d3748;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1911,6 +2050,7 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .role-text.owner { color: #c05621; }
   .role-text.editor { color: #553c9a; }
   .role-text.viewer { color: #718096; }
+  .role-text.pending { color: #d69e2e; }
 
   .remove-btn {
     flex: 1;
@@ -1947,6 +2087,61 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     box-sizing: border-box;
   }
   .delegate-btn:hover { background: #fefcbf; }
+`;
+
+const InviteItem = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+
+  .info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .proj-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #2d3748;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .inviter {
+    font-size: 12px;
+    color: #a0aec0;
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  button {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: 0.2s;
+  }
+  button.accept {
+    background: #28b4ad;
+    color: white;
+  }
+  button.accept:hover { background: #219992; }
+  button.reject {
+    background: #edf2f7;
+    color: #4a5568;
+  }
+  button.reject:hover { background: #e2e8f0; }
 `;
 
 const HistoryModalContent = styled(ModalContent)`
@@ -2105,12 +2300,11 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   transition: 0.2s;
   position: relative;
 
-  background: ${({ $isViewing }) => $isViewing ? '#f0fdfc' : 'transparent'};
-  color: ${({ $isViewing }) => $isViewing ? '#28b4ad' : '#4a5568'};
-  border: 1px solid rgba(40, 180, 173, 0.3);
+  background: ${({ $selected }) => $selected ? '#f0fdfc' : 'transparent'};
+  color: ${({ $selected }) => $selected ? '#28b4ad' : '#4a5568'};
+  border: 1px solid ${({ $selected }) => $selected ? 'var(--mint)' : 'transparent'};
 
   ${({ $isViewing }) => $isViewing && css`
-    border-color: rgba(40, 180, 173, 0.6);
     &::before {
       content: '';
       position: absolute;
@@ -2125,8 +2319,7 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   `}
 
   &:hover {
-    background: ${({ $isViewing }) => $isViewing ? '#e6fcfb' : 'rgba(40, 180, 173, 0.05)'};
-    border-color: rgba(40, 180, 173, 0.5);
+    background: ${({ $selected }) => $selected ? '#e6fcfb' : '#f1f3f5'};
   }
 `;
 

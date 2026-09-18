@@ -30,6 +30,7 @@ interface LeftPanelProps {
   cloudProvider: CloudProvider;
   setCloudProvider: React.Dispatch<React.SetStateAction<CloudProvider>>;
   width: number;
+  myRole?: string;
 }
 
 const LeftPanel: React.FC<LeftPanelProps> = ({ 
@@ -37,7 +38,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   showRightSidebar, setShowRightSidebar,
   onZoomIn, onZoomOut, onSelectMode, onCancelSelection, onDelete, onUndo, onRedo, 
   canUndo, canRedo, isSelectMode, resetTrigger, userInfo, onGoHome,
-  cloudProvider, setCloudProvider, width
+  cloudProvider, setCloudProvider, width, myRole = 'OWNER'
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(projectName);
@@ -151,20 +152,28 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             <span className="title" style={{ fontWeight: 700, fontSize: '16px', color: '#2c3e50', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
               {projectName}
             </span>
-            <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a0aec0' }} title="이름 수정">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9"></path>
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
-              </svg>
-            </button>
+            {myRole === 'OWNER' && (
+              <button onClick={handleEditClick} className="icon-btn" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a0aec0' }} title="이름 수정">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                </svg>
+              </button>
+            )}
           </>
         )}
       </div>
 
       <div style={{ position: 'relative', marginBottom: '16px' }}>
         <div
-          onClick={() => setIsCloudDropdownOpen(!isCloudDropdownOpen)}
-          style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor:'pointer', transition: '0.2s' }}
+          onClick={() => {
+            if (myRole !== 'OWNER') {
+              window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경 옵션은 방장(OWNER)만 수정할 수 있습니다.' }));
+              return;
+            }
+            setIsCloudDropdownOpen(!isCloudDropdownOpen);
+          }}
+          style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor: myRole === 'OWNER' ? 'pointer' : 'not-allowed', opacity: myRole === 'OWNER' ? 1 : 0.6, transition: '0.2s' }}
         >
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
             {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : 'LOCAL (로컬 전용)'}

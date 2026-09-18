@@ -122,7 +122,6 @@ body {
   gap: 2px;
 }
 
-
 .toolbar button { 
   display: flex; 
   align-items: center; 
@@ -140,7 +139,8 @@ body {
 }
 
 .toolbar button:hover {
-  background: #e2e8f0;
+  background: #edf2f7;
+  color: var(--mint);
 }
 
 .divider { 
