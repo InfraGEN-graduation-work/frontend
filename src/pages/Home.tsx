@@ -1,8 +1,6 @@
 import React, { useState, useEffect  } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
-/* import JSZip from 'jszip'; */
-/* import { saveAs } from 'file-saver'; */
 import logo from '../assets/mainlogo.png';
 import { useAuth } from '../contexts/AuthContext';
 import type { CloudProvider } from '../types';
@@ -73,25 +71,14 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
-  /*
-  const [codeViewerProjectName, setCodeViewerProjectName] = useState<string>('project');
-  */
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
-  
-  /*
-  const [downloadSelection, setDownloadSelection] = useState<Set<string>>(new Set());
-  */
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [activeHistoryProjectId, setActiveHistoryProjectId] = useState<number | null>(null);
-  const [selectedHistoryId, setSelectedHistoryId] = useState<number | null>(null);
-  const [historyDetail, setHistoryDetail] = useState<any>(null);
-  const [isHistoryDetailLoading, setIsHistoryDetailLoading] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = () => {
@@ -549,8 +536,6 @@ export default function Home() {
     setIsHistoryModalOpen(true);
     setIsHistoryLoading(true);
     setHistorySortOrder('desc');
-    setSelectedHistoryId(null);
-    setActiveHistoryProjectId(projectId);
     
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
@@ -574,26 +559,6 @@ export default function Home() {
     }
   };
 
-  const handleHistoryItemClick = async (historyId: number) => {
-    if (!activeHistoryProjectId) return;
-    setSelectedHistoryId(historyId);
-    setIsHistoryDetailLoading(true);
-
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${activeHistoryProjectId}/histories/${historyId}`);
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setHistoryDetail(data.result);
-      } else {
-        setSelectedHistoryId(null);
-      }
-    } catch (e) {
-      setSelectedHistoryId(null);
-    } finally {
-      setIsHistoryDetailLoading(false);
-    }
-  };
-
   const handleOpenCodeViewer = async (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
@@ -601,10 +566,6 @@ export default function Home() {
       const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
       const projObj = await projRes.json();
       const nodes = projObj.result?.nodes || [];
-      
-      /*
-      setCodeViewerProjectName(projObj.result?.title || 'project');
-      */
 
       const allFiles: any[] = [];
       const folderMap = new Map();
@@ -675,33 +636,10 @@ export default function Home() {
       setCodeViewerFiles(allFiles);
       setCodeViewerNodes(nodes);
       setSelectedViewFile(allFiles[0]);
-      
-      /*
-      const allFileIds = allFiles.map(f => f.fileId);
-      setDownloadSelection(new Set(allFileIds));
-      */
 
       setIsCodeViewerOpen(true);
     } catch (err) {}
   };
-
-  /*
-  const handleDownloadZip = async () => {
-    if (downloadSelection.size === 0) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 파일을 하나 이상 선택해주세요.' }));
-      return;
-    }
-
-    const zip = new JSZip();
-    codeViewerFiles.forEach(file => {
-      if (downloadSelection.has(file.fileId)) {
-        zip.file(`${codeViewerProjectName}/${file.fileName}`, file.content);
-      }
-    });
-    const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, `${codeViewerProjectName}-infragen-export.zip`);
-  };
-  */
 
   const formatDate = (isoString: string) => {
     if (!isoString) return '';
@@ -741,8 +679,6 @@ export default function Home() {
 
   const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
-  
-  // const isEditTargetOwner = projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
 
   const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
   
@@ -771,12 +707,6 @@ export default function Home() {
             <Avatar>
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
-            
-            {/*
-            {mockInvitations.length > 0 && (
-              <NotificationBadge />
-            )}
-            */}
 
             {isProfileMenuOpen && (
               <ProfileDropdown onClick={(e) => e.stopPropagation()}>
@@ -934,8 +864,6 @@ export default function Home() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     style={{ flex: 1 }}
-                    /*
-                    disabled={!isEditTargetOwner && modalMode === 'edit'} */
                   />
                   
                   <div style={{ position: 'relative', width: '130px' }}>
@@ -980,7 +908,6 @@ export default function Home() {
                   placeholder="간단한 설명을 적어주세요." 
                   value={newDesc} 
                   onChange={(e) => setNewDesc(e.target.value)} 
-                  /* disabled={!isEditTargetOwner && modalMode === 'edit'} */
                 />
               </InputGroup>
               <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
@@ -1192,77 +1119,36 @@ export default function Home() {
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
-            {isHistoryDetailLoading ? (
-              <HistoryDetailContainer style={{ justifyContent: 'center', alignItems: 'center' }}>
-                <EmptyHistory style={{ border: 'none', background: 'transparent' }}>
-                  상세 내역을 불러오는 중입니다...
-                </EmptyHistory>
-              </HistoryDetailContainer>
-            ) : selectedHistoryId && historyDetail ? (
-              <HistoryDetailContainer>
-                <HistoryHeaderRow>
-                  <ModalTitle style={{ marginBottom: 0 }}>버전: {historyDetail.versionName}</ModalTitle>
-                  <SortToggleBtn onClick={() => setSelectedHistoryId(null)}>← 목록으로</SortToggleBtn>
-                </HistoryHeaderRow>
-                
-                <HistoryDescList style={{ marginBottom: 16 }}>
-                  {historyDetail.description.split('\n').map((line: string, i: number) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </HistoryDescList>
-                
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#4a5568' }}>생성된 코드 파일 내역</div>
-                <FileListWrapper>
-                  {((historyDetail.generatedFileList && historyDetail.generatedFileList.length > 0) || (historyDetail.files && historyDetail.files.length > 0)) ? (
-                    (historyDetail.generatedFileList || historyDetail.files).map((file: any, idx: number) => (
-                      <FileBlock key={file.fileId || idx}>
-                        <FileHeader>
-                          <span>{file.fileName}</span>
-                          {file.fileSize && <span style={{ color: '#a0aec0' }}>{file.fileSize} Bytes</span>}
-                        </FileHeader>
-                        <FileContent>{file.content}</FileContent>
-                      </FileBlock>
-                    ))
-                  ) : (
-                    <EmptyHistory>생성된 파일 내역이 없습니다.</EmptyHistory>
-                  )}
-                </FileListWrapper>
-              </HistoryDetailContainer>
-            ) : (
-              <>
-                <HistoryHeaderRow>
-                  <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
-                  <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
-                    {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
-                  </SortToggleBtn>
-                </HistoryHeaderRow>
-                
-                <HistoryListWrapper>
-                  {isHistoryLoading ? (
-                    <EmptyHistory>로딩중...</EmptyHistory>
-                  ) : sortedHistory.length === 0 ? (
-                    <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장하거나 코드를 생성해보세요)</EmptyHistory>
-                  ) : (
-                    sortedHistory.map((h) => {
-                      const logLines = h.description ? h.description.split('\n') : ['인프라 코드가 생성되었습니다.'];
-                      return (
-                        <HistoryItemCard key={h.historyId} onClick={() => handleHistoryItemClick(h.historyId)}>
-                          <HistoryItemHeader>
-                            <HistoryDate>{formatDateTime(h.createdAt)}</HistoryDate>
-                            <span style={{ fontSize: 12, color: '#a0aec0' }}>상세 보기 →</span>
-                          </HistoryItemHeader>
-                          <HistoryDescList>
-                            {logLines.map((line: string, i: number) => (
-                              <li key={i}>{line}</li>
-                            ))}
-                          </HistoryDescList>
-                        </HistoryItemCard>
-                      );
-                    })
-                  )}
-                </HistoryListWrapper>
-              </>
-            )}
+            <HistoryHeaderRow>
+              <ModalTitle style={{ marginBottom: 0 }}>활동 기록</ModalTitle>
+              <SortToggleBtn onClick={() => setHistorySortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}>
+                {historySortOrder === 'desc' ? '정렬: 최신순 ▼' : '정렬: 오래된순 ▲'}
+              </SortToggleBtn>
+            </HistoryHeaderRow>
+            
+            <HistoryListWrapper>
+              {isHistoryLoading ? (
+                <EmptyHistory>로딩중...</EmptyHistory>
+              ) : sortedHistory.length === 0 ? (
+                <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장하거나 코드를 생성해보세요)</EmptyHistory>
+              ) : (
+                sortedHistory.map((h) => {
+                  const logLines = h.description ? h.description.split('\n') : ['인프라 코드가 생성되었습니다.'];
+                  return (
+                    <HistoryItemCard key={h.historyId}>
+                      <HistoryItemHeader>
+                        <HistoryDate>{formatDateTime(h.createdAt)}</HistoryDate>
+                      </HistoryItemHeader>
+                      <HistoryDescList>
+                        {logLines.map((line: string, i: number) => (
+                          <li key={i}>{line}</li>
+                        ))}
+                      </HistoryDescList>
+                    </HistoryItemCard>
+                  );
+                })
+              )}
+            </HistoryListWrapper>
             <ModalActions style={{ marginTop: '20px', justifyContent: 'flex-end' }}>
               <CancelBtn style={{ width: '100%' }} onClick={() => setIsHistoryModalOpen(false)}>닫기</CancelBtn>
             </ModalActions>
@@ -1276,7 +1162,6 @@ export default function Home() {
             <CVHeader>
               <ModalTitle style={{ margin: 0 }}>생성된 코드 뷰어</ModalTitle>
               <div style={{ display: 'flex', gap: '10px' }}>
-                {/* <ZipDownloadBtn onClick={handleDownloadZip}>ZIP 일괄 다운로드</ZipDownloadBtn> */}
                 <CloseBtn onClick={() => setIsCodeViewerOpen(false)}>✕</CloseBtn>
               </div>
             </CVHeader>
@@ -1291,8 +1176,7 @@ export default function Home() {
                     return (
                       <CVFileItem 
                         key={file.fileId} 
-                        $selected={false}
-                        $isViewing={isViewing}
+                        $selected={false}$isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
                         }}
@@ -1409,20 +1293,6 @@ export default function Home() {
     </PageContainer>
   );
 }
-
-
-/*
-const NotificationBadge = styled.div`
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 12px;
-  height: 12px;
-  background-color: #e53e3e;
-  border-radius: 50%;
-  border: 2px solid white;
-`;
-*/
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
@@ -2143,15 +2013,7 @@ const HistoryItemCard = styled.div`
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 16px;
-  cursor: pointer;
-  transition: 0.2s;
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-  
-  &:hover {
-    background: #f8f9fa;
-    border-color: #cbd5e0;
-    transform: translateY(-1px);
-  }
 `;
 
 const HistoryItemHeader = styled.div`
@@ -2176,54 +2038,6 @@ const HistoryDescList = styled.ul`
   line-height: 1.6;
   
   li { margin-bottom: 4px; }
-`;
-
-const HistoryDetailContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  overflow: hidden;
-`;
-
-const FileListWrapper = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 4px;
-
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar { display: none; }
-`;
-
-const FileBlock = styled.div`
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  overflow: hidden;
-`;
-
-const FileHeader = styled.div`
-  background: #f8f9fa;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #2d3748;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: space-between;
-`;
-
-const FileContent = styled.pre`
-  margin: 0;
-  padding: 12px;
-  background: #ffffff;
-  font-size: 12px;
-  color: #333;
-  overflow-x: auto;
-  font-family: 'Consolas', 'Courier New', monospace;
-  white-space: pre-wrap;
 `;
 
 const CodeViewerModal = styled(ModalContent)`
