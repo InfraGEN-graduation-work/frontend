@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
 
   const [showLogin, setShowLogin] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -31,6 +32,15 @@ export default function LoginPage() {
   const kakaoError = params.get("error");
   const [isKakaoProcessing, setIsKakaoProcessing] = useState(!!kakaoCode);
   const hasExchanged = useRef(false);
+
+  useEffect(() => {
+    const handleGlobalToast = (e) => {
+      setToastMessage(e.detail);
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+    window.addEventListener('global-toast', handleGlobalToast);
+    return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
 
   useEffect(() => {
     if (kakaoError) {
@@ -134,11 +144,11 @@ export default function LoginPage() {
         setAccessToken(data.result.accessToken);
         navigate("/dashboard");
       } else {
-        setError(data.message || "게스트 로그인에 실패했습니다.");
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || "유효하지 않은 토큰입니다." }));
       }
     } catch (error) {
       console.error("Guest Login Failed:", error);
-      setError("예기치 않은 서버 오류가 발생했습니다.");
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: "예기치 않은 서버 오류가 발생했습니다." }));
     }
   };
 
@@ -278,6 +288,7 @@ export default function LoginPage() {
         </LoginSection>
 
       </Wrapper>
+      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </Container>
   );
 }
@@ -303,6 +314,13 @@ const chevronFloatAnim = keyframes`
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
+`;
+
+const toastAnim = keyframes`
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 20px); }
 `;
 
 const Container = styled.div`
@@ -643,4 +661,24 @@ const KakaoProcessingPage = styled.div`
 const KakaoProcessingMessage = styled.p`
   font-size: 15px;
   color: #aaaaaa;
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnim} 3s ease forwards;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80vw;
 `;

@@ -203,6 +203,10 @@ const MainPage: React.FC = () => {
 
   const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
 
+  const logActivity = useCallback((msg: string) => {
+    setActivityLog(prev => prev.includes(msg) ? prev : [...prev, msg]);
+  }, []);
+
   useEffect(() => {
     if (!projectId || !userInfo.id) return;
 
@@ -693,12 +697,12 @@ const MainPage: React.FC = () => {
         addedEdges.forEach(e => {
           const source = nodes.find(n => n.id === e.sourceId);
           const target = nodes.find(n => n.id === e.targetId);
-          if (source && target) setActivityLog(prev => [...prev, `[연결] '${source.name}' 노드와 '${target.name}' 노드를 연결했습니다.`]);
+          if (source && target) logActivity(`[연결] '${source.name}' 노드와 '${target.name}' 노드를 연결했습니다.`);
         });
       }
     }
     prevEdges.current = edges;
-  }, [edges, nodes]);
+  }, [edges, nodes, logActivity]);
 
   const prevFiles = useRef(files);
   useEffect(() => {
@@ -708,21 +712,21 @@ const MainPage: React.FC = () => {
         const previousFile = prevFiles.current.find(f => f.id === currentFile.id);
         if (previousFile) {
           if (previousFile.name !== currentFile.name) {
-            if (previousFile.name === '') setActivityLog(prev => [...prev, `[생성] '${currentFile.name}' 폴더를 새로 만들었습니다.`]);
-            else setActivityLog(prev => [...prev, `[수정] 폴더명이 '${previousFile.name}'에서 '${currentFile.name}'(으)로 변경되었습니다.`]);
+            if (previousFile.name === '') logActivity(`[생성] '${currentFile.name}' 폴더를 새로 만들었습니다.`);
+            else logActivity(`[수정] 폴더명이 '${previousFile.name}'에서 '${currentFile.name}'(으)로 변경되었습니다.`);
           }
           if (currentFile.nodeIds.length > previousFile.nodeIds.length) {
             const addedNodeIds = currentFile.nodeIds.filter(id => !previousFile.nodeIds.includes(id));
             addedNodeIds.forEach(nodeId => {
               const node = nodes.find(n => n.id === nodeId);
-              if (node) setActivityLog(prev => [...prev, `[배치] '${node.name}' 노드를 '${currentFile.name}' 폴더 안에 포함시켰습니다.`]);
+              if (node) logActivity(`[배치] '${node.name}' 노드를 '${currentFile.name}' 안에 포함시켰습니다.`);
             });
           }
         }
       });
     }
     prevFiles.current = files;
-  }, [files, nodes]);
+  }, [files, nodes, logActivity]);
 
   const prevTargetFileIds = useRef(targetFileIds);
   useEffect(() => {
@@ -732,12 +736,12 @@ const MainPage: React.FC = () => {
         const addedIds = targetFileIds.filter(id => !prevTargetFileIds.current.includes(id));
         addedIds.forEach(id => {
           const file = files.find(f => f.id === id);
-          if (file) setActivityLog(prev => [...prev, `[이동] '${file.name}' 폴더가 생성할 대상 목록에 들어갔습니다.`]);
+          if (file) logActivity(`[이동] '${file.name}' 폴더가 생성할 대상 목록에 들어갔습니다.`);
         });
       }
     }
     prevTargetFileIds.current = targetFileIds;
-  }, [targetFileIds, files]);
+  }, [targetFileIds, files, logActivity]);
 
   useEffect(() => {
     if (isDataLoaded.current && !isUndoRedo.current) hasUnsavedChanges.current = true;
@@ -892,7 +896,7 @@ const MainPage: React.FC = () => {
     if (!newName.trim() || newName === projectName || !projectId) return;
     const previousName = projectName;
     setProjectName(newName);
-    setActivityLog(prev => [...prev, `[수정] 프로젝트 이름이 '${newName}'(으)로 변경되었습니다.`]);
+    logActivity(`[수정] 프로젝트 이름이 '${newName}'(으)로 변경되었습니다.`);
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     let currentVersion = 0;
@@ -990,6 +994,16 @@ const MainPage: React.FC = () => {
           return;
         }
 
+        if (activityLog.length > 0) {
+          const combinedLogString = activityLog.join('\n');
+          await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: combinedLogString })
+          });
+          setActivityLog([]); 
+        }
+
         const generateNodes = activeNodes.map(n => {
           const rawProperties: any = { ...(n as any).settings };
           rawProperties.fileId = files[0]?.id || 'default';
@@ -1079,7 +1093,6 @@ const MainPage: React.FC = () => {
           }
           
           setFiles(updatedFilesList); 
-          setActivityLog([]); 
           hasUnsavedChanges.current = false;
           
           const finalMapped = getMappedCanvasData(updatedFilesList); 
@@ -1105,48 +1118,6 @@ const MainPage: React.FC = () => {
     setIsErrorModalOpen(false); setLeftActiveTab('Validation');
     if (!showRightSidebar) setShowRightSidebar(true);
   };
-
-  const [highlightFieldRequest, setHighlightFieldRequest] = useState<{ fields: string[]; token: number } | null>(null);
-
-  const jumpToNextError = useCallback(() => {
-    if (validationErrors.length === 0) return;
-    const err = validationErrors[0];
-
-    if (err.targetNodeId && err.targetField) {
-      // 입력 필드로 고칠 수 있는 오류: 해당 노드의 Settings로 이동하고
-      // 같은 노드에 걸린 빈 필수 필드를 전부 한 번에 강조한다.
-      setSelectedNodeIds([err.targetNodeId]);
-      setSelectedFileId(null);
-      setFocusNodeId(err.targetNodeId);
-      setLeftActiveTab('Settings');
-
-      const fieldsForNode = Array.from(new Set(
-        validationErrors
-          .filter(e => e.targetNodeId === err.targetNodeId && e.targetField)
-          .map(e => e.targetField as string)
-      ));
-      if (fieldsForNode.length > 0) {
-        setHighlightFieldRequest({ fields: fieldsForNode, token: Date.now() });
-      }
-    } else if (err.targetNodeId && !err.targetField) {
-      // 필드로는 고칠 수 없는 오류(예: 잘못된 노드 연결 방향) - 캔버스에서
-      // 연결선을 다시 그려야 하므로 Settings가 아니라 Validation 탭으로 보내고,
-      // 문제가 된 노드로 캔버스 포커스를 옮긴 뒤 무엇이 문제인지 토스트로 안내한다.
-      setSelectedNodeIds([err.targetNodeId]);
-      setSelectedFileId(null);
-      setFocusNodeId(err.targetNodeId);
-      setLeftActiveTab('Validation');
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.desc }));
-    } else if (err.isProjectTab) {
-      setLeftActiveTab('Project');
-      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
-    } else {
-      setLeftActiveTab('Settings');
-      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
-    }
-
-    if (!showRightSidebar) setShowRightSidebar(true);
-  }, [validationErrors, showRightSidebar]);
 
   const undo = useCallback(() => {
     if (myRole === 'VIEWER' || history.length === 0) return;
@@ -1203,19 +1174,19 @@ const MainPage: React.FC = () => {
       return updatedFiles;
     });
 
-    setActivityLog(prev => [...prev, `[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`]);
+    logActivity(`[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`);
   };
 
   const deleteSelected = useCallback(() => {
     if (myRole === 'VIEWER' || selectedNodeIds.length === 0) return;
     saveHistory();
     const deletedNodes = nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.name);
-    if (deletedNodes.length > 0) setActivityLog(prev => [...prev, `[삭제] 캔버스에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`]);
+    if (deletedNodes.length > 0) logActivity(`[삭제] 캔버스에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`);
     setNodes((prev) => prev.filter(node => !selectedNodeIds.includes(node.id)));
     setEdges((prev) => prev.filter(edge => !selectedNodeIds.includes(edge.sourceId) && !selectedNodeIds.includes(edge.targetId)));
     setFiles((prev) => prev.map(f => ({ ...f, nodeIds: f.nodeIds.filter(id => !selectedNodeIds.includes(id)) })));
     setSelectedNodeIds([]); setSelectedFileId(null); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
-  }, [selectedNodeIds, nodes, saveHistory, myRole]);
+  }, [selectedNodeIds, nodes, saveHistory, myRole, logActivity]);
 
   const onCancelSelection = () => {
     saveHistory(); setIsSelectMode(false); setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
@@ -1228,8 +1199,8 @@ const MainPage: React.FC = () => {
     if (selectedFileId && fileIdsToDelete.includes(selectedFileId)) setSelectedFileId(null);
     const deletedFiles = files.filter(f => fileIdsToDelete.includes(f.id)).map(f => f.name);
     const deletedNodes = nodes.filter(n => nodeIdsToDelete.includes(n.id)).map(n => n.name);
-    if (deletedFiles.length > 0) setActivityLog(prev => [...prev, `[삭제] 우측 패널에서 ${deletedFiles.map(n => `'${n}'`).join(', ')} 폴더를 삭제했습니다.`]);
-    if (deletedNodes.length > 0) setActivityLog(prev => [...prev, `[삭제] 우측 패널에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`]);
+    if (deletedFiles.length > 0) logActivity(`[삭제] 우측 패널에서 ${deletedFiles.map(n => `'${n}'`).join(', ')} 폴더를 삭제했습니다.`);
+    if (deletedNodes.length > 0) logActivity(`[삭제] 우측 패널에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`);
     
     setFiles((prev) => prev.filter(f => !fileIdsToDelete.includes(f.id)).map(f => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIdsToDelete.includes(id)) })));
     setNodes((prev) => prev.filter(n => !nodeIdsToDelete.includes(n.id)));
@@ -1305,7 +1276,7 @@ const MainPage: React.FC = () => {
             return updatedFiles;
           });
 
-          setActivityLog(prev => [...prev, `[붙여넣기] ${newNodes.length}개의 노드를 캔버스에 붙여넣었습니다.`]);
+          logActivity(`[붙여넣기] ${newNodes.length}개의 노드를 캔버스에 붙여넣었습니다.`);
         }
       }
       else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -1315,7 +1286,7 @@ const MainPage: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory, myRole]);
+  }, [nodes, selectedNodeIds, clipboard, deleteSelected, undo, saveHistory, myRole, logActivity]);
 
   const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
   const nodeErrorsMap = new Map<string, typeof validationErrors>();
@@ -1459,7 +1430,7 @@ const MainPage: React.FC = () => {
                 cloudSettings={cloudSettings} setCloudSettings={setCloudSettings}
                 width={rightWidth}
                 isViewer={myRole === 'VIEWER'} 
-                highlightFieldRequest={highlightFieldRequest}
+                logActivity={logActivity}
               />
             </>
           )}
@@ -1515,7 +1486,7 @@ const MainPage: React.FC = () => {
               })}
             </div>
             <div className="modal-actions">
-              <button className="modal-btn confirm" id="error-modal-confirm-btn" onClick={closeErrorModalAndShowValidation}>확인</button>
+              <button className="modal-btn confirm" onClick={closeErrorModalAndShowValidation}>확인</button>
             </div>
           </div>
         </div>
@@ -1535,22 +1506,13 @@ const MainPage: React.FC = () => {
             </div>
             <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsConfirmModalOpen(false)}>취소</button>
-              <button className="modal-btn confirm" id="generate-confirm-btn" onClick={confirmGenerate}>생성</button>
+              <button className="modal-btn confirm" onClick={confirmGenerate}>생성</button>
             </div>
           </div>
         </div>
       )}
 
-      {showTutorial && (
-        <Tutorial
-          nodes={nodes}
-          selectedNodeIds={selectedNodeIds}
-          hasErrors={validationErrors.length > 0}
-          onJumpToNextError={jumpToNextError}
-          onFinish={() => setShowTutorial(false)}
-          onSkip={() => setShowTutorial(false)}
-        />
-        )}
+      {showTutorial && <Tutorial nodes={nodes} onFinish={() => setShowTutorial(false)} onSkip={() => setShowTutorial(false)} />}
       {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </div>
   );

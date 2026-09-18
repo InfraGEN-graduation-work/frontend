@@ -307,7 +307,6 @@ const Canvas: React.FC<CanvasProps> = ({
            currentSelected = [targetNode.id];
            setSelectedNodeIds(currentSelected);
            setSelectedFileId(null);
-           scrollToNode(targetNode);
         }
       }
 

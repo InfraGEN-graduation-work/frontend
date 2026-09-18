@@ -1241,14 +1241,14 @@ export default function Home() {
                   {isHistoryLoading ? (
                     <EmptyHistory>로딩중...</EmptyHistory>
                   ) : sortedHistory.length === 0 ? (
-                    <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장 버튼을 누르세요)</EmptyHistory>
+                    <EmptyHistory>아직 저장된 활동 기록이 없습니다.<br />(에디터에서 수정 후 저장하거나 코드를 생성해보세요)</EmptyHistory>
                   ) : (
                     sortedHistory.map((h) => {
-                      const logLines = h.description ? h.description.split('\n') : ['저장되었습니다.'];
+                      const logLines = h.description ? h.description.split('\n') : ['인프라 코드가 생성되었습니다.'];
                       return (
                         <HistoryItemCard key={h.historyId} onClick={() => handleHistoryItemClick(h.historyId)}>
                           <HistoryItemHeader>
-                            <HistoryDate>{formatDateTime(h.createdAt)}에 저장됨</HistoryDate>
+                            <HistoryDate>{formatDateTime(h.createdAt)}</HistoryDate>
                             <span style={{ fontSize: 12, color: '#a0aec0' }}>상세 보기 →</span>
                           </HistoryItemHeader>
                           <HistoryDescList>
@@ -2374,25 +2374,6 @@ const CVCodeContainer = styled.pre`
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
 `;
-
-/*const ZipDownloadBtn = styled.button`
-  background: #28b4ad;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: 0.2s;
-  box-shadow: 0 2px 6px rgba(40,180,173,0.3);
-  
-  &:hover {
-    background: #219992;
-    transform: translateY(-1px);
-  }
-`;
-*/
 
 const CloseBtn = styled.button`
   background: #f1f3f5;
