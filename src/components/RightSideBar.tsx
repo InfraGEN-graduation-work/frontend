@@ -751,7 +751,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
             {cloudProvider !== 'LOCAL' && (
               <>
-                <div className="node-settings-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: '20px' }}>
+                <div className="node-settings-section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none', marginBottom: '0px' }}>
                   <div className="setting-section-title">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
                       <circle cx="12" cy="12" r="3"></circle>
@@ -759,7 +759,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     </svg>
                     기본 배포 설정 (Local)
                   </div>
-                  <div className="setting-row">
+                  <div className="setting-row" style={{ marginBottom: 0 }}>
                     <label>로컬 환경(Docker Compose, .env) 구성 생성</label>
                     <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: isViewer ? 'not-allowed' : 'pointer', fontSize: '13px', color: '#2d3748', fontWeight: 'normal', opacity: isViewer ? 0.6 : 1 }}>
@@ -774,7 +774,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                   </div>
                 </div>
 
-                <div className="node-settings-section" style={{ marginBottom: '24px' }}>
+                <div className="node-settings-section" style={{ marginTop: '16px', marginBottom: '24px' }}>
                   <div className="setting-section-title" style={{ color: cloudProvider === 'AWS' ? '#dd6b20' : '#c53030' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
                       <path d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5S19.985 10 17.5 10c-.167 0-.33.013-.489.038A6.5 6.5 0 1 0 5.674 13.92C3.125 14.152 1 16.326 1 19c0 2.761 2.239 5 5 5h11c2.485 0 4.5-2.015 4.5-4.5z"></path>

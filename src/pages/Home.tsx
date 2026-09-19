@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
+import logo2 from '../assets/mainlogo-2.png';
 import { useAuth } from '../contexts/AuthContext';
 import type { CloudProvider } from '../types';
 
@@ -17,7 +18,7 @@ interface Project {
 }
 
 interface Collaborator {
-  memberId: number;
+  memberId: number | string;
   nickname: string;
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
@@ -29,13 +30,14 @@ interface Invitation {
   projectId: number;
   projectTitle: string;
   inviterNickname: string;
+  status?: string;
 }
 
 export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL' });
+  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '' });
   const [projects, setProjects] = useState<Project[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
 
@@ -59,13 +61,13 @@ export default function Home() {
   const [collabProjectId, setCollabProjectId] = useState<number | null>(null);
   const [collabTab, setCollabTab] = useState<'list' | 'invite'>('list');
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
-  const [inviteMemberId, setInviteMemberId] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [inviteRole, setInviteRole] = useState<'EDITOR' | 'VIEWER'>('VIEWER');
 
   const [collabSearchTerm, setCollabSearchTerm] = useState('');
   const [isCollabEditMode, setIsCollabEditMode] = useState(false);
 
-  const [openRoleDropdownId, setOpenRoleDropdownId] = useState<number | null>(null);
+  const [openRoleDropdownId, setOpenRoleDropdownId] = useState<number | string | null>(null);
   const [openInviteRoleDropdown, setOpenInviteRoleDropdown] = useState(false);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -120,13 +122,24 @@ export default function Home() {
       }
 
       const userData = await userRes.json();
+      let fetchedInviteCode = '';
+
       if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
+        try {
+          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, { method: 'POST' });
+          if (codeRes.ok) {
+            const codeData = await codeRes.json();
+            fetchedInviteCode = codeData.result?.inviteCode || '';
+          }
+        } catch (e) {}
+
         const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
         setUserInfo({ 
           id: userData.result.id, 
           nickname: userData.result.nickname, 
           email: userData.result.email,
-          provider: String(rawProvider).toUpperCase()
+          provider: String(rawProvider).toUpperCase(),
+          inviteCode: fetchedInviteCode || String(userData.result.id)
         });
 
         if(userData.result.autoSaveEnabled !== undefined) {
@@ -145,15 +158,14 @@ export default function Home() {
         setProjects(mappedProjects);
       }
 
-      /*
-      const invRes = await fetchWithAuth(`${BASE_URL}/members/me/invitations`);
+      const invRes = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/received?status=PENDING`);
       if (invRes.ok) {
         const invData = await invRes.json();
         if (invData.isSuccess ?? invData.is_success) {
-          setInvitations(invData.result.invitations || []);
+          const list = Array.isArray(invData.result) ? invData.result : (invData.result?.invitations || []);
+          setInvitations(list.filter((i: any) => i.status === 'PENDING'));
         }
       }
-      */
     } catch (err) {}
   };
 
@@ -163,7 +175,7 @@ export default function Home() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    window.dispatchEvent(new CustomEvent('global-toast', { detail: '고유 식별 ID가 복사되었습니다.' }));
+    window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대 코드가 복사되었습니다.' }));
   };
 
   const handleOpenCollabModal = async (e: React.MouseEvent, projectId: number) => {
@@ -171,7 +183,7 @@ export default function Home() {
     setMenuOpenId(null);
     setCollabProjectId(projectId);
     setCollabTab('list');
-    setInviteMemberId('');
+    setInviteCode('');
     setInviteRole('VIEWER');
     setCollabSearchTerm('');
     setIsCollabEditMode(false);
@@ -182,50 +194,122 @@ export default function Home() {
 
   const fetchCollaborators = async (projectId: number) => {
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setCollaborators(data.result.collaborators || []);
+      const res1 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
+      let activeMembers: Collaborator[] = [];
+      if (res1.ok) {
+        const data1 = await res1.json();
+        if (data1.isSuccess ?? data1.is_success) {
+          activeMembers = (data1.result.collaborators || []).map((c: any) => ({
+            ...c,
+            status: 'ACCEPTED'
+          }));
+        }
       }
+
+      let pendingMembers: Collaborator[] = [];
+      try {
+        const res2 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators/invitations`);
+        if (res2.ok) {
+          const data2 = await res2.json();
+          if (data2.isSuccess ?? data2.is_success) {
+            pendingMembers = (data2.result?.invitations || [])
+              .filter((inv: any) => inv.status === 'PENDING')
+              .map((inv: any) => ({
+                memberId: `inv-${inv.invitationId}`,
+                nickname: inv.inviteeNickname,
+                role: inv.role,
+                status: 'PENDING'
+              }));
+          }
+        }
+      } catch (e) {}
+
+      setCollaborators([...activeMembers, ...pendingMembers]);
     } catch (err) {}
   };
 
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!collabProjectId || !inviteMemberId.trim()) return;
+    if (!collabProjectId || !inviteCode.trim()) return;
 
-    const parsedId = parseInt(inviteMemberId, 10);
-    if (isNaN(parsedId)) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '숫자로 된 식별 ID를 입력해주세요.' }));
-      return;
-    }
-    if (parsedId === userInfo.id) {
+    if (inviteCode.trim() === String(userInfo.inviteCode) || inviteCode.trim() === String(userInfo.id)) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
       return;
     }
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators`, {
+      const payload = {
+        inviteeCode: inviteCode.trim(),
+        memberId: !isNaN(Number(inviteCode.trim())) ? Number(inviteCode.trim()) : undefined,
+        role: inviteRole
+      };
+
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/invitations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: parsedId, role: inviteRole })
+        body: JSON.stringify(payload)
       });
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자가 성공적으로 초대되었습니다.' }));
-        setInviteMemberId('');
+      
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자에게 초대를 성공적으로 보냈습니다.' }));
+        setInviteCode('');
         setCollabTab('list');
         fetchCollaborators(collabProjectId); 
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 등록에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 초대에 실패했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
     }
   };
 
-  const handleRemoveCollaborator = async (memberId: number) => {
+  const handleAcceptInvite = async (invitationId: number) => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/accept`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 수락했습니다.' }));
+        setIsInviteModalOpen(false);
+        fetchDashboardData(); 
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대 수락 처리 중 오류가 발생했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 통신 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleRejectInvite = async (invitationId: number) => {
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (isSuccess) {
+        setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 거절했습니다.' }));
+        if (invitations.length <= 1) setIsInviteModalOpen(false); 
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '거절 처리 중 오류가 발생했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 통신 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleRemoveCollaborator = async (memberId: number | string) => {
     if (!collabProjectId) return;
+    
+    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '발송된 초대는 상대방이 응답하기 전까지 강제로 취소할 수 없습니다.' }));
+      return;
+    }
+
     if (!window.confirm('정말 이 참여자를 퇴출/취소하시겠습니까?')) return;
 
     try {
@@ -234,13 +318,19 @@ export default function Home() {
       });
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 제외되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
       }
     } catch (err) {}
   };
 
-  const handleRoleChange = async (memberId: number, newRole: string) => {
+  const handleRoleChange = async (memberId: number | string, newRole: string) => {
     if (!collabProjectId) return;
+
+    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '수락 대기 중인 사용자의 권한은 임의로 변경할 수 없습니다.' }));
+      return;
+    }
+
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
         method: 'PATCH',
@@ -254,8 +344,14 @@ export default function Home() {
     } catch (err) {}
   };
 
-  const handleDelegateOwner = async (memberId: number) => {
+  const handleDelegateOwner = async (memberId: number | string) => {
     if (!collabProjectId) return;
+
+    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '수락 대기 중인 사용자에게는 방장을 위임할 수 없습니다.' }));
+      return;
+    }
+
     if (!window.confirm('정말 이 참여자에게 OWNER 권한을 위임하시겠습니까?\n위임 후 본인은 EDITOR로 변경됩니다.')) return;
 
     try {
@@ -276,32 +372,9 @@ export default function Home() {
     }
   };
 
-  const handleAcceptInvite = async (invitationId: number) => {
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/invitations/${invitationId}/accept`, { method: 'POST' });
-      if (res.ok) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 수락했습니다.' }));
-        fetchDashboardData(); 
-      }
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '수락 처리 중 오류가 발생했습니다.' }));
-    }
-  };
-
-  const handleRejectInvite = async (invitationId: number) => {
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/invitations/${invitationId}/reject`, { method: 'POST' });
-      if (res.ok) {
-        setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 거절했습니다.' }));
-      }
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '거절 처리 중 오류가 발생했습니다.' }));
-    }
-  };
-
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    
     const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
     if (!isEditingTargetOwner) return;
 
@@ -741,19 +814,31 @@ export default function Home() {
   const currentCollabProject = projects.find(p => p.projectId === collabProjectId);
   const isCollabOwner = currentCollabProject?.myRole === 'OWNER';
 
-  const sortedCollaborators = [...collaborators].sort((a, b) => a.nickname.localeCompare(b.nickname));
-
-  const allMembers: (Collaborator & { isMe: boolean })[] = [
-    { 
-      isMe: true, 
-      memberId: userInfo.id, 
-      nickname: userInfo.nickname, 
-      email: userInfo.email, 
-      role: (currentCollabProject?.myRole as 'OWNER' | 'EDITOR' | 'VIEWER') || 'VIEWER',
+  const meExists = collaborators.some(c => String(c.memberId) === String(userInfo.id));
+  let rawMembers = [...collaborators];
+  if (!meExists && currentCollabProject) {
+    rawMembers.push({
+      memberId: userInfo.id,
+      nickname: userInfo.nickname,
+      email: userInfo.email,
+      role: (currentCollabProject.myRole as 'OWNER' | 'EDITOR' | 'VIEWER') || 'VIEWER',
       status: 'ACCEPTED'
-    },
-    ...sortedCollaborators.map(c => ({ isMe: false, ...c, email: c.email || '' }))
-  ];
+    });
+  }
+
+  const processedMembers = rawMembers.map(c => ({
+    ...c,
+    isMe: String(c.memberId) === String(userInfo.id),
+    email: c.email || ''
+  }));
+
+  const allMembers = processedMembers.sort((a, b) => {
+    if (a.role === 'OWNER' && b.role !== 'OWNER') return -1;
+    if (b.role === 'OWNER' && a.role !== 'OWNER') return 1;
+    if (a.isMe && !b.isMe) return -1;
+    if (b.isMe && !a.isMe) return 1;
+    return a.nickname.localeCompare(b.nickname);
+  });
 
   const filteredMembers = allMembers.filter(m => 
     m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase())
@@ -900,9 +985,9 @@ export default function Home() {
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>{isProjOwner ? '수정' : '정보'}</DropdownItem>
-                              <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
-                              <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
-                              <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>기록</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>코드</DropdownItem>
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -1044,10 +1129,10 @@ export default function Home() {
               </div>
 
               <InputGroup>
-                <label>내 고유 식별 ID (초대 시 사용)</label>
+                <label>내 초대 코드 (초대 시 사용)</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <Input type="text" value={userInfo.id} readOnly style={{ flex: 1, background: '#f1f3f5', color: '#718096', fontWeight: 'bold' }} />
-                  <CancelBtn type="button" onClick={() => copyToClipboard(String(userInfo.id))} style={{ flexShrink: 0 }}>복사</CancelBtn>
+                  <Input type="text" value={userInfo.inviteCode} readOnly style={{ flex: 1, background: '#f1f3f5', color: '#718096', fontWeight: 'bold' }} />
+                  <CancelBtn type="button" onClick={() => copyToClipboard(String(userInfo.inviteCode))} style={{ flexShrink: 0 }}>복사</CancelBtn>
                 </div>
               </InputGroup>
 
@@ -1129,12 +1214,12 @@ export default function Home() {
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ flex: 1 }}>
                     <InputGroup>
-                      <label>초대할 회원의 고유 식별 ID</label>
+                      <label>초대 코드 (초대할 회원의 코드 입력)</label>
                       <Input 
                         type="text" 
-                        placeholder="예: 104" 
-                        value={inviteMemberId} 
-                        onChange={(e) => setInviteMemberId(e.target.value)} 
+                        placeholder="상대방의 초대 코드를 입력하세요" 
+                        value={inviteCode} 
+                        onChange={(e) => setInviteCode(e.target.value)} 
                       />
                     </InputGroup>
                     <InputGroup>
@@ -1368,7 +1453,7 @@ export default function Home() {
           </CodeViewerModal>
         </ModalOverlay>
       )}
-      
+
       {projectToDelete !== null && (
         <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1436,7 +1521,6 @@ export default function Home() {
     </PageContainer>
   );
 }
-
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }

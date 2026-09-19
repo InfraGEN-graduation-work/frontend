@@ -4,7 +4,7 @@ import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
-//
+
 export default function SignupPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", verificationCode: "", password: "", passwordConfirm: "", nickname: "" });
@@ -66,18 +66,18 @@ export default function SignupPage() {
 
       if (res.ok && isSuccess) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '인증번호가 발송되었습니다. 이메일을 확인해주세요.' }));
-        setCountdown(30);
+        setCountdown(60); 
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '인증번호 발송에 실패했습니다.' }));
       }
     } catch (error) {
+      console.error("이메일 발송 에러:", error);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
     }
   };
 
   const validate = () => {
     const newErrors = {};
-
     if (!form.email) newErrors.email = "이메일을 입력해주세요.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = "올바른 이메일 형식을 입력해주세요.";
 
@@ -107,7 +107,6 @@ export default function SignupPage() {
       const res = await fetch(`${BASE_URL}/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", 
         body: JSON.stringify({
           email: form.email,
           verificationCode: form.verificationCode,
@@ -120,7 +119,7 @@ export default function SignupPage() {
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();
         console.error("Non-JSON Response:", text);
-        throw new Error(`CORS 설정 문제이거나 서버 에러입니다. (Status: ${res.status})`);
+        throw new Error(`서버 에러입니다. (Status: ${res.status})`);
       }
 
       const data = await res.json();
@@ -186,7 +185,7 @@ export default function SignupPage() {
                 onClick={handleSendCode} 
                 disabled={countdown > 0 || !form.email}
               >
-                {countdown > 0 ? `재발송 (${countdown}s)` : '인증 발송'}
+                {countdown > 0 ? `재발송 (${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')})` : '인증 발송'}
               </SendCodeBtn>
             </div>
             {errors.email && <FieldError>{errors.email}</FieldError>}
