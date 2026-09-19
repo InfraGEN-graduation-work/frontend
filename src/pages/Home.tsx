@@ -125,10 +125,17 @@ export default function Home() {
 
       if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
         try {
-          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, { method: 'POST' });
-          if (codeRes.ok) {
-            const codeData = await codeRes.json();
-            fetchedInviteCode = codeData.result?.inviteCode || '';
+          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+          });
+          const codeData = await codeRes.json();
+          if (codeData.isSuccess ?? codeData.is_success) {
+            fetchedInviteCode = codeData.result?.inviteCode || (typeof codeData.result === 'string' ? codeData.result : '');
           }
         } catch (e) {}
 
