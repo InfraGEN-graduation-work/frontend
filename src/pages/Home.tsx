@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
-import logo2 from '../assets/mainlogo-2.png';
 import { useAuth } from '../contexts/AuthContext';
 import type { CloudProvider } from '../types';
 
