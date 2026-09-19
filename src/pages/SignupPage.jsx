@@ -1,15 +1,40 @@
-import { useState } from "react";
+// src/pages/SignupPage.jsx
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://infragen.kro.kr/api/v1";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: "", password: "", passwordConfirm: "", nickname: "" });
+  const [form, setForm] = useState({ email: "", verificationCode: "", password: "", passwordConfirm: "", nickname: "" });
   const [errors, setErrors] = useState({});
   const [submitted, setSubmitted] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // 30초 카운트다운 타이머 상태
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    const handleGlobalToast = (e) => {
+      setToastMessage(e.detail);
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+    window.addEventListener('global-toast', handleGlobalToast);
+    return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
+
+  // 타이머 로직
+  useEffect(() => {
+    let timer;
+    if (countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [countdown]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -17,11 +42,52 @@ export default function SignupPage() {
     setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
+  // 인증번호 입력 전용 핸들러 (숫자만, 최대 6자리)
+  const handleCodeChange = (e) => {
+    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+    setForm((prev) => ({ ...prev, verificationCode: val }));
+    setErrors((prev) => ({ ...prev, verificationCode: "" }));
+  };
+
+  // 인증번호 발송 API 호출
+  const handleSendCode = async () => {
+    if (!form.email) {
+      setErrors((prev) => ({ ...prev, email: "이메일을 먼저 입력해주세요." }));
+      return;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      setErrors((prev) => ({ ...prev, email: "올바른 이메일 형식을 입력해주세요." }));
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BASE_URL}/auth/email/code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '인증번호가 발송되었습니다. 이메일을 확인해주세요.' }));
+        setCountdown(30); // 30초 쿨타임 시작
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '인증번호 발송에 실패했습니다.' }));
+      }
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    }
+  };
+
   const validate = () => {
     const newErrors = {};
 
     if (!form.email) newErrors.email = "이메일을 입력해주세요.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) newErrors.email = "올바른 이메일 형식을 입력해주세요.";
+
+    if (!form.verificationCode) newErrors.verificationCode = "인증번호를 입력해주세요.";
+    else if (form.verificationCode.length !== 6) newErrors.verificationCode = "6자리 인증번호를 정확히 입력해주세요.";
 
     if (!form.password) newErrors.password = "비밀번호를 입력해주세요.";
     else if (form.password.length < 8) newErrors.password = "비밀번호는 8자 이상이어야 합니다.";
@@ -49,6 +115,7 @@ export default function SignupPage() {
         credentials: "include", 
         body: JSON.stringify({
           email: form.email,
+          verificationCode: form.verificationCode, // 추가된 필드
           password: form.password,
           nickname: form.nickname,
         }),
@@ -68,7 +135,7 @@ export default function SignupPage() {
         setSubmitted(true);
       } else {
         const errorMessage = typeof data.result === 'string' ? data.result : data.message;
-        setErrors({ general: errorMessage || "회원가입에 실패했습니다." });
+        setErrors({ general: errorMessage || "회원가입에 실패하거나 인증번호가 올바르지 않습니다." });
       }
     } catch (error) {
       console.error("Signup Request Failed:", error);
@@ -108,16 +175,40 @@ export default function SignupPage() {
         <SignupForm onSubmit={handleSubmit} noValidate>
           <FieldGroup>
             <Label>이메일</Label>
-            <InputField
-              type="email"
-              name="email"
-              placeholder="example@email.com"
-              value={form.email}
-              onChange={handleChange}
-              hasError={!!errors.email}
-              autoComplete="email"
-            />
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <InputField
+                type="email"
+                name="email"
+                placeholder="example@email.com"
+                value={form.email}
+                onChange={handleChange}
+                hasError={!!errors.email}
+                autoComplete="email"
+                style={{ flex: 1 }}
+              />
+              <SendCodeBtn 
+                type="button" 
+                onClick={handleSendCode} 
+                disabled={countdown > 0 || !form.email}
+              >
+                {countdown > 0 ? `재발송 (${countdown}s)` : '인증 발송'}
+              </SendCodeBtn>
+            </div>
             {errors.email && <FieldError>{errors.email}</FieldError>}
+          </FieldGroup>
+
+          <FieldGroup>
+            <Label>인증번호</Label>
+            <InputField
+              type="text"
+              name="verificationCode"
+              placeholder="이메일로 발송된 6자리 숫자 입력"
+              value={form.verificationCode}
+              onChange={handleCodeChange}
+              hasError={!!errors.verificationCode}
+              maxLength={6}
+            />
+            {errors.verificationCode && <FieldError>{errors.verificationCode}</FieldError>}
           </FieldGroup>
 
           <FieldGroup>
@@ -164,7 +255,7 @@ export default function SignupPage() {
 
           {errors.general && <FieldError>{errors.general}</FieldError>}
 
-          <SubmitButton type="submit">가입하기</SubmitButton>
+          <SubmitButton type="submit" style={{ marginTop: '12px' }}>가입하기</SubmitButton>
         </SignupForm>
 
         <LoginPrompt>
@@ -172,9 +263,40 @@ export default function SignupPage() {
           <LoginLink type="button" onClick={() => navigate("/login")}>로그인</LoginLink>
         </LoginPrompt>
       </Card>
+      
+      {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </Page>
   );
 }
+
+// ========== Styled Components ========== //
+
+const toastAnim = keyframes`
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 20px); }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnim} 3s ease forwards;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80vw;
+`;
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(12px); }
@@ -261,7 +383,7 @@ const FieldGroup = styled.div`
 
 const Label = styled.label`
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: #555;
 `;
 
@@ -286,6 +408,22 @@ const InputField = styled.input`
   }
 `;
 
+const SendCodeBtn = styled.button`
+  flex-shrink: 0;
+  width: 90px;
+  background: ${(props) => (props.disabled ? '#e2e8f0' : '#1a1a1a')};
+  color: ${(props) => (props.disabled ? '#a0aec0' : '#fff')};
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+  transition: 0.2s;
+  font-family: inherit;
+
+  &:active { transform: ${(props) => (props.disabled ? 'none' : 'scale(0.98)')}; }
+`;
+
 const FieldError = styled.p`
   font-size: 12px;
   color: #e05858;
@@ -306,7 +444,6 @@ const SubmitButton = styled.button`
   letter-spacing: -0.2px;
   transition: opacity 0.15s, transform 0.1s;
   font-family: inherit;
-  margin-top: 6px;
 
   &:hover  { opacity: 0.82; }
   &:active { transform: scale(0.98); }

@@ -1,4 +1,3 @@
-// src/pages/Home.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
@@ -146,6 +145,7 @@ export default function Home() {
         setProjects(mappedProjects);
       }
 
+      /*
       const invRes = await fetchWithAuth(`${BASE_URL}/members/me/invitations`);
       if (invRes.ok) {
         const invData = await invRes.json();
@@ -153,6 +153,7 @@ export default function Home() {
           setInvitations(invData.result.invitations || []);
         }
       }
+      */
     } catch (err) {}
   };
 
@@ -301,6 +302,9 @@ export default function Home() {
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
+    if (!isEditingTargetOwner) return;
+
     if (!newTitle.trim()) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름을 입력해주세요.' }));
     if (modalMode === 'create' && !modalProvider) return window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경을 선택해주세요.' }));
 
@@ -557,7 +561,6 @@ export default function Home() {
 
   const executeWithdraw = async () => {
     try {
-      // 1. 소유한 프로젝트는 전체 삭제, 참여 중인 프로젝트는 나가기 처리
       await Promise.all(
         projects.map(async (proj) => {
           try {
@@ -572,7 +575,6 @@ export default function Home() {
         })
       );
 
-      // 2. 회원 탈퇴 API 호출
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
@@ -897,7 +899,7 @@ export default function Home() {
 
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
-                              <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>수정</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>{isProjOwner ? '수정' : '정보'}</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자 관리</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>활동 기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>생성된 코드 보기</DropdownItem>
@@ -925,36 +927,49 @@ export default function Home() {
         </ContentWrapper>
       </ContentArea>
 
-      {/* 새 프로젝트 생성 / 수정 모달 */}
       {modalMode !== null && (() => {
         const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
+        
         return (
           <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
             <ModalContent onClick={(e) => e.stopPropagation()}>
-              <ModalTitle>{modalMode === 'create' ? '새 프로젝트 생성' : '프로젝트 수정'}</ModalTitle>
-              <form onSubmit={handleSubmitProject}>
+              <ModalTitle>
+                {modalMode === 'create' ? '새 프로젝트 생성' : (isEditingTargetOwner ? '프로젝트 수정' : '프로젝트 정보')}
+              </ModalTitle>
+              <form onSubmit={isEditingTargetOwner ? handleSubmitProject : (e) => e.preventDefault()}>
                 <InputGroup>
                   <label>프로젝트 이름 및 클라우드 환경</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <Input
-                      autoFocus
+                      autoFocus={isEditingTargetOwner}
                       placeholder="예: My E-commerce Infra"
                       value={newTitle}
                       onChange={(e) => setNewTitle(e.target.value)}
-                      style={{ flex: 1 }}
+                      disabled={!isEditingTargetOwner}
+                      style={{ 
+                        flex: 1, 
+                        cursor: !isEditingTargetOwner ? 'not-allowed' : 'text', 
+                        backgroundColor: !isEditingTargetOwner ? '#f8f9fa' : 'white', 
+                        color: !isEditingTargetOwner ? '#718096' : 'inherit' 
+                      }}
                     />
 
                     <div style={{ position: 'relative', width: '90px' }}>
                       <div
                         onClick={(e) => { 
                           e.stopPropagation(); 
-                          if (!isEditingTargetOwner) {
-                            window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경 옵션은 방장(OWNER)만 수정할 수 있습니다.' }));
-                            return;
-                          }
+                          if (!isEditingTargetOwner) return;
                           setIsProviderDropdownOpen(!isProviderDropdownOpen); 
                         }}
-                        style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 12px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: modalProvider ? '#4a5568' : '#a0aec0', cursor: isEditingTargetOwner ? 'pointer' : 'not-allowed', opacity: isEditingTargetOwner ? 1 : 0.6, transition: '0.2s', height: '100%', boxSizing: 'border-box' }}
+                        style={{ 
+                          display:'flex', justifyContent:'space-between', alignItems: 'center', 
+                          padding:'10px 12px', background: !isEditingTargetOwner ? '#f8f9fa' : 'white', 
+                          border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, 
+                          color: !isEditingTargetOwner ? '#718096' : (modalProvider ? '#4a5568' : '#a0aec0'), 
+                          cursor: isEditingTargetOwner ? 'pointer' : 'not-allowed', 
+                          opacity: isEditingTargetOwner ? 1 : 0.8, 
+                          transition: '0.2s', height: '100%', boxSizing: 'border-box' 
+                        }}
                       >
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {modalProvider === 'LOCAL' ? 'LOCAL' : modalProvider}
@@ -962,7 +977,7 @@ export default function Home() {
                         <span style={{ fontSize: '10px', transform: isProviderDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s', marginLeft: '4px', flexShrink: 0 }}>▼</span>
                       </div>
 
-                      {isProviderDropdownOpen && (
+                      {isProviderDropdownOpen && isEditingTargetOwner && (
                         <div style={{ position:'absolute', top:'100%', left:0, width:'100%', background:'white', border:'1px solid #e2e8f0', borderRadius:'8px', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', zIndex:100, marginTop:'6px', overflow:'hidden' }}>
                           <div 
                             onClick={() => { setModalProvider('LOCAL'); setIsProviderDropdownOpen(false); }} 
@@ -993,11 +1008,23 @@ export default function Home() {
                     placeholder="간단한 설명을 적어주세요." 
                     value={newDesc} 
                     onChange={(e) => setNewDesc(e.target.value)} 
+                    disabled={!isEditingTargetOwner}
+                    style={{ 
+                      cursor: !isEditingTargetOwner ? 'not-allowed' : 'text', 
+                      backgroundColor: !isEditingTargetOwner ? '#f8f9fa' : 'white', 
+                      color: !isEditingTargetOwner ? '#718096' : 'inherit' 
+                    }}
                   />
                 </InputGroup>
                 <ModalActions style={{ justifyContent: 'flex-end', gap: '10px' }}>
-                  <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
-                  <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
+                  {isEditingTargetOwner ? (
+                    <>
+                      <CancelBtn type="button" onClick={() => setModalMode(null)}>취소</CancelBtn>
+                      <SubmitBtn type="submit">{modalMode === 'create' ? '생성하기' : '수정하기'}</SubmitBtn>
+                    </>
+                  ) : (
+                    <CancelBtn type="button" onClick={() => setModalMode(null)}>닫기</CancelBtn>
+                  )}
                 </ModalActions>
               </form>
             </ModalContent>
@@ -1005,7 +1032,6 @@ export default function Home() {
         );
       })()}
 
-      {/* 회원 정보 관리 모달 */}
       {isUserInfoModalOpen && (
         <ModalOverlay onClick={() => setIsUserInfoModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1059,7 +1085,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 초대 목록 모달 */}
       {isInviteModalOpen && (
         <ModalOverlay onClick={() => setIsInviteModalOpen(false)}>
           <ModalContent onClick={e => e.stopPropagation()} style={{ width: '400px' }}>
@@ -1089,7 +1114,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 참여자 관리 모달 */}
       {isCollabModalOpen && (
         <ModalOverlay onClick={() => setIsCollabModalOpen(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} style={{ width: '420px', padding: 0, overflow: 'hidden' }}>
@@ -1235,7 +1259,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 활동 기록 모달 */}
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
           <HistoryModalContent onClick={(e) => e.stopPropagation()}>
@@ -1276,7 +1299,6 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {/* 코드 뷰어 모달 */}
       {isCodeViewerOpen && (
         <ModalOverlay onClick={() => setIsCodeViewerOpen(false)}>
           <CodeViewerModal onClick={(e) => e.stopPropagation()}>
@@ -1346,8 +1368,7 @@ export default function Home() {
           </CodeViewerModal>
         </ModalOverlay>
       )}
-
-      {/* 기타 확인 모달들 */}
+      
       {projectToDelete !== null && (
         <ModalOverlay onClick={() => setProjectToDelete(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1416,7 +1437,6 @@ export default function Home() {
   );
 }
 
-// ============== Styled Components ==============
 
 const toastAnimation = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
