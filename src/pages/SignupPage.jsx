@@ -1,11 +1,10 @@
-// src/pages/SignupPage.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import logo from "../assets/mainlogo.png";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
-
+//
 export default function SignupPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", verificationCode: "", password: "", passwordConfirm: "", nickname: "" });
@@ -13,19 +12,17 @@ export default function SignupPage() {
   const [submitted, setSubmitted] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
-  // 30초 카운트다운 타이머 상태
   const [countdown, setCountdown] = useState(0);
 
   useEffect(() => {
     const handleGlobalToast = (e) => {
       setToastMessage(e.detail);
       setTimeout(() => setToastMessage(null), 3000);
-    };
+    }; 
     window.addEventListener('global-toast', handleGlobalToast);
     return () => window.removeEventListener('global-toast', handleGlobalToast);
   }, []);
 
-  // 타이머 로직
   useEffect(() => {
     let timer;
     if (countdown > 0) {
@@ -42,14 +39,12 @@ export default function SignupPage() {
     setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
-  // 인증번호 입력 전용 핸들러 (숫자만, 최대 6자리)
   const handleCodeChange = (e) => {
     const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
     setForm((prev) => ({ ...prev, verificationCode: val }));
     setErrors((prev) => ({ ...prev, verificationCode: "" }));
   };
 
-  // 인증번호 발송 API 호출
   const handleSendCode = async () => {
     if (!form.email) {
       setErrors((prev) => ({ ...prev, email: "이메일을 먼저 입력해주세요." }));
@@ -71,7 +66,7 @@ export default function SignupPage() {
 
       if (res.ok && isSuccess) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '인증번호가 발송되었습니다. 이메일을 확인해주세요.' }));
-        setCountdown(30); // 30초 쿨타임 시작
+        setCountdown(30);
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '인증번호 발송에 실패했습니다.' }));
       }
@@ -115,7 +110,7 @@ export default function SignupPage() {
         credentials: "include", 
         body: JSON.stringify({
           email: form.email,
-          verificationCode: form.verificationCode, // 추가된 필드
+          verificationCode: form.verificationCode,
           password: form.password,
           nickname: form.nickname,
         }),
@@ -268,8 +263,6 @@ export default function SignupPage() {
     </Page>
   );
 }
-
-// ========== Styled Components ========== //
 
 const toastAnim = keyframes`
   0% { opacity: 0; transform: translate(-50%, 20px); }
