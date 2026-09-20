@@ -318,13 +318,17 @@ export default function Home() {
     if (!collabProjectId || !collaboratorToRemove) return;
 
     try {
-      const targetId = typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') 
-        ? collaboratorToRemove.replace('inv-', '') 
-        : collaboratorToRemove;
-
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${targetId}`, {
-        method: 'DELETE'
-      });
+      let res;
+      if (typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-')) {
+        const invitationId = collaboratorToRemove.replace('inv-', '');
+        res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, {
+          method: 'POST'
+        });
+      } else {
+        res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, {
+          method: 'DELETE'
+        });
+      }
 
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
