@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect} from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
@@ -36,7 +36,7 @@ export default function Home() {
   const navigate = useNavigate();
   const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '' });
+  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '불러오는 중...' });
   const [projects, setProjects] = useState<Project[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
 
@@ -121,23 +121,22 @@ export default function Home() {
       }
 
       const userData = await userRes.json();
-      let fetchedInviteCode = '';
+      let fetchedInviteCode = '코드 발급 실패';
 
       if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
         try {
-          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({})
+          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, { 
+            method: 'POST'
           });
-          const codeData = await codeRes.json();
-          if (codeData.isSuccess ?? codeData.is_success) {
-            fetchedInviteCode = codeData.result?.inviteCode || (typeof codeData.result === 'string' ? codeData.result : '');
+          if (codeRes.ok) {
+            const codeData = await codeRes.json();
+            if (codeData.isSuccess ?? codeData.is_success) {
+              fetchedInviteCode = codeData.result?.inviteCode || (typeof codeData.result === 'string' ? codeData.result : '코드 없음');
+            }
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error('초대코드 호출 에러', e);
+        }
 
         const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
         setUserInfo({ 
@@ -145,7 +144,7 @@ export default function Home() {
           nickname: userData.result.nickname, 
           email: userData.result.email,
           provider: String(rawProvider).toUpperCase(),
-          inviteCode: fetchedInviteCode || String(userData.result.id)
+          inviteCode: fetchedInviteCode
         });
 
         if(userData.result.autoSaveEnabled !== undefined) {
@@ -238,7 +237,7 @@ export default function Home() {
     e.preventDefault();
     if (!collabProjectId || !inviteCode.trim()) return;
 
-    if (inviteCode.trim() === String(userInfo.inviteCode) || inviteCode.trim() === String(userInfo.id)) {
+    if (inviteCode.trim() === String(userInfo.inviteCode)) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
       return;
     }
@@ -246,7 +245,6 @@ export default function Home() {
     try {
       const payload = {
         inviteeCode: inviteCode.trim(),
-        memberId: !isNaN(Number(inviteCode.trim())) ? Number(inviteCode.trim()) : undefined,
         role: inviteRole
       };
 
@@ -1295,7 +1293,7 @@ export default function Home() {
                               <span className="name-wrapper">
                                 <span className="name-text">{member.nickname}</span>
                               </span>
-                              <span className="email">{member.email || `ID: ${member.memberId}`}</span>
+                              <span className="email">{member.email || (typeof member.memberId === 'string' && member.memberId.startsWith('inv-') ? '응답 대기 중' : `ID: ${member.memberId}`)}</span>
                             </div>
                           </div>
                           <div className="actions">
