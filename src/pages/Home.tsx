@@ -134,9 +134,7 @@ export default function Home() {
               fetchedInviteCode = codeData.result?.inviteCode || (typeof codeData.result === 'string' ? codeData.result : '코드 없음');
             }
           }
-        } catch (e) {
-          console.error('초대코드 호출 에러', e);
-        }
+        } catch (e) {}
 
         const rawProvider = userData.result.provider || userData.result.socialType || userData.result.loginType || 'LOCAL';
         setUserInfo({ 
@@ -212,22 +210,26 @@ export default function Home() {
       }
 
       let pendingMembers: Collaborator[] = [];
-      try {
-        const res2 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators/invitations`);
-        if (res2.ok) {
-          const data2 = await res2.json();
-          if (data2.isSuccess ?? data2.is_success) {
-            pendingMembers = (data2.result?.invitations || [])
-              .filter((inv: any) => inv.status === 'PENDING')
-              .map((inv: any) => ({
-                memberId: `inv-${inv.invitationId}`,
-                nickname: inv.inviteeNickname,
-                role: inv.role,
-                status: 'PENDING'
-              }));
+      const project = projects.find(p => p.projectId === projectId);
+      
+      if (project?.myRole === 'OWNER') {
+        try {
+          const res2 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators/invitations`);
+          if (res2.ok) {
+            const data2 = await res2.json();
+            if (data2.isSuccess ?? data2.is_success) {
+              pendingMembers = (data2.result?.invitations || [])
+                .filter((inv: any) => inv.status === 'PENDING')
+                .map((inv: any) => ({
+                  memberId: `inv-${inv.invitationId}`,
+                  nickname: inv.inviteeNickname,
+                  role: inv.role,
+                  status: 'PENDING'
+                }));
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      }
 
       setCollaborators([...activeMembers, ...pendingMembers]);
     } catch (err) {}
@@ -646,9 +648,7 @@ export default function Home() {
             } else {
               await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}/collaborators/${userInfo.id}`, { method: 'DELETE' });
             }
-          } catch (err) {
-            console.error(`프로젝트 처리 중 오류 발생 (ID: ${proj.projectId})`, err);
-          }
+          } catch (err) {}
         })
       );
 
@@ -839,8 +839,16 @@ export default function Home() {
   const allMembers = processedMembers.sort((a, b) => {
     if (a.role === 'OWNER' && b.role !== 'OWNER') return -1;
     if (b.role === 'OWNER' && a.role !== 'OWNER') return 1;
+
     if (a.isMe && !b.isMe) return -1;
     if (b.isMe && !a.isMe) return 1;
+
+    if (a.status === 'PENDING' && b.status !== 'PENDING') return 1;
+    if (b.status === 'PENDING' && a.status !== 'PENDING') return -1;
+
+    if (a.role === 'EDITOR' && b.role === 'VIEWER') return -1;
+    if (b.role === 'EDITOR' && a.role === 'VIEWER') return 1;
+
     return a.nickname.localeCompare(b.nickname);
   });
 
@@ -1526,38 +1534,6 @@ export default function Home() {
   );
 }
 
-const toastAnimation = keyframes`
-  0% { opacity: 0; transform: translate(-50%, 20px); }
-  15% { opacity: 1; transform: translate(-50%, 0); }
-  85% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, 20px); }
-`;
-
-const ToastNotification = styled.div`
-  position: fixed;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #4a5568;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  z-index: 9999;
-  animation: ${toastAnimation} 3s ease forwards;
-  white-space: pre-wrap;
-  word-break: break-all;
-  text-align: center;
-  max-width: 80vw;
-`;
-
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-`;
-
 const PageContainer = styled.div`
   height: 100vh;
   display: flex;
@@ -1618,6 +1594,11 @@ const Avatar = styled.div`
     transform: scale(1.05);
     box-shadow: 0 2px 8px rgba(40, 180, 173, 0.3);
   }
+`;
+
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 `;
 
 const ProfileDropdown = styled.div`
@@ -2510,4 +2491,31 @@ const CloseBtn = styled.button`
     background: #e2e8f0;
     color: #1a1a1a;
   }
+`;
+
+const toastAnim = keyframes`
+  0% { opacity: 0; transform: translate(-50%, 20px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  85% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 20px); }
+`;
+
+const ToastNotification = styled.div`
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #4a5568;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 9999;
+  animation: ${toastAnim} 3s ease forwards;
+  white-space: pre-wrap;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80vw;
 `;
