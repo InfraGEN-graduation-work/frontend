@@ -76,6 +76,7 @@ export default function Home() {
 
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
   const [projectToLeave, setProjectToLeave] = useState<number | null>(null);
+  const [collaboratorToRemove, setCollaboratorToRemove] = useState<number | string | null>(null);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
 
@@ -308,28 +309,38 @@ export default function Home() {
     }
   };
 
-  const handleRemoveCollaborator = async (memberId: number | string) => {
+  const handleRemoveCollaborator = (memberId: number | string) => {
     if (!collabProjectId) return;
-    
-    if (!window.confirm('퇴출하시겠습니까?')) return;
+    setCollaboratorToRemove(memberId);
+  };
 
+  const confirmRemoveCollaborator = async () => {
+    if (!collabProjectId || !collaboratorToRemove) return;
+    
     try {
-      const targetId = typeof memberId === 'string' && memberId.startsWith('inv-') 
-        ? memberId.replace('inv-', '') 
-        : memberId;
+      const targetId = typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') 
+        ? collaboratorToRemove.replace('inv-', '') 
+        : collaboratorToRemove;
 
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${targetId}`, {
         method: 'DELETE'
       });
       
-      if (res.ok) {
-        setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
+      const text = await res.text();
+      let data: any = {};
+      try { data = text ? JSON.parse(text) : {}; } catch(e) {}
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
+        setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '처리 중 오류가 발생했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '처리 중 오류가 발생했습니다.' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    } finally {
+      setCollaboratorToRemove(null);
     }
   };
 
@@ -347,38 +358,18 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole })
       });
-      if (res.ok) {
+      
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (isSuccess) {
         setCollaborators(prev => prev.map(c => c.memberId === memberId ? { ...c, role: newRole as 'EDITOR' | 'VIEWER' } : c));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
-      }
-    } catch (err) {}
-  };
-
-  const handleDelegateOwner = async (memberId: number | string) => {
-    if (!collabProjectId) return;
-
-    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '수락 대기 중인 사용자에게는 방장을 위임할 수 없습니다.' }));
-      return;
-    }
-
-    if (!window.confirm('정말 이 참여자에게 OWNER 권한을 위임하시겠습니까?\n위임 후 본인은 EDITOR로 변경됩니다.')) return;
-
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'OWNER' })
-      });
-      if (res.ok) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: 'OWNER 권한이 위임되었습니다.' }));
-        setIsCollabModalOpen(false);
-        fetchDashboardData();
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한 위임에 실패했습니다. (API 명세상 EDITOR, VIEWER 변경만 허용될 수 있습니다)' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '권한 변경에 실패했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
     }
   };
 
@@ -554,14 +545,20 @@ export default function Home() {
     if (!projectToLeave) return;
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
-      if (res.ok) {
+      const text = await res.text();
+      let data: any = {};
+      try { data = text ? JSON.parse(text) : {}; } catch(e) {}
+
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트에서 나갔습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 나가기에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 나가기에 실패했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
     } finally {
       setProjectToLeave(null);
     }
@@ -1376,7 +1373,6 @@ export default function Home() {
                                   </div>
                                 </div>
                                 <div className="action-row-bottom">
-                                  <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
                                   <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
                                 </div>
                               </div>
@@ -1389,6 +1385,27 @@ export default function Home() {
                 </>
               )}
             </div>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {collaboratorToRemove !== null && (
+        <ModalOverlay onClick={() => setCollaboratorToRemove(null)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
+              {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') ? '초대 취소' : '참여자 퇴출'}
+            </ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
+              {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-')
+                ? '이 사용자에게 보낸 초대를 취소하시겠습니까?'
+                : '정말 이 참여자를 프로젝트에서 퇴출하시겠습니까?'}
+            </p>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setCollaboratorToRemove(null)}>닫기</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmRemoveCollaborator}>
+                {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') ? '초대취소' : '퇴출하기'}
+              </SubmitBtn>
+            </ModalActions>
           </ModalContent>
         </ModalOverlay>
       )}
@@ -2201,7 +2218,7 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   }
 
   .action-row-top { display: flex; justify-content: flex-end; width: 100%; }
-  .action-row-bottom { display: flex; gap: 4px; justify-content: flex-end; width: 100%; }
+  .action-row-bottom { display: flex; justify-content: flex-end; width: 100%; }
 
   .role-text { font-size: 12px; font-weight: 700; margin-top: 0; }
   .role-text.owner { color: #c05621; }
@@ -2210,7 +2227,7 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .role-text.pending { color: #d69e2e; }
 
   .remove-btn {
-    flex: 1;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2226,24 +2243,6 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     box-sizing: border-box;
   }
   .remove-btn:hover { background: #fed7d7; }
-
-  .delegate-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: white;
-    border: 1px solid #ecc94b;
-    color: #d69e2e;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 4px 0;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: 0.2s;
-    box-sizing: border-box;
-  }
-  .delegate-btn:hover { background: #fefcbf; }
 `;
 
 const InviteItem = styled.div`
