@@ -326,16 +326,17 @@ export default function Home() {
         method: 'DELETE'
       });
       
-      const text = await res.text();
-      let data: any = {};
-      try { data = text ? JSON.parse(text) : {}; } catch(e) {}
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (res.ok && isSuccess) {
+      if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '처리 중 오류가 발생했습니다.' }));
+        const text = await res.text();
+        let msg = '처리 중 오류가 발생했습니다.';
+        try {
+          const data = JSON.parse(text);
+          if (data.message) msg = data.message;
+        } catch(e) {}
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
@@ -358,19 +359,11 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole })
       });
-      
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (isSuccess) {
+      if (res.ok) {
         setCollaborators(prev => prev.map(c => c.memberId === memberId ? { ...c, role: newRole as 'EDITOR' | 'VIEWER' } : c));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
-      } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '권한 변경에 실패했습니다.' }));
       }
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
-    }
+    } catch (err) {}
   };
 
   const handleSubmitProject = async (e: React.FormEvent) => {
@@ -514,19 +507,17 @@ export default function Home() {
         method: 'DELETE'
       });
 
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = text ? JSON.parse(text) : {};
-      } catch(e) {}
-
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (res.ok && isSuccess) {
+      if (res.ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToDelete));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 삭제되었습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 삭제에 실패했습니다.' }));
+        const text = await res.text();
+        let msg = '프로젝트 삭제에 실패했습니다.';
+        try {
+          const data = JSON.parse(text);
+          if (data.message) msg = data.message;
+        } catch(e) {}
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
@@ -545,20 +536,21 @@ export default function Home() {
     if (!projectToLeave) return;
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
-      const text = await res.text();
-      let data: any = {};
-      try { data = text ? JSON.parse(text) : {}; } catch(e) {}
-
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (res.ok && isSuccess) {
+      
+      if (res.ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트에서 나갔습니다.' }));
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 나가기에 실패했습니다.' }));
+        const text = await res.text();
+        let msg = '프로젝트 나가기에 실패했습니다.';
+        try {
+          const data = JSON.parse(text);
+          if (data.message) msg = data.message;
+        } catch(e) {}
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다.' }));
     } finally {
       setProjectToLeave(null);
     }
@@ -576,11 +568,7 @@ export default function Home() {
               : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
 
             const res = await fetchWithAuth(endpoint, { method: 'DELETE' });
-            const text = await res.text();
-            let data: any = {};
-            try { data = text ? JSON.parse(text) : {}; } catch(e) {}
-            const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-            return { id, isSuccess };
+            return { id, isSuccess: res.ok };
           } catch(e) { return { id, isSuccess: false }; }
         })
       );
@@ -1335,6 +1323,7 @@ export default function Home() {
                               <span className="email">{member.email || (typeof member.memberId === 'string' && member.memberId.startsWith('inv-') ? '응답 대기 중' : `ID: ${member.memberId}`)}</span>
                             </div>
                           </div>
+                          
                           <div className="actions">
                             {member.status === 'PENDING' ? (
                               <PendingBadge onClick={() => handleRemoveCollaborator(member.memberId)}>
@@ -1344,37 +1333,33 @@ export default function Home() {
                             ) : !isCollabEditMode || member.isMe ? (
                               <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
                             ) : (
-                              <div style={{ width: '96px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                <div className="action-row-top">
-                                  <div style={{ position: 'relative', width: '100%' }}>
-                                    <div
-                                      onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', boxSizing: 'border-box', width: '100%' }}
-                                    >
-                                      <span>{member.role}</span>
-                                      <span style={{ fontSize: '8px' }}>▼</span>
-                                    </div>
-                                    {openRoleDropdownId === member.memberId && (
-                                      <div style={{ position: 'absolute', top: '100%', right: 0, width: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden', boxSizing: 'border-box' }}>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >EDITOR</div>
-                                        <div 
-                                          onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                          style={{ padding: '6px 8px', fontSize: '11px', cursor: 'pointer' }}
-                                          onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                          onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                        >VIEWER</div>
-                                      </div>
-                                    )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ position: 'relative' }}>
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
+                                    style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                  >
+                                    <span>{member.role}</span>
+                                    <span style={{ fontSize: '8px' }}>▼</span>
                                   </div>
+                                  {openRoleDropdownId === member.memberId && (
+                                    <div style={{ position: 'absolute', top: '100%', right: 0, minWidth: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
+                                      <div 
+                                        onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
+                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7', textAlign: 'center' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                      >EDITOR</div>
+                                      <div 
+                                        onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
+                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                      >VIEWER</div>
+                                    </div>
+                                  )}
                                 </div>
-                                <div className="action-row-bottom">
-                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
-                                </div>
+                                <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
                               </div>
                             )}
                           </div>
@@ -2213,12 +2198,9 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   }
 
   .actions { 
-    display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; 
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px; 
     flex-shrink: 0; 
   }
-
-  .action-row-top { display: flex; justify-content: flex-end; width: 100%; }
-  .action-row-bottom { display: flex; justify-content: flex-end; width: 100%; }
 
   .role-text { font-size: 12px; font-weight: 700; margin-top: 0; }
   .role-text.owner { color: #c05621; }
@@ -2227,7 +2209,6 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   .role-text.pending { color: #d69e2e; }
 
   .remove-btn {
-    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2237,10 +2218,10 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
-    padding: 4px 0;
+    padding: 4px 10px;
     border-radius: 4px;
     transition: 0.2s;
-    box-sizing: border-box;
+    white-space: nowrap;
   }
   .remove-btn:hover { background: #fed7d7; }
 `;
