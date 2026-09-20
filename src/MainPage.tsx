@@ -187,6 +187,16 @@ const MainPage: React.FC = () => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // 👉 추가 요청하신 global-toast 이벤트 리스너 부분입니다!
+  useEffect(() => {
+    const handleGlobalToast = (e: any) => {
+      setToastMessage(e.detail);
+      setTimeout(() => setToastMessage(null), 3000);
+    };
+    window.addEventListener('global-toast', handleGlobalToast);
+    return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
+
   const [leftWidth, setLeftWidth] = useState(320);
   const [rightWidth, setRightWidth] = useState(320);
   const [codeViewerWidth, setCodeViewerWidth] = useState(350);
