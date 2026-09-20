@@ -181,6 +181,7 @@ const MainPage: React.FC = () => {
   const [appMode, setAppMode] = useState<'editor' | 'generating'>('editor');
   const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isHomeConfirmModalOpen, setIsHomeConfirmModalOpen] = useState(false);
   const [genProgress, setGenProgress] = useState(0);
   const [uiResetTrigger, setUiResetTrigger] = useState(0);
   const [activityLog, setActivityLog] = useState<string[]>([]);
@@ -860,6 +861,7 @@ const MainPage: React.FC = () => {
       rawProperties.globalIncludeLocal = String(includeLocal);
       rawProperties.globalCloudSettings = JSON.stringify(cloudSettings);
 
+      // 더미 데이터 입력 코드를 삭제하고 정상적으로 속성만 지우도록 복구했습니다.
       if (file) {
         rawProperties.fileId = file.id;
         rawProperties.fileName = file.name;
@@ -869,23 +871,6 @@ const MainPage: React.FC = () => {
       } else {
         delete rawProperties.fileId; delete rawProperties.fileName; delete rawProperties.fileIsGenerated;
         delete rawProperties.fileGeneratedCodes; delete rawProperties.fileIsTarget;
-        
-        if (!rawProperties.name) rawProperties.name = `${n.type.replace(/ /g, '_')}_dummy`;
-        if (!rawProperties.containerName) rawProperties.containerName = `${n.type.replace(/ /g, '_')}_container`;
-        if (!rawProperties.port) rawProperties.port = "0";
-
-        if (n.type === 'MySQL') {
-          if (!rawProperties.imageVersion) rawProperties.imageVersion = "mysql:8.0";
-          if (!rawProperties.databaseName) rawProperties.databaseName = "dummy";
-          if (!rawProperties.username) rawProperties.username = "dummy";
-          if (!rawProperties.userPassword) rawProperties.userPassword = "dummy";
-          if (!rawProperties.rootPassword) rawProperties.rootPassword = "dummy1234";
-        } else if (n.type === 'Redis') {
-          if (!rawProperties.imageVersion) rawProperties.imageVersion = "redis:7.0";
-          if (!rawProperties.password) rawProperties.password = "dummy1234";
-        } else if (n.type === 'Spring Boot') {
-          if (!rawProperties.javaVersion) rawProperties.javaVersion = "17";
-        }
       }
 
       return {
@@ -1041,11 +1026,17 @@ const MainPage: React.FC = () => {
     }
   };
 
+  const confirmGoHome = () => {
+    setIsHomeConfirmModalOpen(false);
+    navigate('/dashboard');
+  };
+
   const handleGoHome = () => {
     if (activityLog.length > 0 || hasUnsavedChanges.current) {
-      if (!window.confirm('저장하지 않은 변경사항이 있습니다. 정말 나가시겠습니까?\n(저장하지 않고 나가면 최근 작업 내역이 날아갈 수 있습니다.)')) return;
+      setIsHomeConfirmModalOpen(true);
+    } else {
+      navigate('/dashboard');
     }
-    navigate('/dashboard');
   };
 
   const handleResetUI = () => {
@@ -1620,6 +1611,22 @@ const MainPage: React.FC = () => {
             <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsConfirmModalOpen(false)}>취소</button>
               <button className="modal-btn confirm" onClick={confirmGenerate}>생성</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isHomeConfirmModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsHomeConfirmModalOpen(false)} style={{ zIndex: 1100 }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title" style={{ color: '#e53e3e', fontSize: '18px' }}>저장하지 않은 변경사항이 있습니다</div>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
+              정말 이 페이지를 나가시겠습니까?<br />
+              저장하지 않고 나가면 최근 작업 내역이 날아갈 수 있습니다.
+            </p>
+            <div className="modal-actions" style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <button className="modal-btn cancel" onClick={() => setIsHomeConfirmModalOpen(false)}>취소</button>
+              <button className="modal-btn confirm" style={{ background: '#e53e3e' }} onClick={confirmGoHome}>나가기</button>
             </div>
           </div>
         </div>

@@ -721,7 +721,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
             <div className={`unassigned-box ${isDragOverUnassigned ? 'drag-over' : ''}`} onDragOver={handleDragOver} onDragEnter={() => { if (!isViewer) setIsDragOverUnassigned(true); }} onDragLeave={() => { if (!isViewer) setIsDragOverUnassigned(false); }} onDrop={handleDropToUnassigned}>
               <div className="unassigned-title" onClick={(e) => { e.stopPropagation(); setIsUnassignedCollapsed(!isUnassignedCollapsed); }}>
                 <span className="toggle-icon" style={{ marginRight: '6px', fontSize: '10px' }}>{isUnassignedCollapsed ? '▶' : '▼'}</span>
-                낱개로 배치된 Node (생성 제외됨)
+                낱개로 배치된 Node
               </div>
               {!isUnassignedCollapsed && (
                 <div className="unassigned-children">
