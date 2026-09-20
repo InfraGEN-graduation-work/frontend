@@ -469,17 +469,25 @@ export default function Home() {
     setMenuOpenId(null);
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}`);
+      const isOwner = proj.myRole === 'OWNER';
+      const url = isOwner
+        ? `${BASE_URL}/projects/${proj.projectId}`
+        : `${BASE_URL}/projects/${proj.projectId}/collaboration?afterVersion=0`;
+
+      const res = await fetchWithAuth(url);
       const data = await res.json();
 
       if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setNewTitle(data.result.title);
-        setNewDesc(data.result.description || '');
-        setEditNodes(data.result.nodes || []);
-        setEditEdges(data.result.edges || []);
+        const result = isOwner ? data.result : data.result?.project;
+        if (!result) throw new Error("데이터 구조 오류");
+
+        setNewTitle(result.title);
+        setNewDesc(result.description || '');
+        setEditNodes(result.nodes || []);
+        setEditEdges(result.edges || []);
         setEditTargetId(proj.projectId);
 
-        const fetchedNodes = data.result.nodes || [];
+        const fetchedNodes = result.nodes || [];
         let provider: CloudProvider = 'LOCAL';
         if (fetchedNodes.length > 0) {
           let props = fetchedNodes[0].properties || {};
@@ -490,8 +498,12 @@ export default function Home() {
         }
         setModalProvider(provider);
         setModalMode('edit');
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 정보를 불러오지 못했습니다.' }));
       }
-    } catch (err) {}
+    } catch (err) {
+       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+    }
   };
 
   const handleDeleteSingle = (e: React.MouseEvent, projectId: number) => {
@@ -701,9 +713,17 @@ export default function Home() {
     e.stopPropagation();
     setMenuOpenId(null);
     try {
-      const projRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`);
+      const proj = projects.find(p => p.projectId === projectId);
+      const isOwner = proj?.myRole === 'OWNER';
+
+      const url = isOwner
+        ? `${BASE_URL}/projects/${projectId}`
+        : `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`;
+
+      const projRes = await fetchWithAuth(url);
       const projObj = await projRes.json();
-      const nodes = projObj.result?.nodes || [];
+      const result = isOwner ? projObj.result : projObj.result?.project;
+      const nodes = result?.nodes || [];
 
       const allFiles: any[] = [];
       const folderMap = new Map();
@@ -737,7 +757,7 @@ export default function Home() {
         }
       });
 
-      if (allFiles.length === 0) {
+      if (allFiles.length === 0 && isOwner) {
         try {
           const histRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
           const histData = await histRes.json();
@@ -776,7 +796,9 @@ export default function Home() {
       setSelectedViewFile(allFiles[0]);
 
       setIsCodeViewerOpen(true);
-    } catch (err) {}
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드를 불러오는 중 서버 오류가 발생했습니다.' }));
+    }
   };
 
   const formatDate = (isoString: string) => {
@@ -872,6 +894,8 @@ export default function Home() {
             <Avatar>
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
+            {/* 프로필 이미지 우측 상단에 빨간 점 표시 (초대가 있을 경우) */}
+            {invitations.length > 0 && <ProfileDotBadge />}
 
             {isProfileMenuOpen && (
               <ProfileDropdown onClick={(e) => e.stopPropagation()}>
@@ -997,9 +1021,17 @@ export default function Home() {
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>{isProjOwner ? '수정' : '정보'}</DropdownItem>
-                              <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
-                              <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>기록</DropdownItem>
+                              
+                              {/* 방장(OWNER)인 경우에만 참여자, 기록 메뉴 노출 */}
+                              {isProjOwner && (
+                                <>
+                                  <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
+                                  <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>기록</DropdownItem>
+                                </>
+                              )}
+
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>코드</DropdownItem>
+                              
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -1416,7 +1448,7 @@ export default function Home() {
                     return (
                       <CVFileItem 
                         key={file.fileId} 
-                        $selected={false}$isViewing={isViewing}
+                        $isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
                         }}
@@ -1533,6 +1565,17 @@ export default function Home() {
     </PageContainer>
   );
 }
+
+const ProfileDotBadge = styled.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  background-color: #e53e3e;
+  border-radius: 50%;
+  border: 2px solid white;
+`;
 
 const PageContainer = styled.div`
   height: 100vh;
@@ -2378,7 +2421,7 @@ const CVFileList = styled.div`
   gap: 6px;
 `;
 
-const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
+const CVFileItem = styled.div<{ $isViewing: boolean }>`
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 13px;
@@ -2389,9 +2432,9 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   transition: 0.2s;
   position: relative;
 
-  background: ${({ $selected }) => $selected ? '#f0fdfc' : 'transparent'};
-  color: ${({ $selected }) => $selected ? '#28b4ad' : '#4a5568'};
-  border: 1px solid ${({ $selected }) => $selected ? 'var(--mint)' : 'transparent'};
+  background: ${({ $isViewing }) => $isViewing ? '#f0fdfc' : 'transparent'};
+  color: ${({ $isViewing }) => $isViewing ? '#28b4ad' : '#4a5568'};
+  border: 1px solid ${({ $isViewing }) => $isViewing ? '#28b4ad' : 'rgba(40, 180, 173, 0.3)'};
 
   ${({ $isViewing }) => $isViewing && css`
     &::before {
@@ -2408,7 +2451,7 @@ const CVFileItem = styled.div<{ $selected: boolean; $isViewing: boolean }>`
   `}
 
   &:hover {
-    background: ${({ $selected }) => $selected ? '#e6fcfb' : '#f1f3f5'};
+    background: ${({ $isViewing }) => $isViewing ? '#e6fcfb' : '#f1f3f5'};
   }
 `;
 
