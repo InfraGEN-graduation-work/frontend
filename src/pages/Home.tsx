@@ -311,22 +311,26 @@ export default function Home() {
   const handleRemoveCollaborator = async (memberId: number | string) => {
     if (!collabProjectId) return;
     
-    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '발송된 초대는 상대방이 응답하기 전까지 강제로 취소할 수 없습니다.' }));
-      return;
-    }
-
-    if (!window.confirm('정말 이 참여자를 퇴출/취소하시겠습니까?')) return;
+    if (!window.confirm('퇴출하시겠습니까?')) return;
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
+      const targetId = typeof memberId === 'string' && memberId.startsWith('inv-') 
+        ? memberId.replace('inv-', '') 
+        : memberId;
+
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${targetId}`, {
         method: 'DELETE'
       });
+      
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== memberId));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '처리 중 오류가 발생했습니다.' }));
       }
-    } catch (err) {}
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    }
   };
 
   const handleRoleChange = async (memberId: number | string, newRole: string) => {
@@ -371,7 +375,7 @@ export default function Home() {
         setIsCollabModalOpen(false);
         fetchDashboardData();
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한 위임에 실패했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한 위임에 실패했습니다. (API 명세상 EDITOR, VIEWER 변경만 허용될 수 있습니다)' }));
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
@@ -894,7 +898,6 @@ export default function Home() {
             <Avatar>
               {userInfo.nickname.charAt(0).toUpperCase()}
             </Avatar>
-            {/* 프로필 이미지 우측 상단에 빨간 점 표시 (초대가 있을 경우) */}
             {invitations.length > 0 && <ProfileDotBadge />}
 
             {isProfileMenuOpen && (
@@ -1022,7 +1025,6 @@ export default function Home() {
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>{isProjOwner ? '수정' : '정보'}</DropdownItem>
                               
-                              {/* 방장(OWNER)인 경우에만 참여자, 기록 메뉴 노출 */}
                               {isProjOwner && (
                                 <>
                                   <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
@@ -1338,7 +1340,10 @@ export default function Home() {
                           </div>
                           <div className="actions">
                             {member.status === 'PENDING' ? (
-                              <span className="role-text pending" style={{ color: '#d69e2e' }}>수락대기</span>
+                              <PendingBadge onClick={() => handleRemoveCollaborator(member.memberId)}>
+                                <span className="default-text">수락대기</span>
+                                <span className="hover-text">초대취소</span>
+                              </PendingBadge>
                             ) : !isCollabEditMode || member.isMe ? (
                               <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
                             ) : (
@@ -1372,7 +1377,7 @@ export default function Home() {
                                 </div>
                                 <div className="action-row-bottom">
                                   <button className="delegate-btn" onClick={() => handleDelegateOwner(member.memberId)}>위임</button>
-                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>취소</button>
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
                                 </div>
                               </div>
                             )}
@@ -1575,6 +1580,26 @@ const ProfileDotBadge = styled.div`
   background-color: #e53e3e;
   border-radius: 50%;
   border: 2px solid white;
+`;
+
+const PendingBadge = styled.div`
+  font-size: 12px;
+  font-weight: 700;
+  color: #d69e2e;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: 0.2s;
+  text-align: center;
+
+  .hover-text { display: none; }
+  
+  &:hover {
+    background: #fff5f5;
+    color: #e53e3e;
+    .default-text { display: none; }
+    .hover-text { display: inline; }
+  }
 `;
 
 const PageContainer = styled.div`
