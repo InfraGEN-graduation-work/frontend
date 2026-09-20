@@ -122,7 +122,7 @@ const MainPage: React.FC = () => {
 
   const [showTutorial, setShowTutorial] = useState(false);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
-  
+
   const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('OWNER');
 
   const [projectName, setProjectName] = useState('로딩중...');
@@ -130,7 +130,7 @@ const MainPage: React.FC = () => {
 
   const [cloudProvider, setCloudProvider] = useState<CloudProvider>('LOCAL');
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
-  
+
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
     region: 'ap-northeast-2',
     vpcName: 'infragen-vpc',
@@ -153,7 +153,7 @@ const MainPage: React.FC = () => {
 
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
   const [zoomLevel, setZoomLevel] = useState(1);
-  
+
   const [nodes, setNodes] = useState<NodeData[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
@@ -162,12 +162,12 @@ const MainPage: React.FC = () => {
 
   const [files, setFiles] = useState<FileGroup[]>([]);
   const [targetFileIds, setTargetFileIds] = useState<string[]>([]);
-  
+
   const [leftActiveTab, setLeftActiveTab] = useState<'Project' | 'Settings' | 'Validation'>('Project');
-  
+
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState(0);
-  
+
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
 
   const [history, setHistory] = useState<HistoryState[]>([]);
@@ -213,7 +213,7 @@ const MainPage: React.FC = () => {
       const url = `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`;
       const res = await fetchWithAuth(url);
       const data = await res.json();
-      
+
       if (res.ok && (data.isSuccess ?? data.is_success)) {
         const resultProject = data.result?.project || data.result;
         if (!resultProject) return;
@@ -270,14 +270,14 @@ const MainPage: React.FC = () => {
             reconstructedFiles[props.fileId].nodeIds.push(n.id);
           }
         });
-        
+
         const loadedFiles = Object.values(reconstructedFiles).map((f: any) => f as FileGroup);
-        
+
         setNodes(loadedNodes);
         setEdges(loadedEdges);
         setFiles(loadedFiles);
         setTargetFileIds(loadedFiles.filter((f: any) => f._isTarget).map(f => f.id));
-        
+
         hasUnsavedChanges.current = false;
       }
     } catch (err) {
@@ -294,7 +294,7 @@ const MainPage: React.FC = () => {
     const connectWebSocket = () => {
       const wsUrl = `${WS_BASE_URL}/ws/projects/${projectId}?token=${accessToken}`;
       const ws = new WebSocket(wsUrl);
-      
+
       ws.onopen = () => {
         console.log('Project WebSocket Connected for real-time collaboration');
       };
@@ -302,13 +302,13 @@ const MainPage: React.FC = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           if (data.type === 'CURSOR_MOVE' && String(data.memberId) !== String(userInfo.id)) {
             setOtherCursors(prev => {
               const existing = prev.find(c => String(c.memberId) === String(data.memberId));
               const colorIndex = typeof data.memberId === 'number' ? data.memberId : parseInt(data.memberId) || 0;
               const color = existing ? existing.color : CURSOR_COLORS[colorIndex % CURSOR_COLORS.length];
-              
+
               const updated = prev.filter(c => String(c.memberId) !== String(data.memberId));
               return [...updated, { 
                 memberId: data.memberId, 
@@ -420,7 +420,7 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     if (!isDataLoaded.current) return;
-    
+
     setFiles(prevFiles => {
       let changed = false;
       const nextFiles = prevFiles.map(f => {
@@ -452,13 +452,13 @@ const MainPage: React.FC = () => {
   const activeEdges = edges.filter(e => !unassignedNodeIds.includes(e.sourceId) && !unassignedNodeIds.includes(e.targetId));
 
   const validationErrors: ValidationError[] = [];
-  
+
   if (activeNodes.length === 0 && nodes.length > 0) {
     validationErrors.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 노드 목록]으로 이동해주세요.', isProjectTab: true });
   } else if (nodes.length === 0) {
     validationErrors.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
   }
-  
+
   if (targetFileIds.length === 0) {
     validationErrors.push({ 
       name: '생성 대상 없음', 
@@ -473,7 +473,7 @@ const MainPage: React.FC = () => {
 
   activeNodes.forEach(node => {
     const settings = node.settings || {};
-    
+
     const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
       if (val && !nameRegex.test(val)) {
         validationErrors.push({ 
@@ -504,7 +504,7 @@ const MainPage: React.FC = () => {
 
     if (node.type === 'MySQL') {
       if (!settings.imageVersion) validationErrors.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-      
+
       if (!settings.databaseName) validationErrors.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
       else checkNameFormat(settings.databaseName, '데이터베이스 이름', 'databaseName');
 
@@ -519,15 +519,15 @@ const MainPage: React.FC = () => {
         validationErrors.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
       }
     }
-    
+
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-      
+
       if (!settings.password) {
         validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
       }
     }
-    
+
     if (node.type === 'Spring Boot') {
       if (!settings.javaVersion) validationErrors.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'javaVersion' });
     }
@@ -659,7 +659,7 @@ const MainPage: React.FC = () => {
           setProjectDescription(resultProject.description || '');
 
           const fetchedNodes = resultProject.nodes || [];
-          
+
           let loadedCloudProvider: CloudProvider = 'LOCAL';
           let loadedIncludeLocal = true;
           let loadedCloudSettings: CloudSettings = { ...cloudSettings };
@@ -741,7 +741,7 @@ const MainPage: React.FC = () => {
               reconstructedFiles[props.fileId].nodeIds.push(n.id);
             }
           });
-          
+
           const loadedFiles = Object.values(reconstructedFiles).map((f: any) => {
             if (f.isGenerated) {
               f.lastHash = computeFileHash(f, loadedNodes, loadedEdges, loadedCloudProvider, loadedIncludeLocal, loadedCloudSettings);
@@ -749,7 +749,7 @@ const MainPage: React.FC = () => {
             return f as FileGroup;
           });
           setFiles(loadedFiles);
-          
+
           const loadedTargetFileIds = loadedFiles.filter((f: any) => f._isTarget).map(f => f.id);
           setTargetFileIds(loadedTargetFileIds);
 
@@ -765,7 +765,7 @@ const MainPage: React.FC = () => {
       .catch(() => setProjectName('연결 오류'));
     }
   }, [navigate, projectId, fetchWithAuth]);
-  
+
   const prevEdges = useRef(edges);
   useEffect(() => {
     if (isDataLoaded.current && !isUndoRedo.current) {
@@ -855,11 +855,11 @@ const MainPage: React.FC = () => {
     const mappedNodes = nodes.map(n => {
       const file = currentFiles.find(f => f.nodeIds.includes(n.id));
       const rawProperties: any = { ...(n as any).settings };
-      
+
       rawProperties.globalCloudProvider = cloudProvider;
       rawProperties.globalIncludeLocal = String(includeLocal);
       rawProperties.globalCloudSettings = JSON.stringify(cloudSettings);
-      
+
       if (file) {
         rawProperties.fileId = file.id;
         rawProperties.fileName = file.name;
@@ -869,6 +869,23 @@ const MainPage: React.FC = () => {
       } else {
         delete rawProperties.fileId; delete rawProperties.fileName; delete rawProperties.fileIsGenerated;
         delete rawProperties.fileGeneratedCodes; delete rawProperties.fileIsTarget;
+        
+        if (!rawProperties.name) rawProperties.name = `${n.type.replace(/ /g, '_')}_dummy`;
+        if (!rawProperties.containerName) rawProperties.containerName = `${n.type.replace(/ /g, '_')}_container`;
+        if (!rawProperties.port) rawProperties.port = "0";
+
+        if (n.type === 'MySQL') {
+          if (!rawProperties.imageVersion) rawProperties.imageVersion = "mysql:8.0";
+          if (!rawProperties.databaseName) rawProperties.databaseName = "dummy";
+          if (!rawProperties.username) rawProperties.username = "dummy";
+          if (!rawProperties.userPassword) rawProperties.userPassword = "dummy";
+          if (!rawProperties.rootPassword) rawProperties.rootPassword = "dummy1234";
+        } else if (n.type === 'Redis') {
+          if (!rawProperties.imageVersion) rawProperties.imageVersion = "redis:7.0";
+          if (!rawProperties.password) rawProperties.password = "dummy1234";
+        } else if (n.type === 'Spring Boot') {
+          if (!rawProperties.javaVersion) rawProperties.javaVersion = "17";
+        }
       }
 
       return {
@@ -1057,13 +1074,13 @@ const MainPage: React.FC = () => {
   const confirmGenerate = async () => {
     setIsConfirmModalOpen(false); setAppMode('generating'); setGenProgress(0);
     saveHistory(); 
-    
+
     if (projectId) {
       try {
         const progressInterval = setInterval(() => setGenProgress(prev => (prev >= 90 ? 90 : prev + 5)), 100);
 
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
-        
+
         let currentVersion = 0;
         try {
           const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
@@ -1078,7 +1095,7 @@ const MainPage: React.FC = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: projectName, description: projectDescription, nodes: mappedNodes, edges: mappedEdges, baseVersion: currentVersion })
         });
-        
+
         if (!putRes.ok) {
           const putData = await putRes.json();
           alert(putData.message || '프로젝트 저장 중 오류가 발생하여 코드 생성을 중단합니다.');
@@ -1178,18 +1195,18 @@ const MainPage: React.FC = () => {
 
         if (generateRes.ok && (generateData.isSuccess ?? generateData.is_success)) {
           const generatedFilesFromApi = generateData.result.files || [];
-          
+
           const updatedFilesList = [...files];
           if (updatedFilesList.length > 0) {
             const newHash = computeFileHash(updatedFilesList[0], nodes, edges, cloudProvider, includeLocal, cloudSettings);
             updatedFilesList[0] = { ...updatedFilesList[0], isGenerated: true, generatedFiles: generatedFilesFromApi, lastHash: newHash };
           }
-          
+
           setFiles(updatedFilesList); 
           hasUnsavedChanges.current = false;
-          
+
           const finalMapped = getMappedCanvasData(updatedFilesList); 
-          
+
           try {
             const collabResAfterGen = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
             if (collabResAfterGen.ok) {
@@ -1252,7 +1269,7 @@ const MainPage: React.FC = () => {
     saveHistory();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
-    
+
     const defaultSettings: any = {};
     if (type === 'MySQL') {
       defaultSettings.imageVersion = 'mysql:8.0';
@@ -1267,16 +1284,6 @@ const MainPage: React.FC = () => {
 
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
     setNodes((prev) => [...prev, newNode]);
-
-    setFiles((prevFiles) => {
-      const updatedFiles = [...prevFiles];
-      if (updatedFiles.length === 0) {
-        updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 노드 목록', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
-      } else {
-        updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, newNode.id] };
-      }
-      return updatedFiles;
-    });
 
     logActivity(`[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`);
   };
@@ -1305,7 +1312,7 @@ const MainPage: React.FC = () => {
     const deletedNodes = nodes.filter(n => nodeIdsToDelete.includes(n.id)).map(n => n.name);
     if (deletedFiles.length > 0) logActivity(`[삭제] 우측 패널에서 ${deletedFiles.map(n => `'${n}'`).join(', ')} 폴더를 삭제했습니다.`);
     if (deletedNodes.length > 0) logActivity(`[삭제] 우측 패널에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`);
-    
+
     setFiles((prev) => prev.filter(f => !fileIdsToDelete.includes(f.id)).map(f => ({ ...f, nodeIds: f.nodeIds.filter(id => !nodeIdsToDelete.includes(id)) })));
     setNodes((prev) => prev.filter(n => !nodeIdsToDelete.includes(n.id)));
     setEdges((prev) => prev.filter(e => !nodeIdsToDelete.includes(e.sourceId) && !nodeIdsToDelete.includes(e.targetId)));
@@ -1317,7 +1324,7 @@ const MainPage: React.FC = () => {
       if (appMode !== 'editor') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-      
+
       if (myRole === 'VIEWER') return; 
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -1347,30 +1354,30 @@ const MainPage: React.FC = () => {
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
         if (clipboard.length > 0) {
           e.preventDefault(); saveHistory();
-          
+
           const newSelectedIds: string[] = [];
           const newNodes: NodeData[] = [];
-          
+
           clipboard.forEach((n, idx) => {
             let baseName = n.name;
             if (/\d+$/.test(baseName)) baseName = baseName.replace(/_\d+$/, ''); 
             let finalName = baseName; let counter = 1;
             const allCurrentNames = [...nodes.map(node => node.name), ...newNodes.map(node => node.name)];
-            
+
             while (allCurrentNames.includes(finalName)) { finalName = `${baseName}_${counter}`; counter++; }
-            
+
             const newNodeId = `node-${Date.now()}-${idx}`;
             newSelectedIds.push(newNodeId);
 
             const newSettings = { ...n.settings };
             if (newSettings.name) newSettings.name = finalName;
-            
+
             newNodes.push({ ...n, id: newNodeId, name: finalName, x: n.x + 30, y: n.y + 30, settings: newSettings });
           });
-          
+
           setNodes(prev => [...prev, ...newNodes]);
           setSelectedNodeIds(newSelectedIds);
-          
+
           setFiles((prev) => {
             const updatedFiles = [...prev];
             if (updatedFiles.length === 0) {
@@ -1395,7 +1402,7 @@ const MainPage: React.FC = () => {
 
   const globalErrors = validationErrors.filter(e => e.isGlobal || !e.targetNodeId);
   const nodeErrorsMap = new Map<string, typeof validationErrors>();
-  
+
   validationErrors.forEach(e => {
     if (!e.isGlobal && e.targetNodeId) {
       if (!nodeErrorsMap.has(e.targetNodeId)) nodeErrorsMap.set(e.targetNodeId, []);
@@ -1429,7 +1436,7 @@ const MainPage: React.FC = () => {
       onOpenTutorial={() => setShowTutorial(true)}
       onGoHome={handleGoHome}
     />
-      
+
       {appMode === 'editor' ? (
         <div className="main-layout">
           <LeftPanel 
@@ -1467,7 +1474,7 @@ const MainPage: React.FC = () => {
             otherCursors={otherCursors}
             onCursorMove={handleCursorMove}
           />
-          
+
           {selectedFileId && (
             <>
               <div 
@@ -1485,7 +1492,7 @@ const MainPage: React.FC = () => {
                           {f.name} <span style={{fontSize:'11px', color:'#718096', fontWeight:'normal'}}>(프로젝트 폴더)</span>
                         </div>
                       </div>
-                      
+
                       <div className="code-viewer-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, border: 'none', background: 'transparent' }}>
                         {f.generatedFiles && f.generatedFiles.length > 0 ? (
                           <>
@@ -1499,9 +1506,9 @@ const MainPage: React.FC = () => {
                             </div>
                             <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
                               <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center' }}>
-                                {f.generatedFiles[activeSubTab]?.fileName}
+                                {f?.generatedFiles?.[activeSubTab]?.fileName}
                               </div>
-                              {f.generatedFiles[activeSubTab]?.content}
+                              {f?.generatedFiles?.[activeSubTab]?.content}
                             </div>
                           </>
                         ) : (
@@ -1550,7 +1557,7 @@ const MainPage: React.FC = () => {
           <style>{`
             .hide-scrollbar::-webkit-scrollbar { display: none; }
             .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-            
+
             .modal-error-group { margin-bottom: 8px; border: 1px solid #fbd5d5; border-radius: 8px; background: #fafafa; overflow: hidden; }
             .modal-error-group-header { padding: 10px 12px; font-size: 13px; font-weight: bold; color: #9b2c2c; background: #fdf2f2; display: flex; align-items: center; }
             .modal-error-group-content { padding: 10px; display: flex; flex-direction: column; gap: 8px; background: white; border-top: 1px solid #fbd5d5; }
@@ -1559,7 +1566,7 @@ const MainPage: React.FC = () => {
             <div className="modal-title error">프로젝트를 생성할 수 없습니다.</div>
             <div className="modal-body hide-scrollbar" style={{ maxHeight: '400px', overflowY: 'auto', padding: '12px' }}>
               <div style={{fontWeight: 'bold', marginBottom: '12px', color: '#e53e3e'}}>총 {validationErrors.length}개의 오류가 발견되었습니다.</div>
-              
+
               {globalErrors.length > 0 && (
                 <div className="modal-error-group">
                   <div className="modal-error-group-header">프로젝트 & 클라우드 설정</div>
