@@ -26,7 +26,15 @@ export default function LoginPage() {
 
   const [showLogin, setShowLogin] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
+  const [showFindAccount, setShowFindAccount] = useState(false);
   
+  const [findEmail, setFindEmail] = useState("");
+  const [findCode, setFindCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [findCountdown, setFindCountdown] = useState(0);
+  const [findError, setFindError] = useState("");
+
   const params = new URLSearchParams(window.location.search);
   const kakaoCode = params.get("code");
   const kakaoError = params.get("error");
@@ -41,6 +49,16 @@ export default function LoginPage() {
     window.addEventListener('global-toast', handleGlobalToast);
     return () => window.removeEventListener('global-toast', handleGlobalToast);
   }, []);
+
+  useEffect(() => {
+    let timer;
+    if (findCountdown > 0) {
+      timer = setInterval(() => {
+        setFindCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [findCountdown]);
 
   useEffect(() => {
     if (kakaoError) {
@@ -188,6 +206,84 @@ export default function LoginPage() {
     }
   };
 
+  const handleSendFindCode = async () => {
+    if (!findEmail) {
+      setFindError("이메일을 입력해주세요.");
+      return;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(findEmail)) {
+      setFindError("올바른 이메일 형식을 입력해주세요.");
+      return;
+    }
+    setFindError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/auth/email/code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: findEmail }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '인증번호가 발송되었습니다. 이메일을 확인해주세요.' }));
+        setFindCountdown(60); 
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '인증번호 발송에 실패했습니다.' }));
+      }
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!findEmail || !findCode || !newPassword || !newPasswordConfirm) {
+      setFindError("모든 필드를 입력해주세요.");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setFindError("비밀번호는 8자 이상이어야 합니다.");
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setFindError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    setFindError("");
+
+    try {
+      const res = await fetch(`${BASE_URL}/auth/password/reset`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: findEmail,
+          verificationCode: findCode,
+          newPassword: newPassword,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (res.ok && isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호가 성공적으로 재설정되었습니다. 새 비밀번호로 로그인해주세요.' }));
+        setFindEmail(""); setFindCode(""); setNewPassword(""); setNewPasswordConfirm("");
+        setShowFindAccount(false);
+        setShowEmailForm(true);
+      } else {
+        if (res.status === 404) {
+           setFindError("현재 백엔드 서버에 비밀번호 재설정 API가 존재하지 않습니다.");
+        } else {
+           setFindError(data.message || "인증번호가 올바르지 않거나 재설정에 실패했습니다.");
+        }
+      }
+    } catch (error) {
+      setFindError("서버와 통신할 수 없습니다. 다시 시도해주세요.");
+    }
+  };
+
   if (isKakaoProcessing) {
     return (
       <KakaoProcessingPage>
@@ -217,7 +313,70 @@ export default function LoginPage() {
 
         <LoginSection>
           <Card>
-            {!showEmailForm ? (
+            {showFindAccount ? (
+              <>
+                <BackButton type="button" onClick={() => { setFindError(""); setShowFindAccount(false); }}>
+                  ← 돌아가기
+                </BackButton>
+
+                <LogoWrap>
+                  <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
+                </LogoWrap>
+
+                <BrandName style={{ fontSize: '20px', marginBottom: '8px' }}>비밀번호 재설정</BrandName>
+                <p style={{ fontSize: '13px', color: '#888', marginBottom: '24px', textAlign: 'center' }}>
+                  가입하신 이메일로 인증번호를 받아<br/>비밀번호를 재설정할 수 있습니다.
+                </p>
+
+                <LoginForm onSubmit={handleResetPassword}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <InputField
+                      type="email"
+                      placeholder="가입한 이메일"
+                      value={findEmail}
+                      onChange={(e) => { setFindEmail(e.target.value); setFindError(""); }}
+                      style={{ flex: 1 }}
+                    />
+                    <SendCodeBtn 
+                      type="button" 
+                      onClick={handleSendFindCode} 
+                      disabled={findCountdown > 0 || !findEmail}
+                    >
+                      {findCountdown > 0 ? `재발송 (${Math.floor(findCountdown / 60)}:${String(findCountdown % 60).padStart(2, '0')})` : '인증 발송'}
+                    </SendCodeBtn>
+                  </div>
+                  
+                  <InputField
+                    type="text"
+                    placeholder="인증번호 6자리"
+                    maxLength={6}
+                    value={findCode}
+                    onChange={(e) => {
+                      setFindCode(e.target.value.replace(/[^0-9]/g, ''));
+                      setFindError("");
+                    }}
+                  />
+                  
+                  <InputField
+                    type="password"
+                    placeholder="새 비밀번호 (8자 이상)"
+                    value={newPassword}
+                    onChange={(e) => { setNewPassword(e.target.value); setFindError(""); }}
+                  />
+                  
+                  <InputField
+                    type="password"
+                    placeholder="새 비밀번호 확인"
+                    value={newPasswordConfirm}
+                    onChange={(e) => { setNewPasswordConfirm(e.target.value); setFindError(""); }}
+                  />
+                  
+                  {findError && <ErrorMsg>{findError}</ErrorMsg>}
+                  
+                  <LoginButton type="submit" style={{ marginTop: '10px' }}>비밀번호 변경하기</LoginButton>
+                </LoginForm>
+              </>
+            ) : !showEmailForm ? (
               <>
                 <LogoWrap>
                   <img src={logo} alt="InfraGen" width="64" height="64" style={{ borderRadius: 16 }} />
@@ -241,7 +400,7 @@ export default function LoginPage() {
                 </ButtonGroup>
 
                 <TextRow>
-                  <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
+                  <FindAccountButton type="button" onClick={() => { setError(""); setShowFindAccount(true); }}>계정 찾기</FindAccountButton>
                   <Dot />
                   <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
                 </TextRow>
@@ -278,7 +437,7 @@ export default function LoginPage() {
                 </LoginForm>
 
                 <TextRow style={{ marginTop: '16px', marginBottom: 0 }}>
-                  <FindAccountButton type="button" onClick={() => {}}>계정 찾기</FindAccountButton>
+                  <FindAccountButton type="button" onClick={() => { setError(""); setShowFindAccount(true); }}>계정 찾기</FindAccountButton>
                   <Dot />
                   <SignupLink type="button" onClick={() => navigate("/signup")}>회원가입</SignupLink>
                 </TextRow>
@@ -568,6 +727,23 @@ const InputField = styled.input`
     border-color: #7b6cf6;
     background: #fff;
   }
+`;
+
+const SendCodeBtn = styled.button`
+  flex-shrink: 0;
+  width: 90px;
+  height: 50px;
+  background: ${(props) => (props.disabled ? '#e2e8f0' : '#1a1a1a')};
+  color: ${(props) => (props.disabled ? '#a0aec0' : '#fff')};
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: ${(props) => (props.disabled ? 'not-allowed' : 'pointer')};
+  transition: 0.2s;
+  font-family: inherit;
+
+  &:active { transform: ${(props) => (props.disabled ? 'none' : 'scale(0.98)')}; }
 `;
 
 const ErrorMsg = styled.p`
