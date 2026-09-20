@@ -12,7 +12,7 @@ import Tutorial from './components/Tutorial';
 import { useAuth } from './contexts/AuthContext';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
-const WS_URL = BASE_URL.replace(/^http/, 'ws');
+const WS_BASE_URL = BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
 
 interface HistoryState {
   nodes: NodeData[];
@@ -208,10 +208,14 @@ const MainPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!projectId || !userInfo.id) return;
+    if (!projectId || !userInfo.id || !accessToken) return;
+
+    let isComponentMounted = true;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
 
     const connectWebSocket = () => {
-      const ws = new WebSocket(`${WS_URL}/ws/projects/${projectId}/cursor?token=${accessToken}`);
+      const wsUrl = `${WS_BASE_URL}/ws/projects/${projectId}/cursor?token=${accessToken}`;
+      const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
         console.log('Cursor WebSocket Connected');
@@ -220,22 +224,24 @@ const MainPage: React.FC = () => {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'CURSOR_MOVE' && data.memberId !== userInfo.id) {
+          if (data.type === 'CURSOR_MOVE' && String(data.memberId) !== String(userInfo.id)) {
             setOtherCursors(prev => {
-              const existing = prev.find(c => c.memberId === data.memberId);
-              const color = existing ? existing.color : CURSOR_COLORS[data.memberId % CURSOR_COLORS.length];
+              const existing = prev.find(c => String(c.memberId) === String(data.memberId));
+              const colorIndex = typeof data.memberId === 'number' ? data.memberId : parseInt(data.memberId) || 0;
+              const color = existing ? existing.color : CURSOR_COLORS[colorIndex % CURSOR_COLORS.length];
               
-              const updated = prev.filter(c => c.memberId !== data.memberId);
+              const updated = prev.filter(c => String(c.memberId) !== String(data.memberId));
               return [...updated, { 
                 memberId: data.memberId, 
-                nickname: data.nickname, 
+                nickname: data.nickname || '참여자', 
                 x: data.x, 
                 y: data.y, 
                 color 
               }];
             });
-          } else if (data.type === 'MEMBER_LEAVE') {
-            setOtherCursors(prev => prev.filter(c => c.memberId !== data.memberId));
+          } 
+          else if (data.type === 'MEMBER_LEAVE') {
+            setOtherCursors(prev => prev.filter(c => String(c.memberId) !== String(data.memberId)));
           }
         } catch (e) {
           console.error("Cursor parse error", e);
@@ -243,8 +249,10 @@ const MainPage: React.FC = () => {
       };
 
       ws.onclose = () => {
-        console.log('Cursor WebSocket Disconnected. Reconnecting in 3s...');
-        setTimeout(connectWebSocket, 3000);
+        if (isComponentMounted) {
+          console.log('Cursor WebSocket Disconnected. Reconnecting...');
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        }
       };
 
       wsRef.current = ws;
@@ -253,6 +261,8 @@ const MainPage: React.FC = () => {
     connectWebSocket();
 
     return () => {
+      isComponentMounted = false;
+      clearTimeout(reconnectTimeout);
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -553,15 +563,17 @@ const MainPage: React.FC = () => {
       .catch(() => setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' }));
 
     if (projectId) {
-      fetchWithAuth(`${BASE_URL}/projects/${projectId}`)
+      fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`)
       .then(res => res.json())
       .then(data => {
         const isSuccess = data.isSuccess ?? data.is_success;
-        if (isSuccess && data.result) {
-          setProjectName(data.result.title);
-          setProjectDescription(data.result.description || '');
+        const resultProject = data.result?.project || data.result;
 
-          const fetchedNodes = data.result.nodes || [];
+        if (isSuccess && resultProject) {
+          setProjectName(resultProject.title);
+          setProjectDescription(resultProject.description || '');
+
+          const fetchedNodes = resultProject.nodes || [];
           
           let loadedCloudProvider: CloudProvider = 'LOCAL';
           let loadedIncludeLocal = true;
@@ -615,7 +627,7 @@ const MainPage: React.FC = () => {
           });
           setNodes(loadedNodes);
 
-          const fetchedEdges = data.result.edges || [];
+          const fetchedEdges = resultProject.edges || [];
           const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
             id: e.edgeId || `edge-${e.id}`,
             sourceId: e.sourceNodeId?.toString(),
