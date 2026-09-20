@@ -207,6 +207,84 @@ const MainPage: React.FC = () => {
     setActivityLog(prev => prev.includes(msg) ? prev : [...prev, msg]);
   }, []);
 
+  const fetchProjectDataSilently = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const url = `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`;
+      const res = await fetchWithAuth(url);
+      const data = await res.json();
+      
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        const resultProject = data.result?.project || data.result;
+        if (!resultProject) return;
+
+        setProjectName(resultProject.title);
+        setProjectDescription(resultProject.description || '');
+
+        const fetchedNodes = resultProject.nodes || [];
+        const fetchedEdges = resultProject.edges || [];
+
+        const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
+          const props = n.properties || {};
+          if (n.componentType === 'MYSQL' && props.env) {
+            props.databaseName = props.env.databaseName;
+            props.username = props.env.username;
+            props.userPassword = props.env.userPassword;
+            props.rootPassword = props.env.rootPassword;
+            delete props.env;
+          }
+          return {
+            id: n.nodeId || n.id.toString(), 
+            type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
+            name: n.nodeName,
+            x: n.positionX,
+            y: n.positionY,
+            settings: props
+          };
+        });
+
+        const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
+          id: e.edgeId || `edge-${e.id}`,
+          sourceId: e.sourceNodeId?.toString(),
+          targetId: e.targetNodeId?.toString()
+        }));
+
+        const reconstructedFiles: Record<string, any> = {};
+        loadedNodes.forEach((n: any) => {
+          const props = n.settings;
+          if (props && props.fileId) {
+            if (!reconstructedFiles[props.fileId]) {
+              let parsedFiles = [];
+              try { parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
+
+              reconstructedFiles[props.fileId] = {
+                id: props.fileId,
+                name: props.fileName || '생성할 노드 목록',
+                isGenerated: String(props.fileIsGenerated) === 'true',
+                nodeIds: [],
+                isExpanded: true,
+                generatedFiles: parsedFiles,
+                _isTarget: props.fileIsTarget !== 'false'
+              };
+            }
+            reconstructedFiles[props.fileId].nodeIds.push(n.id);
+          }
+        });
+        
+        const loadedFiles = Object.values(reconstructedFiles).map((f: any) => f as FileGroup);
+        
+        setNodes(loadedNodes);
+        setEdges(loadedEdges);
+        setFiles(loadedFiles);
+        setTargetFileIds(loadedFiles.filter((f: any) => f._isTarget).map(f => f.id));
+        
+        hasUnsavedChanges.current = false;
+      }
+    } catch (err) {
+      console.error("Background sync failed", err);
+    }
+  }, [projectId, fetchWithAuth]);
+
   useEffect(() => {
     if (!projectId || !userInfo.id || !accessToken) return;
 
@@ -214,16 +292,17 @@ const MainPage: React.FC = () => {
     let reconnectTimeout: ReturnType<typeof setTimeout>;
 
     const connectWebSocket = () => {
-      const wsUrl = `${WS_BASE_URL}/ws/projects/${projectId}/cursor?token=${accessToken}`;
+      const wsUrl = `${WS_BASE_URL}/ws/projects/${projectId}?token=${accessToken}`;
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => {
-        console.log('Cursor WebSocket Connected');
+        console.log('Project WebSocket Connected for real-time collaboration');
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          
           if (data.type === 'CURSOR_MOVE' && String(data.memberId) !== String(userInfo.id)) {
             setOtherCursors(prev => {
               const existing = prev.find(c => String(c.memberId) === String(data.memberId));
@@ -243,14 +322,19 @@ const MainPage: React.FC = () => {
           else if (data.type === 'MEMBER_LEAVE') {
             setOtherCursors(prev => prev.filter(c => String(c.memberId) !== String(data.memberId)));
           }
+          else if (data.type === 'GRAPH_UPDATED' && String(data.memberId) !== String(userInfo.id)) {
+            fetchProjectDataSilently();
+            setToastMessage(`${data.nickname || '다른 참여자'}님이 변경 사항을 저장했습니다.`);
+            setTimeout(() => setToastMessage(null), 2500);
+          }
         } catch (e) {
-          console.error("Cursor parse error", e);
+          console.error("WebSocket parse error", e);
         }
       };
 
       ws.onclose = () => {
         if (isComponentMounted) {
-          console.log('Cursor WebSocket Disconnected. Reconnecting...');
+          console.log('Project WebSocket Disconnected. Reconnecting...');
           reconnectTimeout = setTimeout(connectWebSocket, 3000);
         }
       };
@@ -267,7 +351,7 @@ const MainPage: React.FC = () => {
         wsRef.current.close();
       }
     };
-  }, [projectId, userInfo.id, accessToken]);
+  }, [projectId, userInfo.id, userInfo.nickname, accessToken, fetchProjectDataSilently]);
 
   const lastBroadcastTime = useRef<number>(0);
   const handleCursorMove = useCallback((x: number, y: number) => {
@@ -283,6 +367,16 @@ const MainPage: React.FC = () => {
       lastBroadcastTime.current = now;
     }
   }, [userInfo.id, userInfo.nickname]);
+
+  const broadcastGraphUpdate = () => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'GRAPH_UPDATED',
+        memberId: userInfo.id,
+        nickname: userInfo.nickname
+      }));
+    }
+  };
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -515,15 +609,6 @@ const MainPage: React.FC = () => {
   }
 
   useEffect(() => { setActiveSubTab(0); }, [selectedFileId]);
-
-  useEffect(() => {
-    const handleGlobalToast = (e: any) => {
-      setToastMessage(e.detail);
-      setTimeout(() => setToastMessage(null), 3000);
-    };
-    window.addEventListener('global-toast', handleGlobalToast);
-    return () => window.removeEventListener('global-toast', handleGlobalToast);
-  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -863,6 +948,8 @@ const MainPage: React.FC = () => {
         }
         hasUnsavedChanges.current = false; 
 
+        broadcastGraphUpdate();
+
         if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 성공적으로 저장되었습니다.' }));
         else {
           setToastMessage('자동 저장되었습니다.');
@@ -927,7 +1014,10 @@ const MainPage: React.FC = () => {
       if (!res.ok || !(data.isSuccess ?? data.is_success)) {
         alert(data.message || '프로젝트 이름 저장에 실패했습니다.');
         setProjectName(previousName);
-      } else hasUnsavedChanges.current = false;
+      } else {
+        hasUnsavedChanges.current = false;
+        broadcastGraphUpdate();
+      }
     } catch (err) {
       alert('서버 오류가 발생했습니다.');
       setProjectName(previousName);
@@ -1113,6 +1203,8 @@ const MainPage: React.FC = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentVersion })
           });
+
+          broadcastGraphUpdate();
         } else {
           alert(generateData.message || '코드 생성에 실패했습니다. 올바른 값이 입력되었는지 확인해주세요.');
           setAppMode('editor');
