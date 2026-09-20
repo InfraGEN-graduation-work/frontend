@@ -212,7 +212,7 @@ export default function Home() {
 
       let pendingMembers: Collaborator[] = [];
       const project = projects.find(p => p.projectId === projectId);
-      
+
       if (project?.myRole === 'OWNER') {
         try {
           const res2 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators/invitations`);
@@ -256,7 +256,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       const data = await res.json().catch(() => ({}));
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
@@ -316,7 +316,7 @@ export default function Home() {
 
   const confirmRemoveCollaborator = async () => {
     if (!collabProjectId || !collaboratorToRemove) return;
-    
+
     try {
       const targetId = typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') 
         ? collaboratorToRemove.replace('inv-', '') 
@@ -325,7 +325,7 @@ export default function Home() {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${targetId}`, {
         method: 'DELETE'
       });
-      
+
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
@@ -368,7 +368,7 @@ export default function Home() {
 
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
     if (!isEditingTargetOwner) return;
 
@@ -536,7 +536,7 @@ export default function Home() {
     if (!projectToLeave) return;
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
-      
+
       if (res.ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트에서 나갔습니다.' }));
@@ -746,7 +746,7 @@ export default function Home() {
         }
       });
 
-      if (allFiles.length === 0 && isOwner) {
+      if (allFiles.length === 0) {
         try {
           const histRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/histories`);
           const histData = await histRes.json();
@@ -1009,16 +1009,11 @@ export default function Home() {
                           {menuOpenId === proj.projectId && (
                             <DropdownMenu>
                               <DropdownItem onClick={(e) => handleOpenEdit(e, proj)}>{isProjOwner ? '수정' : '정보'}</DropdownItem>
-                              
-                              {isProjOwner && (
-                                <>
-                                  <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
-                                  <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>기록</DropdownItem>
-                                </>
-                              )}
 
+                              <DropdownItem onClick={(e) => handleOpenCollabModal(e, proj.projectId)}>참여자</DropdownItem>
+                              <DropdownItem onClick={(e) => handleOpenHistory(e, proj.projectId)}>기록</DropdownItem>
                               <DropdownItem onClick={(e) => handleOpenCodeViewer(e, proj.projectId)}>코드</DropdownItem>
-                              
+
                               {isProjOwner ? (
                                 <DropdownItem className="danger" onClick={(e) => handleDeleteSingle(e, proj.projectId)}>삭제</DropdownItem>
                               ) : (
@@ -1045,7 +1040,7 @@ export default function Home() {
 
       {modalMode !== null && (() => {
         const isEditingTargetOwner = modalMode === 'create' || projects.find(p => p.projectId === editTargetId)?.myRole === 'OWNER';
-        
+
         return (
           <ModalOverlay onClick={() => { setModalMode(null); setIsProviderDropdownOpen(false); }}>
             <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -1323,7 +1318,7 @@ export default function Home() {
                               <span className="email">{member.email || (typeof member.memberId === 'string' && member.memberId.startsWith('inv-') ? '응답 대기 중' : `ID: ${member.memberId}`)}</span>
                             </div>
                           </div>
-                          
+
                           <div className="actions">
                             {member.status === 'PENDING' ? (
                               <PendingBadge onClick={() => handleRemoveCollaborator(member.memberId)}>
@@ -1595,7 +1590,7 @@ const PendingBadge = styled.div`
   text-align: center;
 
   .hover-text { display: none; }
-  
+
   &:hover {
     background: #fff5f5;
     color: #e53e3e;
