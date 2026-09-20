@@ -861,7 +861,6 @@ const MainPage: React.FC = () => {
       rawProperties.globalIncludeLocal = String(includeLocal);
       rawProperties.globalCloudSettings = JSON.stringify(cloudSettings);
 
-      // 더미 데이터 입력 코드를 삭제하고 정상적으로 속성만 지우도록 복구했습니다.
       if (file) {
         rawProperties.fileId = file.id;
         rawProperties.fileName = file.name;
@@ -1026,17 +1025,17 @@ const MainPage: React.FC = () => {
     }
   };
 
-  const confirmGoHome = () => {
-    setIsHomeConfirmModalOpen(false);
-    navigate('/dashboard');
-  };
-
   const handleGoHome = () => {
     if (activityLog.length > 0 || hasUnsavedChanges.current) {
       setIsHomeConfirmModalOpen(true);
     } else {
       navigate('/dashboard');
     }
+  };
+
+  const confirmGoHome = () => {
+    setIsHomeConfirmModalOpen(false);
+    navigate('/dashboard');
   };
 
   const handleResetUI = () => {
@@ -1276,6 +1275,16 @@ const MainPage: React.FC = () => {
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
     setNodes((prev) => [...prev, newNode]);
 
+    setFiles((prevFiles) => {
+      const updatedFiles = [...prevFiles];
+      if (updatedFiles.length === 0) {
+        updatedFiles.push({ id: `file-${Date.now()}`, name: '생성할 노드 목록', isGenerated: false, nodeIds: [newNode.id], isExpanded: true });
+      } else {
+        updatedFiles[0] = { ...updatedFiles[0], nodeIds: [...updatedFiles[0].nodeIds, newNode.id] };
+      }
+      return updatedFiles;
+    });
+
     logActivity(`[배치] '${finalName}' 노드를 캔버스에 배치했습니다.`);
   };
 
@@ -1497,9 +1506,9 @@ const MainPage: React.FC = () => {
                             </div>
                             <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
                               <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center' }}>
-                                {f?.generatedFiles?.[activeSubTab]?.fileName}
+                                {f.generatedFiles[activeSubTab]?.fileName}
                               </div>
-                              {f?.generatedFiles?.[activeSubTab]?.content}
+                              {f.generatedFiles[activeSubTab]?.content}
                             </div>
                           </>
                         ) : (
@@ -1617,16 +1626,18 @@ const MainPage: React.FC = () => {
       )}
 
       {isHomeConfirmModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsHomeConfirmModalOpen(false)} style={{ zIndex: 1100 }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-title" style={{ color: '#e53e3e', fontSize: '18px' }}>저장하지 않은 변경사항이 있습니다</div>
-            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
-              정말 이 페이지를 나가시겠습니까?<br />
-              저장하지 않고 나가면 최근 작업 내역이 날아갈 수 있습니다.
-            </p>
-            <div className="modal-actions" style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-title error">저장하지 않은 변경사항이 있습니다.</div>
+            <div className="modal-body" style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.5' }}>
+              정말 나가시겠습니까?<br />
+              <span style={{ color: '#e53e3e', fontSize: '13px' }}>
+                (저장하지 않고 나가면 최근 작업 내역이 날아갈 수 있습니다.)
+              </span>
+            </div>
+            <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsHomeConfirmModalOpen(false)}>취소</button>
-              <button className="modal-btn confirm" style={{ background: '#e53e3e' }} onClick={confirmGoHome}>나가기</button>
+              <button className="modal-btn confirm" style={{ backgroundColor: '#e53e3e', borderColor: '#e53e3e' }} onClick={confirmGoHome}>나가기</button>
             </div>
           </div>
         </div>
