@@ -187,7 +187,6 @@ const MainPage: React.FC = () => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // 👉 추가 요청하신 global-toast 이벤트 리스너 부분입니다!
   useEffect(() => {
     const handleGlobalToast = (e: any) => {
       setToastMessage(e.detail);
@@ -998,7 +997,6 @@ const MainPage: React.FC = () => {
     const previousName = projectName;
     setProjectName(newName);
     logActivity(`[수정] 프로젝트 이름이 '${newName}'(으)로 변경되었습니다.`);
-    const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     let currentVersion = 0;
     try {
@@ -1010,14 +1008,12 @@ const MainPage: React.FC = () => {
     } catch (e) {}
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
-        method: 'PUT',
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/metadata`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: newName, 
           description: projectDescription, 
-          nodes: mappedNodes, 
-          edges: mappedEdges, 
           baseVersion: currentVersion 
         })
       });

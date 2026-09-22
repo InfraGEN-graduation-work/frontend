@@ -21,9 +21,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const reissueToken = async (): Promise<string | null> => {
     try {
+      const csrfRes = await fetch(`${BASE_URL}/auth/csrf`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      const csrfToken = csrfRes.headers.get("X-XSRF-TOKEN") || "";
+
       const res = await fetch(`${BASE_URL}/auth/reissue`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          "X-XSRF-TOKEN": csrfToken
+        }
       });
       
       const contentType = res.headers.get("content-type");

@@ -219,7 +219,8 @@ export default function Home() {
           if (res2.ok) {
             const data2 = await res2.json();
             if (data2.isSuccess ?? data2.is_success) {
-              pendingMembers = (data2.result?.invitations || [])
+              const list = Array.isArray(data2.result) ? data2.result : (data2.result?.invitations || []);
+              pendingMembers = list
                 .filter((inv: any) => inv.status === 'PENDING')
                 .map((inv: any) => ({
                   memberId: `inv-${inv.invitationId}`,
@@ -491,7 +492,7 @@ export default function Home() {
         setModalProvider(provider);
         setModalMode('edit');
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 정보를 불러오지 못했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 정보를 불러오지 못했습니다.' }));
       }
     } catch (err) {
        window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
@@ -1377,17 +1378,17 @@ export default function Home() {
         <ModalOverlay onClick={() => setCollaboratorToRemove(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
-              {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') ? '초대 취소' : '참여자 퇴출'}
+              {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-') ? '초대 취소' : '참여자 퇴출'}
             </ModalTitle>
             <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-')
+              {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-')
                 ? '이 사용자에게 보낸 초대를 취소하시겠습니까?'
                 : '정말 이 참여자를 프로젝트에서 퇴출하시겠습니까?'}
             </p>
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setCollaboratorToRemove(null)}>닫기</CancelBtn>
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmRemoveCollaborator}>
-                {typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-') ? '초대취소' : '퇴출하기'}
+                {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-') ? '초대취소' : '퇴출하기'}
               </SubmitBtn>
             </ModalActions>
           </ModalContent>
