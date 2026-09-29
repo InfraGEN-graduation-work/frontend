@@ -72,6 +72,7 @@ interface ValidationError {
   isGlobal?: boolean;
   targetField?: string;
   isProjectTab?: boolean;
+  edgeId?: string;
 }
 
 const computeFileHash = (
@@ -169,6 +170,7 @@ const MainPage: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState(0);
 
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
+  const [focusEdgeId, setFocusEdgeId] = useState<string | null>(null);
 
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
@@ -566,7 +568,8 @@ const MainPage: React.FC = () => {
         validationErrors.push({
           name: '잘못된 노드 연결 방향',
           desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`,
-          targetNodeId: sNode.id
+          targetNodeId: sNode.id,
+          edgeId: edge.id
         });
       }
     }
@@ -1236,6 +1239,54 @@ const MainPage: React.FC = () => {
     if (!showRightSidebar) setShowRightSidebar(true);
   };
 
+  const [highlightFieldRequest, setHighlightFieldRequest] = useState<{ fields: string[]; token: number } | null>(null);
+
+  const jumpToNextError = useCallback(() => {
+    if (validationErrors.length === 0) return;
+    const err = validationErrors[0];
+
+    if (err.targetNodeId && err.targetField) {
+      // 입력 필드로 고칠 수 있는 오류: 해당 노드의 Settings로 이동하고
+      // 같은 노드에 걸린 빈 필수 필드를 전부 한 번에 강조한다.
+      setSelectedNodeIds([err.targetNodeId]);
+      setSelectedFileId(null);
+      setFocusNodeId(err.targetNodeId);
+      setLeftActiveTab('Settings');
+      if (!showRightSidebar) setShowRightSidebar(true);
+
+      const fieldsForNode = Array.from(new Set(
+        validationErrors
+          .filter(e => e.targetNodeId === err.targetNodeId && e.targetField)
+          .map(e => e.targetField as string)
+      ));
+      if (fieldsForNode.length > 0) {
+        setHighlightFieldRequest({ fields: fieldsForNode, token: Date.now() });
+      }
+    } else if (err.targetNodeId && !err.targetField) {
+      // 필드로는 고칠 수 없는 오류(예: 잘못된 노드 연결 방향).
+      // 노드의 Settings 탭도 함께 보여주고, 캔버스에서는 문제의 연결선을
+      // 실제로 선택된 상태(빨간 X 삭제 버튼)로 만들어 바로 알아볼 수 있게 한다.
+      setSelectedNodeIds([err.targetNodeId]);
+      setSelectedFileId(null);
+      setLeftActiveTab('Settings');
+      if (!showRightSidebar) setShowRightSidebar(true);
+      if (err.edgeId) {
+        setFocusEdgeId(err.edgeId);
+      } else {
+        setFocusNodeId(err.targetNodeId);
+      }
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.desc }));
+    } else if (err.isProjectTab) {
+      setLeftActiveTab('Project');
+      if (!showRightSidebar) setShowRightSidebar(true);
+      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
+    } else {
+      setLeftActiveTab('Settings');
+      if (!showRightSidebar) setShowRightSidebar(true);
+      if (err.targetField) setHighlightFieldRequest({ fields: [err.targetField], token: Date.now() });
+    }
+  }, [validationErrors, showRightSidebar]);
+
   const undo = useCallback(() => {
     if (myRole === 'VIEWER' || history.length === 0) return;
     isUndoRedo.current = true; 
@@ -1479,6 +1530,8 @@ const MainPage: React.FC = () => {
             setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
             otherCursors={otherCursors}
             onCursorMove={handleCursorMove}
+            focusEdgeId={focusEdgeId}
+            setFocusEdgeId={setFocusEdgeId}
           />
 
           {selectedFileId && (
@@ -1550,6 +1603,7 @@ const MainPage: React.FC = () => {
                 width={rightWidth}
                 isViewer={myRole === 'VIEWER'} 
                 logActivity={logActivity}
+                highlightFieldRequest={highlightFieldRequest}
               />
             </>
           )}
@@ -1605,7 +1659,7 @@ const MainPage: React.FC = () => {
               })}
             </div>
             <div className="modal-actions">
-              <button className="modal-btn confirm" onClick={closeErrorModalAndShowValidation}>확인</button>
+              <button className="modal-btn confirm" id="error-modal-confirm-btn" onClick={closeErrorModalAndShowValidation}>확인</button>
             </div>
           </div>
         </div>
@@ -1625,7 +1679,7 @@ const MainPage: React.FC = () => {
             </div>
             <div className="modal-actions" style={{ gap: '10px' }}>
               <button className="modal-btn cancel" onClick={() => setIsConfirmModalOpen(false)}>취소</button>
-              <button className="modal-btn confirm" onClick={confirmGenerate}>생성</button>
+              <button className="modal-btn confirm" id="generate-confirm-btn" onClick={confirmGenerate}>생성</button>
             </div>
           </div>
         </div>
@@ -1649,7 +1703,16 @@ const MainPage: React.FC = () => {
         </div>
       )}
 
-      {showTutorial && <Tutorial nodes={nodes} onFinish={() => setShowTutorial(false)} onSkip={() => setShowTutorial(false)} />}
+      {showTutorial && (
+        <Tutorial
+          nodes={nodes}
+          selectedNodeIds={selectedNodeIds}
+          hasErrors={validationErrors.length > 0}
+          onJumpToNextError={jumpToNextError}
+          onFinish={() => setShowTutorial(false)}
+          onSkip={() => setShowTutorial(false)}
+        />
+        )}
       {toastMessage && <ToastNotification>{toastMessage}</ToastNotification>}
     </div>
   );

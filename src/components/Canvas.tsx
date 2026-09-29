@@ -29,12 +29,17 @@ interface CanvasProps {
   setShowRightSidebar: React.Dispatch<React.SetStateAction<boolean>>;
   otherCursors?: RemoteCursor[];
   onCursorMove?: (x: number, y: number) => void;
+  // 외부(MainPage/튜토리얼)에서 특정 연결선을 "선택된 상태"(빨간 X 삭제 버튼이 뜨는 상태)로
+  // 만들고 그 위치로 스크롤하고 싶을 때 쓰는 채널.
+  focusEdgeId?: string | null;
+  setFocusEdgeId?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
-  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove
+  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove,
+  focusEdgeId, setFocusEdgeId
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -100,6 +105,26 @@ const Canvas: React.FC<CanvasProps> = ({
       viewportRef.current.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
     }
   }, [resetTrigger]);
+
+  // 외부에서 특정 연결선을 강조해달라는 요청(focusEdgeId) 처리:
+  // 해당 연결선을 "선택된 상태"로 만들어 빨간 X 삭제 버튼이 뜨게 하고,
+  // 그 연결선의 중점으로 스크롤한다.
+  useEffect(() => {
+    if (!focusEdgeId) return;
+    const edge = edges.find(e => e.id === focusEdgeId);
+    if (edge) {
+      const s = nodes.find(n => n.id === edge.sourceId);
+      const t = nodes.find(n => n.id === edge.targetId);
+      if (s && t) {
+        const midX = (s.x + t.x) / 2 + HW;
+        const midY = (s.y + t.y) / 2 + HH;
+        scrollToEdgeCenter(midX, midY);
+      }
+      setSelectedEdgeId(edge.id);
+    }
+    if (setFocusEdgeId) setFocusEdgeId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEdgeId]);
 
   const scrollToNode = (node: NodeData) => {
     if (viewportRef.current) {
