@@ -34,9 +34,9 @@ interface Invitation {
 
 export default function Home() {
   const navigate = useNavigate();
-  const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled } = useAuth();
+  const { fetchWithAuth, logout, isAutoSaveEnabled, setIsAutoSaveEnabled, setAccessToken } = useAuth();
 
-  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '불러오는 중...' });
+  const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '불러오는 중...', role: 'ROLE_USER' });
   const [projects, setProjects] = useState<Project[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
 
@@ -49,8 +49,6 @@ export default function Home() {
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
 
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
-  const [editNodes, setEditNodes] = useState<any[]>([]);
-  const [editEdges, setEditEdges] = useState<any[]>([]);
 
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -78,7 +76,10 @@ export default function Home() {
   const [projectToLeave, setProjectToLeave] = useState<number | null>(null);
   const [collaboratorToRemove, setCollaboratorToRemove] = useState<number | string | null>(null);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
+  
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
+  const [withdrawalPreview, setWithdrawalPreview] = useState<any[]>([]);
+  const [isWithdrawalLoading, setIsWithdrawalLoading] = useState(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -126,9 +127,7 @@ export default function Home() {
 
       if (userRes.ok && (userData.isSuccess ?? userData.is_success)) {
         try {
-          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, { 
-            method: 'POST'
-          });
+          const codeRes = await fetchWithAuth(`${BASE_URL}/members/me/invitation-code`, { method: 'POST' });
           if (codeRes.ok) {
             const codeData = await codeRes.json();
             if (codeData.isSuccess ?? codeData.is_success) {
@@ -143,7 +142,8 @@ export default function Home() {
           nickname: userData.result.nickname, 
           email: userData.result.email,
           provider: String(rawProvider).toUpperCase(),
-          inviteCode: fetchedInviteCode
+          inviteCode: fetchedInviteCode,
+          role: userData.result.role || 'ROLE_USER'
         });
 
         if(userData.result.autoSaveEnabled !== undefined) {
@@ -157,7 +157,7 @@ export default function Home() {
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
         const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ 
           ...p, 
-          myRole: p.accessRole || p.role || 'OWNER' 
+          myRole: String(p.accessRole || p.role || 'OWNER').toUpperCase()
         }));
         setProjects(mappedProjects);
       }
@@ -247,10 +247,7 @@ export default function Home() {
     }
 
     try {
-      const payload = {
-        inviteeCode: inviteCode.trim(),
-        role: inviteRole
-      };
+      const payload = { inviteeCode: inviteCode.trim(), role: inviteRole };
 
       const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/invitations`, {
         method: 'POST',
@@ -322,13 +319,9 @@ export default function Home() {
       let res;
       if (typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-')) {
         const invitationId = collaboratorToRemove.replace('inv-', '');
-        res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, {
-          method: 'POST'
-        });
+        res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, { method: 'POST' });
       } else {
-        res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, {
-          method: 'DELETE'
-        });
+        res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, { method: 'DELETE' });
       }
 
       if (res.ok) {
@@ -367,8 +360,32 @@ export default function Home() {
       if (res.ok) {
         setCollaborators(prev => prev.map(c => c.memberId === memberId ? { ...c, role: newRole as 'EDITOR' | 'VIEWER' } : c));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '권한 변경에 실패했습니다.' }));
       }
     } catch (err) {}
+  };
+
+  const handleTransferOwnership = async (memberId: number | string) => {
+    if (!collabProjectId) return;
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/ownership-transfer/${memberId}`, {
+        method: 'POST'
+      });
+      const data = await res.json().catch(() => ({}));
+      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+
+      if (isSuccess) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '소유권이 성공적으로 이전되었습니다.' }));
+        fetchDashboardData();
+        fetchCollaborators(collabProjectId);
+      } else {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '소유권 이전에 실패했습니다.' }));
+      }
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    }
   };
 
   const handleSubmitProject = async (e: React.FormEvent) => {
@@ -406,35 +423,12 @@ export default function Home() {
           }
         } catch (e) {}
 
-        const cleanNodes = editNodes.map((n: any) => {
-          let props = n.properties || {};
-          if (typeof props === 'string') {
-            try { props = JSON.parse(props); } catch (e) {}
-          }
-          props.globalCloudProvider = modalProvider;
-          return {
-            nodeId: n.nodeId,
-            nodeName: n.nodeName,
-            componentType: n.componentType,
-            positionX: n.positionX,
-            positionY: n.positionY,
-            properties: props
-          };
-        });
-
-        const cleanEdges = editEdges.map((e: any) => ({
-          sourceNodeId: e.sourceNodeId,
-          targetNodeId: e.targetNodeId
-        }));
-
-        const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}`, {
-          method: 'PUT',
+        const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}/metadata`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: newTitle,
             description: newDesc,
-            nodes: cleanNodes,
-            edges: cleanEdges,
             baseVersion: currentVersion 
           }),
         });
@@ -476,8 +470,6 @@ export default function Home() {
 
         setNewTitle(result.title);
         setNewDesc(result.description || '');
-        setEditNodes(result.nodes || []);
-        setEditEdges(result.edges || []);
         setEditTargetId(proj.projectId);
 
         const fetchedNodes = result.nodes || [];
@@ -495,6 +487,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트 정보를 불러오지 못했습니다.' }));
       }
     } catch (err) {
+       console.error("OpenEdit Error: ", err);
        window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
     }
   };
@@ -508,9 +501,7 @@ export default function Home() {
   const confirmDeleteSingle = async () => {
     if (!projectToDelete) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { 
-        method: 'DELETE'
-      });
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { method: 'DELETE' });
 
       if (res.ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToDelete));
@@ -534,11 +525,15 @@ export default function Home() {
   const handleLeaveSingle = (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
+    if (!userInfo.id) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.' }));
+      return;
+    }
     setProjectToLeave(projectId);
   };
 
   const confirmLeaveSingle = async () => {
-    if (!projectToLeave) return;
+    if (!projectToLeave || !userInfo.id) return;
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
 
@@ -562,6 +557,7 @@ export default function Home() {
   };
 
   const confirmBulkDelete = async () => {
+    if (!userInfo.id) return;
     try {
       const results = await Promise.all(
         selectedIds.map(async (id) => {
@@ -644,30 +640,43 @@ export default function Home() {
     }
   };
 
+  const handleOpenWithdrawConfirm = async () => {
+    setIsWithdrawConfirmOpen(true);
+    setIsWithdrawalLoading(true);
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/members/me/withdrawal-preview`);
+      const data = await res.json();
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        setWithdrawalPreview(data.result.ownedProjects || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsWithdrawalLoading(false);
+    }
+  };
+
   const executeWithdraw = async () => {
     try {
-      await Promise.all(
-        projects.map(async (proj) => {
-          try {
-            if (proj.myRole === 'OWNER') {
-              await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}`, { method: 'DELETE' });
-            } else {
-              await fetchWithAuth(`${BASE_URL}/projects/${proj.projectId}/collaborators/${userInfo.id}`, { method: 'DELETE' });
-            }
-          } catch (err) {}
-        })
-      );
+      const deletionIds = withdrawalPreview
+        .filter(p => p.outcome === 'DELETION')
+        .map(p => p.projectId);
+      
+      const queryStr = deletionIds.length > 0 ? `?confirmedDeletionProjectIds=${deletionIds.join(',')}` : '';
 
-      const res = await fetchWithAuth(`${BASE_URL}/members/me`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`${BASE_URL}/members/me${queryStr}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
-      if (!res.ok || !isSuccess) throw new Error(data.message);
+      if (!res.ok || !isSuccess) throw new Error(data.message || '탈퇴 처리 실패');
 
       setIsWithdrawConfirmOpen(false);
       setIsUserInfoModalOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 탈퇴가 완료되었습니다.' }));
-      setTimeout(() => { logout(); }, 1500);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '이용 종료(탈퇴) 처리가 완료되었습니다.' }));
+      setTimeout(() => {
+        setAccessToken(null);
+        navigate('/login');
+      }, 1500);
     } catch (err: any) {
       setIsWithdrawConfirmOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '오류가 발생했습니다.' }));
@@ -917,10 +926,16 @@ export default function Home() {
                   </ProfileActionBtn>
                 </ProfileActionRow>
 
-                <ProfileActionRow>
-                  <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
-                  <ProfileActionBtn className="danger" onClick={logout}>로그아웃</ProfileActionBtn>
-                </ProfileActionRow>
+                {userInfo.role === 'ROLE_GUEST' ? (
+                  <ProfileActionRow>
+                    <ProfileActionBtn className="danger" onClick={handleOpenWithdrawConfirm}>이용 종료(탈퇴)</ProfileActionBtn>
+                  </ProfileActionRow>
+                ) : (
+                  <ProfileActionRow>
+                    <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
+                    <ProfileActionBtn className="danger" onClick={logout}>로그아웃</ProfileActionBtn>
+                  </ProfileActionRow>
+                )}
               </ProfileDropdown>
             )}
           </ProfileWrapper>
@@ -1190,7 +1205,7 @@ export default function Home() {
               )}
 
               <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-                <WithdrawBtn type="button" onClick={() => setIsWithdrawConfirmOpen(true)}>회원 탈퇴</WithdrawBtn>
+                <WithdrawBtn type="button" onClick={handleOpenWithdrawConfirm}>회원 탈퇴</WithdrawBtn>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
                   <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
@@ -1320,7 +1335,7 @@ export default function Home() {
                               <span className="name-wrapper">
                                 <span className="name-text">{member.nickname}</span>
                               </span>
-                              <span className="email">{member.email || (typeof member.memberId === 'string' && member.memberId.startsWith('inv-') ? '응답 대기 중' : `ID: ${member.memberId}`)}</span>
+                              <span className="email">{member.email || (typeof member.memberId === 'string' && String(member.memberId).startsWith('inv-') ? '응답 대기 중' : `ID: ${member.memberId}`)}</span>
                             </div>
                           </div>
 
@@ -1352,10 +1367,16 @@ export default function Home() {
                                       >EDITOR</div>
                                       <div 
                                         onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', textAlign: 'center' }}
+                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7', textAlign: 'center' }}
                                         onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
                                         onMouseOut={(e) => e.currentTarget.style.background = 'white'}
                                       >VIEWER</div>
+                                      <div 
+                                        onClick={() => { handleTransferOwnership(member.memberId); setOpenRoleDropdownId(null); }} 
+                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', textAlign: 'center', color: '#c05621' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
+                                      >OWNER 이전</div>
                                     </div>
                                   )}
                                 </div>
@@ -1390,6 +1411,49 @@ export default function Home() {
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmRemoveCollaborator}>
                 {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-') ? '초대취소' : '퇴출하기'}
               </SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {isWithdrawConfirmOpen && (
+        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
+              {userInfo.role === 'ROLE_GUEST' ? '이용 종료' : '회원 탈퇴를 진행하시겠습니까?'}
+            </ModalTitle>
+            
+            {isWithdrawalLoading ? (
+              <p style={{ color: '#4a5568', fontSize: '14px', margin: '0 0 24px 0' }}>탈퇴 전처리 정보를 확인하는 중입니다...</p>
+            ) : (
+              <>
+                <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px 0' }}>
+                  탈퇴 시 내 정보 및 관련된 프로젝트 권한이 완전히 정리됩니다.
+                </p>
+                {withdrawalPreview.length > 0 && (
+                  <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '24px', maxHeight: '150px', overflowY: 'auto' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>소유한 프로젝트 처리 안내</div>
+                    {withdrawalPreview.map(p => (
+                      <div key={p.projectId} style={{ fontSize: '12px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#4a5568', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{p.title}</span>
+                        <span style={{ fontWeight: 'bold', color: p.outcome === 'DELETION' ? '#e53e3e' : '#28b4ad' }}>
+                          {p.outcome === 'DELETION' ? '영구 삭제' : '소유권 승계'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {withdrawalPreview.some(p => p.outcome === 'DELETION') && (
+                  <p style={{ color: '#e53e3e', fontSize: '13px', fontWeight: 'bold', marginBottom: '24px' }}>
+                    * 영구 삭제되는 프로젝트는 다시 복구할 수 없습니다.
+                  </p>
+                )}
+              </>
+            )}
+
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw} disabled={isWithdrawalLoading}>확인</SubmitBtn>
             </ModalActions>
           </ModalContent>
         </ModalOverlay>
@@ -1548,21 +1612,6 @@ export default function Home() {
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setIsBulkDeleteConfirmOpen(false)}>취소</CancelBtn>
               <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmBulkDelete}>확인</SubmitBtn>
-            </ModalActions>
-          </ModalContent>
-        </ModalOverlay>
-      )}
-
-      {isWithdrawConfirmOpen && (
-        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>회원 탈퇴를 진행하시겠습니까?</ModalTitle>
-            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              탈퇴 시 생성된 모든 프로젝트와 계정 정보가 완전히 삭제되며, 삭제된 데이터는 다시 복구할 수 없습니다.
-            </p>
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
-              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw}>탈퇴 확인</SubmitBtn>
             </ModalActions>
           </ModalContent>
         </ModalOverlay>

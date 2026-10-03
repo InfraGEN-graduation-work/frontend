@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
+import { Client } from '@stomp/stompjs';
 import './MainPage.css';
 import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
@@ -133,23 +134,12 @@ const MainPage: React.FC = () => {
   const [includeLocal, setIncludeLocal] = useState<boolean>(true); 
 
   const [cloudSettings, setCloudSettings] = useState<CloudSettings>({
-    region: 'ap-northeast-2',
-    vpcName: 'infragen-vpc',
-    subnetName: 'infragen-subnet',
-    internetGatewayName: 'infragen-igw',
-    routeTableName: 'infragen-rt',
-    securityGroupName: 'infragen-sg',
-    instanceName: 'infragen-instance',
-    vpcCidr: '10.0.0.0/16',
-    subnetCidr: '10.0.1.0/24',
-    amiId: 'ami-084e92d3e117f7692',
-    instanceType: 't3.micro',
-    adminCidr: '0.0.0.0/0',
-    appCidr: '0.0.0.0/0',
-    hostnameLabel: 'infragenhost',
-    compartmentId: '',
-    availabilityDomain: 'AD-1',
-    sshAuthorizedKeys: ''
+    region: 'ap-northeast-2', vpcName: 'infragen-vpc', subnetName: 'infragen-subnet',
+    internetGatewayName: 'infragen-igw', routeTableName: 'infragen-rt', securityGroupName: 'infragen-sg',
+    instanceName: 'infragen-instance', vpcCidr: '10.0.0.0/16', subnetCidr: '10.0.1.0/24',
+    amiId: 'ami-084e92d3e117f7692', instanceType: 't3.micro', adminCidr: '0.0.0.0/0',
+    appCidr: '0.0.0.0/0', hostnameLabel: 'infragenhost', compartmentId: '',
+    availabilityDomain: 'AD-1', sshAuthorizedKeys: ''
   });
 
   const [showRightSidebar, setShowRightSidebar] = useState(false); 
@@ -165,7 +155,6 @@ const MainPage: React.FC = () => {
   const [targetFileIds, setTargetFileIds] = useState<string[]>([]);
 
   const [leftActiveTab, setLeftActiveTab] = useState<'Project' | 'Settings' | 'Validation'>('Project');
-
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState(0);
 
@@ -189,6 +178,191 @@ const MainPage: React.FC = () => {
   const [activityLog, setActivityLog] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [leftWidth, setLeftWidth] = useState(320);
+  const [rightWidth, setRightWidth] = useState(320);
+  const [codeViewerWidth, setCodeViewerWidth] = useState(350);
+  const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const [isResizingRight, setIsResizingRight] = useState(false);
+  const [isResizingCodeViewer, setIsResizingCodeViewer] = useState(false);
+
+  // Collaboration State
+  const [serverVersion, setServerVersion] = useState(0);
+  const serverVersionRef = useRef(0);
+  const clientId = useRef(crypto.randomUUID ? crypto.randomUUID() : `client-${Date.now()}-${Math.floor(Math.random()*1000)}`);
+  const appliedOperations = useRef<Set<string>>(new Set());
+  const stompClient = useRef<Client | null>(null);
+  const nodesRef = useRef(nodes);
+
+  const [otherCursors, setOtherCursors] = useState<RemoteCursor[]>([]);
+
+  const isDataLoaded = useRef(false);
+  const isUndoRedo = useRef(false);
+  const hasUnsavedChanges = useRef(false);
+  const autoSaveCallback = useRef<(() => void) | null>(null);
+
+  const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
+
+  useEffect(() => { serverVersionRef.current = serverVersion; }, [serverVersion]);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  const logActivity = useCallback((msg: string) => {
+    setActivityLog(prev => prev.includes(msg) ? prev : [...prev, msg]);
+  }, []);
+
+  const restoreFullProjectGraph = useCallback((resultProject: any) => {
+    setProjectName(resultProject.title);
+    setProjectDescription(resultProject.description || '');
+
+    const fetchedNodes = resultProject.nodes || [];
+    let loadedCloudProvider: CloudProvider = 'LOCAL';
+    let loadedIncludeLocal = true;
+    let loadedCloudSettings: CloudSettings = { ...cloudSettings };
+
+    if (fetchedNodes.length > 0) {
+      const firstProps = fetchedNodes[0].properties || {};
+      if (firstProps.globalCloudProvider) loadedCloudProvider = firstProps.globalCloudProvider as CloudProvider;
+      if (firstProps.globalIncludeLocal !== undefined) loadedIncludeLocal = firstProps.globalIncludeLocal === 'true';
+      if (firstProps.globalCloudSettings) {
+        try { 
+          const parsed = JSON.parse(firstProps.globalCloudSettings); 
+          loadedCloudSettings = { ...loadedCloudSettings, ...parsed }; 
+        } catch(e) {}
+      }
+      setCloudProvider(loadedCloudProvider);
+      setIncludeLocal(loadedIncludeLocal);
+      setCloudSettings(loadedCloudSettings);
+    } else {
+      if (navState?.initialProvider) {
+        setCloudProvider(navState.initialProvider);
+        if (navState.initialProvider === 'OCI') {
+          setCloudSettings(prev => ({
+            ...prev, region: 'ap-seoul-1', instanceType: 'VM.Standard.E2.1.Micro', amiId: '' 
+          }));
+        }
+      }
+    }
+
+    const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
+      const props = n.properties || {};
+      if (n.componentType === 'MYSQL' && props.env) {
+        props.databaseName = props.env.databaseName;
+        props.username = props.env.username;
+        props.userPassword = props.env.userPassword;
+        props.rootPassword = props.env.rootPassword;
+        delete props.env;
+      }
+      return {
+        id: n.nodeId || n.id.toString(), 
+        type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
+        name: n.nodeName,
+        x: n.positionX,
+        y: n.positionY,
+        settings: props
+      };
+    });
+    setNodes(loadedNodes);
+
+    const fetchedEdges = resultProject.edges || [];
+    const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
+      id: e.edgeId || `edge-${e.id}`,
+      sourceId: e.sourceNodeId?.toString(),
+      targetId: e.targetNodeId?.toString()
+    }));
+    setEdges(loadedEdges);
+
+    const reconstructedFiles: Record<string, any> = {};
+    loadedNodes.forEach((n: any) => {
+      const props = n.settings;
+      if (props && props.fileId) {
+        if (!reconstructedFiles[props.fileId]) {
+          let parsedFiles = [];
+          try { parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
+
+          reconstructedFiles[props.fileId] = {
+            id: props.fileId,
+            name: props.fileName || '생성할 노드 목록',
+            isGenerated: String(props.fileIsGenerated) === 'true',
+            nodeIds: [],
+            isExpanded: true,
+            generatedFiles: parsedFiles,
+            _isTarget: props.fileIsTarget !== 'false'
+          };
+        }
+        reconstructedFiles[props.fileId].nodeIds.push(n.id);
+      }
+    });
+
+    const loadedFiles = Object.values(reconstructedFiles).map((f: any) => {
+      if (f.isGenerated) {
+        f.lastHash = computeFileHash(f, loadedNodes, loadedEdges, loadedCloudProvider, loadedIncludeLocal, loadedCloudSettings);
+      }
+      return f as FileGroup;
+    });
+    setFiles(loadedFiles);
+
+    const loadedTargetFileIds = loadedFiles.filter((f: any) => f._isTarget).map(f => f.id);
+    setTargetFileIds(loadedTargetFileIds);
+
+    prevEdges.current = loadedEdges;
+    prevFiles.current = loadedFiles;
+    prevTargetFileIds.current = loadedTargetFileIds;
+    setTimeout(() => { isDataLoaded.current = true; hasUnsavedChanges.current = false; }, 100);
+  }, [cloudSettings, navState]);
+
+  const applyOperations = useCallback((ops: any[]) => {
+    setNodes(prevNodes => {
+      let nextNodes = [...prevNodes];
+      ops.forEach(op => {
+        if (appliedOperations.current.has(op.operationId)) return;
+        
+        if (op.type === 'UPDATE_NODE_NAME') {
+          nextNodes = nextNodes.map(n => n.id === op.nodeId ? { ...n, name: op.payload.value } : n);
+        } else if (op.type === 'UPDATE_NODE_POSITION') {
+          nextNodes = nextNodes.map(n => n.id === op.nodeId ? { ...n, x: op.payload.positionX, y: op.payload.positionY } : n);
+        }
+        
+        appliedOperations.current.add(op.operationId);
+      });
+      return nextNodes;
+    });
+  }, []);
+
+  const fetchCollaborationData = useCallback(async (afterVer: number = 0) => {
+    if (!projectId) return;
+    try {
+      const url = `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=${afterVer}`;
+      const res = await fetchWithAuth(url);
+      const data = await res.json();
+
+      if (res.ok && (data.isSuccess ?? data.is_success)) {
+        const result = data.result;
+        let currentServerVersion = result.serverVersion ?? 0;
+
+        if (result.project) {
+          restoreFullProjectGraph(result.project);
+          currentServerVersion = result.graphVersion ?? currentServerVersion;
+        }
+
+        if (result.operations && result.operations.length > 0) {
+          applyOperations(result.operations);
+          const lastOp = result.operations[result.operations.length - 1];
+          currentServerVersion = lastOp.serverVersion ?? currentServerVersion;
+        }
+
+        if (result.serverVersion !== undefined) {
+           currentServerVersion = result.serverVersion;
+        }
+
+        serverVersionRef.current = currentServerVersion;
+        setServerVersion(currentServerVersion);
+      } else {
+         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '프로젝트를 불러오지 못했습니다.' }));
+      }
+    } catch (err) {
+      console.error("Collaboration sync failed", err);
+    }
+  }, [projectId, fetchWithAuth, restoreFullProjectGraph, applyOperations]);
+
   useEffect(() => {
     const handleGlobalToast = (e: any) => {
       setToastMessage(e.detail);
@@ -198,195 +372,150 @@ const MainPage: React.FC = () => {
     return () => window.removeEventListener('global-toast', handleGlobalToast);
   }, []);
 
-  const [leftWidth, setLeftWidth] = useState(320);
-  const [rightWidth, setRightWidth] = useState(320);
-  const [codeViewerWidth, setCodeViewerWidth] = useState(350);
-  const [isResizingLeft, setIsResizingLeft] = useState(false);
-  const [isResizingRight, setIsResizingRight] = useState(false);
-  const [isResizingCodeViewer, setIsResizingCodeViewer] = useState(false);
+  useEffect(() => {
+    fetchWithAuth(`${BASE_URL}/members/me`)
+      .then(res => {
+        if (res.status === 401) { navigate('/login'); throw new Error('Unauthorized'); }
+        return res.json();
+      })
+      .then(data => {
+        const isSuccess = data.isSuccess ?? data.is_success;
+        if (isSuccess && data.result) setUserInfo({ id: data.result.id, nickname: data.result.nickname, email: data.result.email });
+        else setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' });
+      })
+      .catch(() => setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' }));
 
-  const [otherCursors, setOtherCursors] = useState<RemoteCursor[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  const isDataLoaded = useRef(false);
-  const isUndoRedo = useRef(false);
-  const hasUnsavedChanges = useRef(false);
-  const autoSaveCallback = useRef<(() => void) | null>(null);
-
-  const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
-
-  const logActivity = useCallback((msg: string) => {
-    setActivityLog(prev => prev.includes(msg) ? prev : [...prev, msg]);
-  }, []);
-
-  const fetchProjectDataSilently = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const url = `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`;
-      const res = await fetchWithAuth(url);
-      const data = await res.json();
-
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        const resultProject = data.result?.project || data.result;
-        if (!resultProject) return;
-
-        setProjectName(resultProject.title);
-        setProjectDescription(resultProject.description || '');
-
-        const fetchedNodes = resultProject.nodes || [];
-        const fetchedEdges = resultProject.edges || [];
-
-        const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
-          const props = n.properties || {};
-          if (n.componentType === 'MYSQL' && props.env) {
-            props.databaseName = props.env.databaseName;
-            props.username = props.env.username;
-            props.userPassword = props.env.userPassword;
-            props.rootPassword = props.env.rootPassword;
-            delete props.env;
+    fetchWithAuth(`${BASE_URL}/projects`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.isSuccess ?? data.is_success) {
+          const currentProject = (data.result.projectList || []).find((p: any) => p.projectId === Number(projectId));
+          if (currentProject) {
+            setMyRole(currentProject.accessRole || currentProject.role || 'OWNER');
           }
-          return {
-            id: n.nodeId || n.id.toString(), 
-            type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
-            name: n.nodeName,
-            x: n.positionX,
-            y: n.positionY,
-            settings: props
-          };
-        });
+        }
+      });
+  }, [projectId, fetchWithAuth, navigate]);
 
-        const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
-          id: e.edgeId || `edge-${e.id}`,
-          sourceId: e.sourceNodeId?.toString(),
-          targetId: e.targetNodeId?.toString()
-        }));
-
-        const reconstructedFiles: Record<string, any> = {};
-        loadedNodes.forEach((n: any) => {
-          const props = n.settings;
-          if (props && props.fileId) {
-            if (!reconstructedFiles[props.fileId]) {
-              let parsedFiles = [];
-              try { parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
-
-              reconstructedFiles[props.fileId] = {
-                id: props.fileId,
-                name: props.fileName || '생성할 노드 목록',
-                isGenerated: String(props.fileIsGenerated) === 'true',
-                nodeIds: [],
-                isExpanded: true,
-                generatedFiles: parsedFiles,
-                _isTarget: props.fileIsTarget !== 'false'
-              };
-            }
-            reconstructedFiles[props.fileId].nodeIds.push(n.id);
-          }
-        });
-
-        const loadedFiles = Object.values(reconstructedFiles).map((f: any) => f as FileGroup);
-
-        setNodes(loadedNodes);
-        setEdges(loadedEdges);
-        setFiles(loadedFiles);
-        setTargetFileIds(loadedFiles.filter((f: any) => f._isTarget).map(f => f.id));
-
-        hasUnsavedChanges.current = false;
-      }
-    } catch (err) {
-      console.error("Background sync failed", err);
-    }
-  }, [projectId, fetchWithAuth]);
-
+  // STOMP WebSocket Connection Initialization
   useEffect(() => {
     if (!projectId || !userInfo.id || !accessToken) return;
 
-    let isComponentMounted = true;
-    let reconnectTimeout: ReturnType<typeof setTimeout>;
+    const client = new Client({
+      brokerURL: `${WS_BASE_URL}/ws/collaboration`,
+      connectHeaders: { Authorization: `Bearer ${accessToken}` },
+      reconnectDelay: 3000,
+      onConnect: () => {
+        console.log('STOMP Collaboration Connected');
 
-    const connectWebSocket = () => {
-      const wsUrl = `${WS_BASE_URL}/ws/projects/${projectId}?token=${accessToken}`;
-      const ws = new WebSocket(wsUrl);
-
-      ws.onopen = () => {
-        console.log('Project WebSocket Connected for real-time collaboration');
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'CURSOR_MOVE' && String(data.memberId) !== String(userInfo.id)) {
+        client.subscribe(`/topic/projects/${projectId}/operations`, (msg) => {
+          const op = JSON.parse(msg.body);
+          
+          if (op.type === 'CURSOR_MOVE' && String(op.memberId) !== String(userInfo.id)) {
             setOtherCursors(prev => {
-              const existing = prev.find(c => String(c.memberId) === String(data.memberId));
-              const colorIndex = typeof data.memberId === 'number' ? data.memberId : parseInt(data.memberId) || 0;
+              const existing = prev.find(c => String(c.memberId) === String(op.memberId));
+              const colorIndex = typeof op.memberId === 'number' ? op.memberId : parseInt(op.memberId) || 0;
               const color = existing ? existing.color : CURSOR_COLORS[colorIndex % CURSOR_COLORS.length];
-
-              const updated = prev.filter(c => String(c.memberId) !== String(data.memberId));
-              return [...updated, { 
-                memberId: data.memberId, 
-                nickname: data.nickname || '참여자', 
-                x: data.x, 
-                y: data.y, 
-                color 
-              }];
+              const updated = prev.filter(c => String(c.memberId) !== String(op.memberId));
+              return [...updated, { memberId: op.memberId, nickname: op.nickname || '참여자', x: op.x, y: op.y, color }];
             });
-          } 
-          else if (data.type === 'MEMBER_LEAVE') {
-            setOtherCursors(prev => prev.filter(c => String(c.memberId) !== String(data.memberId)));
+            return;
           }
-          else if (data.type === 'GRAPH_UPDATED' && String(data.memberId) !== String(userInfo.id)) {
-            fetchProjectDataSilently();
-            setToastMessage(`${data.nickname || '다른 참여자'}님이 변경 사항을 저장했습니다.`);
-            setTimeout(() => setToastMessage(null), 2500);
+
+          if (op.type === 'MEMBER_LEAVE') {
+            setOtherCursors(prev => prev.filter(c => String(c.memberId) !== String(op.memberId)));
+            return;
           }
-        } catch (e) {
-          console.error("WebSocket parse error", e);
-        }
-      };
 
-      ws.onclose = () => {
-        if (isComponentMounted) {
-          console.log('Project WebSocket Disconnected. Reconnecting...');
-          reconnectTimeout = setTimeout(connectWebSocket, 3000);
-        }
-      };
+          if (!appliedOperations.current.has(op.operationId)) {
+            applyOperations([op]);
+            serverVersionRef.current = op.serverVersion;
+            setServerVersion(op.serverVersion);
+          }
+        });
 
-      wsRef.current = ws;
-    };
+        client.subscribe(`/topic/projects/${projectId}/resync`, () => {
+          fetchCollaborationData(0);
+        });
 
-    connectWebSocket();
+        client.subscribe(`/user/queue/projects/${projectId}/operation-results`, (msg) => {
+          const err = JSON.parse(msg.body);
+          if (err.code === 'COLLAB409_2' || err.code === 'COLLAB409_1') {
+            fetchCollaborationData(serverVersionRef.current);
+          } else {
+            window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '협업 동기화 오류' }));
+          }
+        });
+
+        // Initialize Canvas with Snapshot
+        fetchCollaborationData(0);
+      },
+      onStompError: (frame) => {
+        console.error('Broker reported error: ' + frame.headers['message']);
+      }
+    });
+
+    stompClient.current = client;
+    client.activate();
 
     return () => {
-      isComponentMounted = false;
-      clearTimeout(reconnectTimeout);
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      client.deactivate();
     };
-  }, [projectId, userInfo.id, userInfo.nickname, accessToken, fetchProjectDataSilently]);
+  }, [projectId, userInfo.id, accessToken, fetchCollaborationData, applyOperations]);
+
+  const sendOperation = useCallback((type: string, nodeId: string, payload: any) => {
+    if (myRole === 'VIEWER') return;
+    if (!stompClient.current?.connected) return;
+
+    const opId = crypto.randomUUID ? crypto.randomUUID() : `op-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+    appliedOperations.current.add(opId); // Optimistic UI echo-prevention
+
+    stompClient.current.publish({
+      destination: `/app/projects/${projectId}/operations`,
+      body: JSON.stringify({
+        operationId: opId,
+        clientId: clientId.current,
+        baseVersion: serverVersionRef.current,
+        type,
+        nodeId,
+        payload
+      })
+    });
+  }, [myRole, projectId]);
 
   const lastBroadcastTime = useRef<number>(0);
   const handleCursorMove = useCallback((x: number, y: number) => {
     const now = Date.now();
-    if (now - lastBroadcastTime.current > 50 && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'CURSOR_MOVE',
-        memberId: userInfo.id,
-        nickname: userInfo.nickname,
-        x,
-        y
-      }));
+    if (now - lastBroadcastTime.current > 50 && stompClient.current?.connected) {
+      stompClient.current.publish({
+        destination: `/app/projects/${projectId}/operations`,
+        body: JSON.stringify({ type: 'CURSOR_MOVE', memberId: userInfo.id, nickname: userInfo.nickname, x, y })
+      });
       lastBroadcastTime.current = now;
     }
-  }, [userInfo.id, userInfo.nickname]);
+  }, [userInfo.id, userInfo.nickname, projectId]);
+
+  const handleNodesDragEnd = useCallback((nodeIds: string[]) => {
+    setTimeout(() => {
+      nodeIds.forEach(id => {
+        const node = nodesRef.current.find(n => n.id === id);
+        if (node) {
+          sendOperation('UPDATE_NODE_POSITION', id, { positionX: Math.round(node.x), positionY: Math.round(node.y) });
+        }
+      });
+    }, 0);
+  }, [sendOperation]);
+
+  const handleNodeNameChange = useCallback((nodeId: string, newName: string) => {
+    sendOperation('UPDATE_NODE_NAME', nodeId, { value: newName });
+  }, [sendOperation]);
 
   const broadcastGraphUpdate = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'GRAPH_UPDATED',
-        memberId: userInfo.id,
-        nickname: userInfo.nickname
-      }));
+    if (stompClient.current?.connected) {
+      stompClient.current.publish({
+        destination: `/app/projects/${projectId}/operations`,
+        body: JSON.stringify({ type: 'GRAPH_UPDATED', memberId: userInfo.id, nickname: userInfo.nickname })
+      });
     }
   };
 
@@ -407,9 +536,7 @@ const MainPage: React.FC = () => {
     };
 
     const handleMouseUp = () => {
-      setIsResizingLeft(false);
-      setIsResizingRight(false);
-      setIsResizingCodeViewer(false);
+      setIsResizingLeft(false); setIsResizingRight(false); setIsResizingCodeViewer(false);
     };
 
     if (isResizingLeft || isResizingRight || isResizingCodeViewer) {
@@ -516,28 +643,17 @@ const MainPage: React.FC = () => {
 
     if (node.type === 'MySQL') {
       if (!settings.imageVersion) validationErrors.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-
       if (!settings.databaseName) validationErrors.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
       else checkNameFormat(settings.databaseName, '데이터베이스 이름', 'databaseName');
-
       if (!settings.username) validationErrors.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
       else checkNameFormat(settings.username, '사용자 이름', 'username');
-
-      if (!settings.userPassword) {
-        validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-      }
-
-      if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
-        validationErrors.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
-      }
+      if (!settings.userPassword) validationErrors.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
+      if (!settings.rootPassword || String(settings.rootPassword).length < 8) validationErrors.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
     }
 
     if (node.type === 'Redis') {
       if (!settings.imageVersion) validationErrors.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-
-      if (!settings.password) {
-        validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
-      }
+      if (!settings.password) validationErrors.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
     }
 
     if (node.type === 'Spring Boot') {
@@ -633,151 +749,6 @@ const MainPage: React.FC = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [activityLog]);
-
-  useEffect(() => {
-    fetchWithAuth(`${BASE_URL}/projects`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.isSuccess ?? data.is_success) {
-          const currentProject = (data.result.projectList || []).find((p: any) => p.projectId === Number(projectId));
-          if (currentProject) {
-            setMyRole(currentProject.accessRole || currentProject.role || 'OWNER');
-          }
-        }
-      });
-  }, [projectId, fetchWithAuth]);
-
-  useEffect(() => {
-    fetchWithAuth(`${BASE_URL}/members/me`)
-      .then(res => {
-        if (res.status === 401) { navigate('/login'); throw new Error('Unauthorized'); }
-        return res.json();
-      })
-      .then(data => {
-        const isSuccess = data.isSuccess ?? data.is_success;
-        if (isSuccess && data.result) setUserInfo({ id: data.result.id, nickname: data.result.nickname, email: data.result.email });
-        else setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' });
-      })
-      .catch(() => setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' }));
-
-    if (projectId) {
-      fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`)
-      .then(res => res.json())
-      .then(data => {
-        const isSuccess = data.isSuccess ?? data.is_success;
-        const resultProject = data.result?.project || data.result;
-
-        if (isSuccess && resultProject) {
-          setProjectName(resultProject.title);
-          setProjectDescription(resultProject.description || '');
-
-          const fetchedNodes = resultProject.nodes || [];
-
-          let loadedCloudProvider: CloudProvider = 'LOCAL';
-          let loadedIncludeLocal = true;
-          let loadedCloudSettings: CloudSettings = { ...cloudSettings };
-
-          if (fetchedNodes.length > 0) {
-            const firstProps = fetchedNodes[0].properties || {};
-            if (firstProps.globalCloudProvider) loadedCloudProvider = firstProps.globalCloudProvider as CloudProvider;
-            if (firstProps.globalIncludeLocal !== undefined) loadedIncludeLocal = firstProps.globalIncludeLocal === 'true';
-            if (firstProps.globalCloudSettings) {
-              try { 
-                const parsed = JSON.parse(firstProps.globalCloudSettings); 
-                loadedCloudSettings = { ...loadedCloudSettings, ...parsed }; 
-              } catch(e) {}
-            }
-            setCloudProvider(loadedCloudProvider);
-            setIncludeLocal(loadedIncludeLocal);
-            setCloudSettings(loadedCloudSettings);
-          } else {
-            if (navState?.initialProvider) {
-              setCloudProvider(navState.initialProvider);
-              if (navState.initialProvider === 'OCI') {
-                setCloudSettings(prev => ({
-                  ...prev,
-                  region: 'ap-seoul-1',
-                  instanceType: 'VM.Standard.E2.1.Micro',
-                  amiId: '' 
-                }));
-              }
-            }
-          }
-
-          const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
-            const props = n.properties || {};
-            if (n.componentType === 'MYSQL' && props.env) {
-              props.databaseName = props.env.databaseName;
-              props.username = props.env.username;
-              props.userPassword = props.env.userPassword;
-              props.rootPassword = props.env.rootPassword;
-              delete props.env;
-            }
-
-            return {
-              id: n.nodeId || n.id.toString(), 
-              type: n.componentType === 'SPRING_BOOT' ? 'Spring Boot' : n.componentType === 'MYSQL' ? 'MySQL' : n.componentType === 'REDIS' ? 'Redis' : n.componentType,
-              name: n.nodeName,
-              x: n.positionX,
-              y: n.positionY,
-              settings: props
-            };
-          });
-          setNodes(loadedNodes);
-
-          const fetchedEdges = resultProject.edges || [];
-          const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
-            id: e.edgeId || `edge-${e.id}`,
-            sourceId: e.sourceNodeId?.toString(),
-            targetId: e.targetNodeId?.toString()
-          }));
-          setEdges(loadedEdges);
-
-          const reconstructedFiles: Record<string, any> = {};
-          loadedNodes.forEach((n: any) => {
-            const props = n.settings;
-            if (props && props.fileId) {
-              if (!reconstructedFiles[props.fileId]) {
-                let parsedFiles = [];
-                try { parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
-
-                reconstructedFiles[props.fileId] = {
-                  id: props.fileId,
-                  name: props.fileName || '생성할 노드 목록',
-                  isGenerated: String(props.fileIsGenerated) === 'true',
-                  nodeIds: [],
-                  isExpanded: true,
-                  generatedFiles: parsedFiles,
-                  _isTarget: props.fileIsTarget !== 'false'
-                };
-              }
-              reconstructedFiles[props.fileId].nodeIds.push(n.id);
-            }
-          });
-
-          const loadedFiles = Object.values(reconstructedFiles).map((f: any) => {
-            if (f.isGenerated) {
-              f.lastHash = computeFileHash(f, loadedNodes, loadedEdges, loadedCloudProvider, loadedIncludeLocal, loadedCloudSettings);
-            }
-            return f as FileGroup;
-          });
-          setFiles(loadedFiles);
-
-          const loadedTargetFileIds = loadedFiles.filter((f: any) => f._isTarget).map(f => f.id);
-          setTargetFileIds(loadedTargetFileIds);
-
-          prevEdges.current = loadedEdges;
-          prevFiles.current = loadedFiles;
-          prevTargetFileIds.current = loadedTargetFileIds;
-          setTimeout(() => { isDataLoaded.current = true; hasUnsavedChanges.current = false; }, 100);
-
-        } else {
-          setProjectName('알 수 없는 프로젝트');
-        }
-      })
-      .catch(() => setProjectName('연결 오류'));
-    }
-  }, [navigate, projectId, fetchWithAuth]);
 
   const prevEdges = useRef(edges);
   useEffect(() => {
@@ -914,23 +885,15 @@ const MainPage: React.FC = () => {
 
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
     if (appMode !== 'editor') return;
-    if (myRole === 'VIEWER') {
-      if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 프로젝트를 저장할 수 없습니다.' }));
+    if (myRole === 'VIEWER' || myRole === 'EDITOR') {
+      if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '현재 권한으로는 전체 프로젝트를 강제 저장(PUT)할 수 없습니다. (자동 동기화 적용 중)' }));
       return;
     }
 
     if (!projectId) return;
     if (isAutoSave && !hasUnsavedChanges.current) return;
 
-    let currentVersion = 0;
-    try {
-      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
-      if (collabRes.ok) {
-        const collabData = await collabRes.json();
-        currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
-      }
-    } catch (e) {}
-
+    const currentVersion = serverVersionRef.current;
     const { mappedNodes, mappedEdges } = getMappedCanvasData();
 
     try {
@@ -978,14 +941,14 @@ const MainPage: React.FC = () => {
 
   useEffect(() => { 
     autoSaveCallback.current = () => { 
-      if (appMode === 'editor' && hasUnsavedChanges.current && myRole !== 'VIEWER') {
+      if (appMode === 'editor' && hasUnsavedChanges.current && myRole === 'OWNER') {
         handleSaveCanvas(true); 
       }
     }; 
   }); 
 
   useEffect(() => {
-    if (!isAutoSaveEnabled || !projectId || myRole === 'VIEWER') return;
+    if (!isAutoSaveEnabled || !projectId || myRole !== 'OWNER') return;
     const tick = () => { if (autoSaveCallback.current) autoSaveCallback.current(); };
     const timerId = setInterval(tick, 10 * 60 * 1000); 
     return () => clearInterval(timerId);
@@ -1001,14 +964,7 @@ const MainPage: React.FC = () => {
     setProjectName(newName);
     logActivity(`[수정] 프로젝트 이름이 '${newName}'(으)로 변경되었습니다.`);
 
-    let currentVersion = 0;
-    try {
-      const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
-      if (collabRes.ok) {
-        const collabData = await collabRes.json();
-        currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
-      }
-    } catch (e) {}
+    const currentVersion = serverVersionRef.current;
 
     try {
       const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/metadata`, {
@@ -1062,8 +1018,8 @@ const MainPage: React.FC = () => {
   const markFilesAsModified = useCallback(() => {}, []);
 
   const handleGenerateClick = () => {
-    if (myRole === 'VIEWER') {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어 권한으로는 코드를 생성(Generate)할 수 없습니다.' }));
+    if (myRole === 'VIEWER' || myRole === 'EDITOR') {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드 생성(Generate)은 OWNER 권한만 가능합니다.' }));
       return;
     }
     if (validationErrors.length > 0) setIsErrorModalOpen(true);
@@ -1079,15 +1035,7 @@ const MainPage: React.FC = () => {
         const progressInterval = setInterval(() => setGenProgress(prev => (prev >= 90 ? 90 : prev + 5)), 100);
 
         const { mappedNodes, mappedEdges } = getMappedCanvasData();
-
-        let currentVersion = 0;
-        try {
-          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
-          if (collabRes.ok) {
-            const collabData = await collabRes.json();
-            currentVersion = collabData.result?.serverVersion ?? collabData.result?.graphVersion ?? 0;
-          }
-        } catch (e) {}
+        const currentVersion = serverVersionRef.current;
 
         const putRes = await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
           method: 'PUT',
@@ -1206,18 +1154,10 @@ const MainPage: React.FC = () => {
 
           const finalMapped = getMappedCanvasData(updatedFilesList); 
 
-          try {
-            const collabResAfterGen = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?t=${Date.now()}`, { cache: 'no-store' });
-            if (collabResAfterGen.ok) {
-              const collabDataAfterGen = await collabResAfterGen.json();
-              currentVersion = collabDataAfterGen.result?.serverVersion ?? collabDataAfterGen.result?.graphVersion ?? 0;
-            }
-          } catch (e) {}
-
           await fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: currentVersion })
+            body: JSON.stringify({ title: projectName, description: projectDescription, nodes: finalMapped.mappedNodes, edges: finalMapped.mappedEdges, baseVersion: serverVersionRef.current })
           });
 
           broadcastGraphUpdate();
@@ -1246,8 +1186,6 @@ const MainPage: React.FC = () => {
     const err = validationErrors[0];
 
     if (err.targetNodeId && err.targetField) {
-      // 입력 필드로 고칠 수 있는 오류: 해당 노드의 Settings로 이동하고
-      // 같은 노드에 걸린 빈 필수 필드를 전부 한 번에 강조한다.
       setSelectedNodeIds([err.targetNodeId]);
       setSelectedFileId(null);
       setFocusNodeId(err.targetNodeId);
@@ -1263,9 +1201,6 @@ const MainPage: React.FC = () => {
         setHighlightFieldRequest({ fields: fieldsForNode, token: Date.now() });
       }
     } else if (err.targetNodeId && !err.targetField) {
-      // 필드로는 고칠 수 없는 오류(예: 잘못된 노드 연결 방향).
-      // 노드의 Settings 탭도 함께 보여주고, 캔버스에서는 문제의 연결선을
-      // 실제로 선택된 상태(빨간 X 삭제 버튼)로 만들어 바로 알아볼 수 있게 한다.
       setSelectedNodeIds([err.targetNodeId]);
       setSelectedFileId(null);
       setLeftActiveTab('Settings');
@@ -1486,10 +1421,10 @@ const MainPage: React.FC = () => {
       </style>
 
      <Header 
-      onGenerate={myRole === 'VIEWER' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어는 코드를 생성(Generate)할 수 없습니다.' })) : handleGenerateClick} 
+      onGenerate={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드 생성(Generate)은 방장(OWNER)만 가능합니다.' })) : handleGenerateClick} 
       isGenerateMode={appMode === 'generating'} 
       onResetUI={handleResetUI} 
-      onSaveCanvas={myRole === 'VIEWER' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '뷰어는 프로젝트를 저장할 수 없습니다.' })) : () => handleSaveCanvas(false)}
+      onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '현재 권한으로는 강제 저장(PUT)을 실행할 수 없습니다. 변경 사항은 자동 동기화됩니다.' })) : () => handleSaveCanvas(false)}
       onOpenTutorial={() => setShowTutorial(true)}
       onGoHome={handleGoHome}
     />
@@ -1530,6 +1465,7 @@ const MainPage: React.FC = () => {
             setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
             otherCursors={otherCursors}
             onCursorMove={handleCursorMove}
+            onNodesDragEnd={handleNodesDragEnd}
             focusEdgeId={focusEdgeId}
             setFocusEdgeId={setFocusEdgeId}
           />
@@ -1604,6 +1540,7 @@ const MainPage: React.FC = () => {
                 isViewer={myRole === 'VIEWER'} 
                 logActivity={logActivity}
                 highlightFieldRequest={highlightFieldRequest}
+                onNodeNameChange={handleNodeNameChange}
               />
             </>
           )}

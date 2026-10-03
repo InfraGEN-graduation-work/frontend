@@ -105,11 +105,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = async () => {
     if (accessToken) {
       try {
-        await fetch(`${BASE_URL}/members/logout`, {
+        const res = await fetch(`${BASE_URL}/members/logout`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${accessToken}` },
           credentials: 'include'
         });
+        
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '로그아웃 실패' }));
+          if (res.status === 403) return; // 게스트 로그아웃 금지 등의 경우 리다이렉트 중단
+        }
       } catch (err) {
         console.error("Logout request failed", err);
       }

@@ -37,16 +37,15 @@ interface RightSideBarProps {
   width: number;
   isViewer?: boolean;
   logActivity: (msg: string) => void;
-  // 튜토리얼 등 외부(MainPage)에서 "이 필드들을 잠깐 빨간색으로 강조해줘"라고
-  // 요청할 때 쓰는 채널. token이 바뀔 때마다(같은 fields라도) 다시 깜빡인다.
   highlightFieldRequest?: { fields: string[]; token: number } | null;
+  onNodeNameChange?: (nodeId: string, newName: string) => void;
 }
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
   projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, markFilesAsModified, deleteRightPanelItems,
   selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, resetTrigger,
   setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width, isViewer = false, logActivity,
-  highlightFieldRequest
+  highlightFieldRequest, onNodeNameChange
 }) => {
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
@@ -58,10 +57,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
 
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
-  // 강조할 필드 목록. 오류 목록을 직접 클릭했을 때는 [단일 필드]로,
-  // highlightFieldRequest로 여러 필드를 한번에 강조할 수도 있다.
   const [highlightedFields, setHighlightedFields] = useState<string[]>([]);
-
   const [collapsedErrorGroups, setCollapsedErrorGroups] = useState<string[]>([]);
 
   const clearCanvasSelectionArea = () => {
@@ -80,8 +76,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     }
   }, [resetTrigger, targetFileIds]);
 
-  // 외부(MainPage/튜토리얼)에서 특정 필드들을 강조해달라는 요청이 오면, 오류 항목을
-  // 직접 클릭했을 때와 동일한 방식(딜레이 -> 스크롤 -> 1.5초 후 해제)으로 처리한다.
   useEffect(() => {
     if (!highlightFieldRequest || highlightFieldRequest.fields.length === 0) return;
     const { fields } = highlightFieldRequest;
@@ -99,7 +93,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     }, 1650);
 
     return () => { clearTimeout(t1); clearTimeout(t2); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightFieldRequest]);
 
   const unassignedNodes = nodes.filter((canvasNode) => !files.some((file) => file.nodeIds.includes(canvasNode.id)));
@@ -973,9 +966,11 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       <input id="field-displayName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={selectedNode.name} 
                         onChange={(e) => {
                           if (isViewer) return;
-                          setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: e.target.value } : n));
+                          const newName = e.target.value;
+                          setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: newName } : n));
+                          if (onNodeNameChange) onNodeNameChange(selectedNode.id, newName);
                           markFilesAsModified();
-                          logActivity(`[수정] 노드의 화면 표시 이름이 '${e.target.value}'(으)로 변경되었습니다.`);
+                          logActivity(`[수정] 노드의 화면 표시 이름이 '${newName}'(으)로 변경되었습니다.`);
                         }}
                         style={inputStyle} readOnly={isViewer}
                       />
