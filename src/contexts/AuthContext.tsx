@@ -114,7 +114,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '로그아웃 실패' }));
-          if (res.status === 403) return; // 게스트 로그아웃 금지 등의 경우 리다이렉트 중단
+          if (res.status === 403) return;
         }
       } catch (err) {
         console.error("Logout request failed", err);

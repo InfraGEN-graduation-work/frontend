@@ -60,7 +60,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const nodeTemplates: Record<string, string[]> = {
     Server: ['Spring Boot'],
-    Database: ['MySQL', 'Redis'] 
+    Database: ['MySQL', 'PostgreSQL', 'Redis'] 
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;
@@ -108,6 +108,15 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   };
 
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
+    if (myRole !== 'OWNER') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('global-toast', {
+        detail: myRole === 'EDITOR'
+          ? 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. 노드 추가는 OWNER만 가능합니다.'
+          : 'VIEWER는 노드를 추가할 수 없습니다.'
+      }));
+      return;
+    }
     e.dataTransfer.setData('nodeType', nodeName);
     const dragGhost = document.createElement('div');
     dragGhost.className = 'deployed-node'; 

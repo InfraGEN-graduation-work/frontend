@@ -1,9 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { NodeData, SelectionArea, Edge } from '../types';
-import type { ViewportState, RemoteCursor } from '../MainPage';
+import type { ViewportState } from '../MainPage';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
+
+const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'Redis'];
+
+export interface DraggedNodePosition {
+  id: string;
+  x: number;
+  y: number;
+}
 
 interface CanvasProps {
   nodes: NodeData[];
@@ -27,18 +35,19 @@ interface CanvasProps {
   resetTrigger: number;
   setActiveTab: React.Dispatch<React.SetStateAction<'Project' | 'Settings' | 'Validation'>>;
   setShowRightSidebar: React.Dispatch<React.SetStateAction<boolean>>;
-  otherCursors?: RemoteCursor[];
-  onCursorMove?: (x: number, y: number) => void;
   focusEdgeId?: string | null;
   setFocusEdgeId?: React.Dispatch<React.SetStateAction<string | null>>;
-  onNodesDragEnd?: (nodeIds: string[]) => void;
+  onNodesDragMove?: (positions: DraggedNodePosition[]) => void;
+  onNodesDragEnd?: (positions: DraggedNodePosition[]) => void;
+  canMoveNodes?: boolean;
+  canEditStructure?: boolean;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
-  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar, otherCursors = [], onCursorMove,
-  focusEdgeId, setFocusEdgeId, onNodesDragEnd
+  focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar,
+  focusEdgeId, setFocusEdgeId, onNodesDragMove, onNodesDragEnd, canMoveNodes = true, canEditStructure = true
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -54,6 +63,7 @@ const Canvas: React.FC<CanvasProps> = ({
 
   const viewportRef = useRef<HTMLElement>(null);
   const lastPointerRef = useRef<{ clientX: number, clientY: number } | null>(null);
+  const dragPositionsRef = useRef<DraggedNodePosition[]>([]);
 
   const NODE_W = 210;
   const NODE_H = 66;
@@ -149,6 +159,26 @@ const Canvas: React.FC<CanvasProps> = ({
     };
   };
 
+  const notify = (message: string) => window.dispatchEvent(new CustomEvent('global-toast', { detail: message }));
+
+  const getConnectionBlockReason = (aId: string, bId: string): string | null => {
+    const a = nodes.find(n => n.id === aId);
+    const b = nodes.find(n => n.id === bId);
+    if (!a || !b) return null;
+    const app = a.type === 'Spring Boot' ? a : b.type === 'Spring Boot' ? b : null;
+    const dependency = app === a ? b : a;
+    if (!app || !DEPENDENCY_NODE_TYPES.includes(dependency.type)) return null;
+
+    const alreadyConnected = edges.some(edge => {
+      const otherId = edge.sourceId === app.id ? edge.targetId : edge.targetId === app.id ? edge.sourceId : null;
+      if (!otherId || otherId === dependency.id) return false;
+      return nodes.find(n => n.id === otherId)?.type === dependency.type;
+    });
+    return alreadyConnected
+      ? `'${app.name}'에는 이미 ${dependency.type} 노드가 연결되어 있습니다. 같은 종류의 DB는 하나만 연결할 수 있습니다.`
+      : null;
+  };
+
   const checkEdgeScroll = (clientX: number, clientY: number) => {
     if (!viewportRef.current) return false;
     const rect = viewportRef.current.getBoundingClientRect();
@@ -185,10 +215,6 @@ const Canvas: React.FC<CanvasProps> = ({
     const state = stateRef.current;
     const coords = getCoords(clientX, clientY, viewportRef.current, state.zoomLevel);
     
-    if (onCursorMove) {
-      onCursorMove(coords.x, coords.y);
-    }
-
     const dx = coords.x - state.startMousePos.x;
     const dy = coords.y - state.startMousePos.y;
 
@@ -222,6 +248,14 @@ const Canvas: React.FC<CanvasProps> = ({
           : n
       ));
 
+      const groupPositions = Object.keys(state.initialPositions).map(id => ({
+        id,
+        x: state.initialPositions[id].x + clampedDx,
+        y: state.initialPositions[id].y + clampedDy
+      }));
+      dragPositionsRef.current = groupPositions;
+      onNodesDragMove?.(groupPositions);
+
       if (selection.active) {
          setSelection(prev => ({ ...prev, x: state.initialSelectionPos.x + clampedDx, y: state.initialSelectionPos.y + clampedDy }));
       }
@@ -242,6 +276,10 @@ const Canvas: React.FC<CanvasProps> = ({
             ? { ...n, x: pos.x + clampedDx, y: pos.y + clampedDy } 
             : n
         ));
+
+        const singlePosition = [{ id: state.draggingNodeId, x: pos.x + clampedDx, y: pos.y + clampedDy }];
+        dragPositionsRef.current = singlePosition;
+        onNodesDragMove?.(singlePosition);
       }
     } else if (state.isAreaSelecting) {
       const newX = Math.max(0, Math.min(state.startMousePos.x, coords.x));
@@ -294,7 +332,9 @@ const Canvas: React.FC<CanvasProps> = ({
       coords.y >= selection.y && coords.y <= selection.y + selection.height;
 
     if (isSelectMode && isInsideSelection) {
+      if (!canMoveNodes) return;
       saveHistory();
+      dragPositionsRef.current = [];
       setIsGroupDragging(true);
       setStartMousePos(coords);
       const positions: Record<string, { x: number, y: number }> = {};
@@ -309,7 +349,8 @@ const Canvas: React.FC<CanvasProps> = ({
     const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + NODE_W && coords.y >= n.y && coords.y <= n.y + NODE_H);
 
     if (targetNode) {
-      saveHistory();
+      if (canMoveNodes) saveHistory();
+      dragPositionsRef.current = [];
       
       let currentSelected = selectedNodeIds;
 
@@ -333,6 +374,11 @@ const Canvas: React.FC<CanvasProps> = ({
       if (currentSelected.length === 1) {
         setActiveTab('Settings');
         setShowRightSidebar(true);
+      }
+
+      if (!canMoveNodes) {
+        setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
+        return;
       }
 
       setStartMousePos(coords);
@@ -386,7 +432,10 @@ const Canvas: React.FC<CanvasProps> = ({
           (edge.sourceId === targetNode.id && edge.targetId === drawingEdgeSource)
         );
 
-        if (!exists) {
+        const blockedReason = exists ? null : getConnectionBlockReason(drawingEdgeSource, targetNode.id);
+        if (blockedReason) {
+          notify(blockedReason);
+        } else if (!exists) {
           saveHistory();
           markFilesAsModified();
           setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
@@ -396,13 +445,14 @@ const Canvas: React.FC<CanvasProps> = ({
     }
 
     if (draggingNodeId || isGroupDragging) {
-      markFilesAsModified();
-      if (onNodesDragEnd) {
-        if (draggingNodeId) {
-          onNodesDragEnd([draggingNodeId]);
-        } else if (isGroupDragging) {
-          onNodesDragEnd(nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.id));
-        }
+      const moved = dragPositionsRef.current.filter(p => {
+        const initial = initialPositions[p.id];
+        return initial && (Math.round(initial.x) !== Math.round(p.x) || Math.round(initial.y) !== Math.round(p.y));
+      });
+      dragPositionsRef.current = [];
+      if (moved.length > 0) {
+        markFilesAsModified();
+        onNodesDragEnd?.(moved);
       }
     }
     
@@ -417,6 +467,12 @@ const Canvas: React.FC<CanvasProps> = ({
     const coords = getCoords(e.clientX, e.clientY, viewportRef.current, zoomLevel);
     const targetNode = nodes.find(n => coords.x >= n.x && coords.x <= n.x + NODE_W && coords.y >= n.y && coords.y <= n.y + NODE_H);
     
+    if (!canEditStructure) {
+      if (drawingEdgeSource) setDrawingEdgeSource(null);
+      if (targetNode) notify('노드 연결은 OWNER만 변경할 수 있습니다.');
+      return;
+    }
+
     if (drawingEdgeSource) {
       if (targetNode && targetNode.id !== drawingEdgeSource) {
         const exists = edges.some(edge => 
@@ -424,7 +480,10 @@ const Canvas: React.FC<CanvasProps> = ({
           (edge.sourceId === targetNode.id && edge.targetId === drawingEdgeSource)
         );
 
-        if (!exists) {
+        const blockedReason = exists ? null : getConnectionBlockReason(drawingEdgeSource, targetNode.id);
+        if (blockedReason) {
+          notify(blockedReason);
+        } else if (!exists) {
           saveHistory();
           markFilesAsModified();
           setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
@@ -449,6 +508,10 @@ const Canvas: React.FC<CanvasProps> = ({
     const nodeType = e.dataTransfer.getData('nodeType');
     
     if (nodeType) {
+      if (!canEditStructure) {
+        notify('노드 추가는 OWNER만 할 수 있습니다.');
+        return;
+      }
       const contentEl = viewportRef.current.querySelector('.canvas-content') as HTMLElement;
       const maxW = contentEl ? contentEl.offsetWidth : 5000;
       const maxH = contentEl ? contentEl.offsetHeight : 5000;
@@ -553,7 +616,7 @@ const Canvas: React.FC<CanvasProps> = ({
                     style={{ pointerEvents: 'none' }}
                   />
 
-                  {isSelected && !isInactive && (
+                  {isSelected && !isInactive && canEditStructure && (
                     <g
                       transform={`translate(${midX}, ${midY})`} 
                       style={{ pointerEvents: 'auto', cursor: 'pointer' }}
@@ -637,29 +700,6 @@ const Canvas: React.FC<CanvasProps> = ({
                   <div className="node-name">{node.name}</div>
                   <div className="node-sub">메인 {node.type} 서비스</div>
                 </div>
-              </div>
-            </div>
-          ))}
-
-          {otherCursors.map(cursor => (
-            <div key={cursor.memberId} style={{
-              position: 'absolute',
-              left: cursor.x,
-              top: cursor.y,
-              zIndex: 9999,
-              pointerEvents: 'none',
-              transition: 'left 0.1s linear, top 0.1s linear'
-            }}>
-              <svg width="24" height="36" viewBox="0 0 24 36" fill="none" style={{ transform: 'translate(-4px, -4px)' }}>
-                <path d="M5.65376 2.15376C5.40128 1.64883 4.64883 1.64883 4.39635 2.15376L0.26046 10.4256C0.0336043 10.8793 0.443135 11.3703 0.916892 11.2124L4.05389 10.1668C4.36446 10.0632 4.70014 10.0632 5.01071 10.1668L8.14771 11.2124C8.62147 11.3703 9.031 10.8793 8.80414 10.4256L5.65376 2.15376Z" fill={cursor.color} stroke="white" strokeWidth="1"/>
-              </svg>
-              <div style={{
-                background: cursor.color, color: 'white', padding: '2px 8px',
-                borderRadius: '12px', fontSize: '12px', fontWeight: 'bold',
-                whiteSpace: 'nowrap', position: 'absolute', top: '16px', left: '16px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-              }}>
-                {cursor.nickname}
               </div>
             </div>
           ))}

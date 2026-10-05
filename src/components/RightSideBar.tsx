@@ -36,6 +36,7 @@ interface RightSideBarProps {
   setCloudSettings: React.Dispatch<React.SetStateAction<CloudSettings>>;
   width: number;
   isViewer?: boolean;
+  canRename?: boolean;
   logActivity: (msg: string) => void;
   highlightFieldRequest?: { fields: string[]; token: number } | null;
   onNodeNameChange?: (nodeId: string, newName: string) => void;
@@ -43,10 +44,11 @@ interface RightSideBarProps {
 
 const RightSideBar: React.FC<RightSideBarProps> = ({ 
   projectName, nodes, setNodes, edges, activeTab, setActiveTab, saveHistory, files, setFiles, targetFileIds, markFilesAsModified, deleteRightPanelItems,
-  selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, resetTrigger,
-  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width, isViewer = false, logActivity,
+  selectedFileId, setSelectedFileId, setSelectedNodeIds, selectedNodeIds, viewport, zoomLevel, setFocusNodeId, validationErrors, resetTrigger,
+  setSelection, setIsSelectMode, cloudProvider, includeLocal, setIncludeLocal, cloudSettings, setCloudSettings, width, isViewer = false, canRename, logActivity,
   highlightFieldRequest, onNodeNameChange
 }) => {
+  const canEditName = canRename ?? !isViewer;
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
   const [isDragOverTarget, setIsDragOverTarget] = useState(false);
   const [isDragOverUnassigned, setIsDragOverUnassigned] = useState(false);
@@ -96,10 +98,6 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   }, [highlightFieldRequest]);
 
   const unassignedNodes = nodes.filter((canvasNode) => !files.some((file) => file.nodeIds.includes(canvasNode.id)));
-  const unassignedNodeIds = unassignedNodes.map(n => n.id);
-
-  const activeNodes = nodes.filter(n => !unassignedNodeIds.includes(n.id));
-  const activeEdges = edges.filter(e => !unassignedNodeIds.includes(e.sourceId) && !unassignedNodeIds.includes(e.targetId));
 
   const handleDragOver = (e: React.DragEvent) => {
     if (isViewer) return;
@@ -322,6 +320,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   };
 
   const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '8px', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '12px', color: '#2d3748', outline: 'none' };
+  const hintStyle = { marginTop: '6px', fontSize: '11px', color: '#718096', lineHeight: 1.5, wordBreak: 'keep-all' as const };
 
   const renderComboInput = (key: keyof CloudSettings, options: {label: string, value: string}[], placeholder: string = '') => {
     const isOpen = openDropdownKey === key;
@@ -398,142 +397,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
     { value: 'AD-3', label: '가용성 도메인 3' }
   ];
 
-  const validationErrorsForRightPanel: { name: string; desc: string; targetNodeId?: string; isGlobal?: boolean; targetField?: string; isProjectTab?: boolean }[] = [];
-  
-  if (activeNodes.length === 0 && nodes.length > 0) {
-    validationErrorsForRightPanel.push({ name: '생성 대상 노드 없음', desc: '코드로 생성할 노드를 [생성할 노드 목록]으로 이동해주세요.', isProjectTab: true });
-  } else if (nodes.length === 0) {
-    validationErrorsForRightPanel.push({ name: '노드 미배치', desc: '캔버스에 노드를 1개 이상 배치해야 합니다.' });
-  }
-  
-  if (targetFileIds.length === 0) {
-    validationErrorsForRightPanel.push({ name: '생성 대상 없음', desc: '생성할 노드 목록(Target)이 존재하지 않습니다.', isProjectTab: true, targetField: 'target-file-box' });
-  }
-
-  const nameRegex = /^[a-zA-Z0-9_-]+$/;
-  const portMap = new Map<number, {id: string, name: string}[]>();
-
-  activeNodes.forEach(node => {
-    const settings = node.settings || {};
-    
-    const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
-      if (val && !nameRegex.test(val)) {
-        validationErrorsForRightPanel.push({ name: `${label} 형식 오류`, desc: `'${node.name}' 노드의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, targetNodeId: node.id, targetField: fieldKey });
-      }
-    };
-
-    if (!settings.name) validationErrorsForRightPanel.push({ name: '서비스 이름 누락', desc: `'${node.name}' 노드의 [서비스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'name' });
-    else checkNameFormat(settings.name, '서비스 이름', 'name');
-
-    if (!settings.containerName) validationErrorsForRightPanel.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
-    else checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
-
-    if (!settings.port) {
-      validationErrorsForRightPanel.push({ name: '포트 번호 누락', desc: `'${node.name}' 노드의 [포트 번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'port' });
-    } else {
-      const portNum = Number(settings.port);
-      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-        validationErrorsForRightPanel.push({ name: '포트 번호 범위 초과', desc: `'${node.name}' 노드의 포트 번호는 1024부터 65535 사이의 숫자여야 합니다.`, targetNodeId: node.id, targetField: 'port' });
-      } else {
-        if (!portMap.has(portNum)) portMap.set(portNum, []);
-        portMap.get(portNum)!.push({ id: node.id, name: node.name });
-      }
-    }
-
-    if (node.type === 'MySQL') {
-      if (!settings.imageVersion) validationErrorsForRightPanel.push({ name: 'MySQL 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-      
-      if (!settings.databaseName) validationErrorsForRightPanel.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
-      else checkNameFormat(settings.databaseName, '데이터베이스 이름', 'databaseName');
-
-      if (!settings.username) validationErrorsForRightPanel.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
-      else checkNameFormat(settings.username, '사용자 이름', 'username');
-
-      if (!settings.userPassword) {
-        validationErrorsForRightPanel.push({ name: 'DB 비밀번호 누락', desc: `'${node.name}' 노드의 [사용자 비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'userPassword' });
-      }
-
-      if (!settings.rootPassword || String(settings.rootPassword).length < 8) {
-        validationErrorsForRightPanel.push({ name: 'DB 루트 비밀번호 오류', desc: `'${node.name}' 노드의 [루트 비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'rootPassword' });
-      }
-    }
-    
-    if (node.type === 'Redis') {
-      if (!settings.imageVersion) validationErrorsForRightPanel.push({ name: 'Redis 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
-      
-      if (!settings.password) {
-        validationErrorsForRightPanel.push({ name: 'Redis 비밀번호 누락', desc: `'${node.name}' 노드의 [비밀번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
-      }
-    }
-    
-    if (node.type === 'Spring Boot') {
-      if (!settings.javaVersion) validationErrorsForRightPanel.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'javaVersion' });
-    }
-  });
-
-  portMap.forEach((nodesInfo, port) => {
-    if (nodesInfo.length > 1) {
-      nodesInfo.forEach(nodeInfo => {
-        validationErrorsForRightPanel.push({ name: '포트 번호 중복', desc: `포트 번호 ${port}가 여러 노드(${nodesInfo.map(n => n.name).join(', ')})에서 중복 사용되고 있습니다.`, targetNodeId: nodeInfo.id, targetField: 'port' });
-      });
-    }
-  });
-
-  activeEdges.forEach(edge => {
-    const sNode = activeNodes.find(n => n.id === edge.sourceId);
-    const tNode = activeNodes.find(n => n.id === edge.targetId);
-    if (sNode && tNode) {
-      const isSourceDb = sNode.type === 'MySQL' || sNode.type === 'Redis';
-      const isTargetServer = tNode.type === 'Spring Boot';
-      if (!isSourceDb || !isTargetServer) {
-        validationErrorsForRightPanel.push({ name: '잘못된 노드 연결 방향', desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`, targetNodeId: sNode.id });
-      }
-    }
-  });
-
-  const checkCloudNameFormat = (val: string | undefined, label: string, key: string) => {
-    if (val && !nameRegex.test(val)) {
-      validationErrorsForRightPanel.push({ name: `클라우드 이름 형식 오류`, desc: `Settings 탭의 [${label}]에는 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`, isGlobal: true, targetField: key });
-    }
-  };
-
-  const cloudNameFields = [
-    { key: 'vpcName', label: 'VPC/VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
-    { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-    { key: 'securityGroupName', label: 'Security Group/List Name' }, { key: 'instanceName', label: 'Instance Name' }
-  ];
-
-  if (cloudProvider !== 'LOCAL') {
-    cloudNameFields.forEach(({ key, label }) => { checkCloudNameFormat(cloudSettings[key as keyof CloudSettings], label, key); });
-
-    if (cloudProvider === 'AWS') {
-      const requiredAws = [
-        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VPC Name' }, { key: 'subnetName', label: 'Subnet Name' },
-        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-        { key: 'securityGroupName', label: 'Security Group Name' }, { key: 'instanceName', label: 'Instance Name' },
-        { key: 'amiId', label: 'AMI ID' }, { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }
-      ];
-      requiredAws.forEach(({ key, label }) => {
-        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-          validationErrorsForRightPanel.push({ name: `AWS 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
-        }
-      });
-    } else if (cloudProvider === 'OCI') {
-      const requiredOci = [
-        { key: 'region', label: 'Region' }, { key: 'vpcName', label: 'VCN Name' }, { key: 'subnetName', label: 'Subnet Name' },
-        { key: 'internetGatewayName', label: 'IGW Name' }, { key: 'routeTableName', label: 'Route Table Name' },
-        { key: 'securityGroupName', label: 'Security List Name' }, { key: 'instanceName', label: 'Instance Name' },
-        { key: 'hostnameLabel', label: 'Hostname' }, { key: 'compartmentId', label: 'Compartment ID' },
-        { key: 'availabilityDomain', label: 'Availability Domain' }, { key: 'amiId', label: 'Image ID' },
-        { key: 'adminCidr', label: 'Admin CIDR' }, { key: 'appCidr', label: 'App CIDR' }, { key: 'sshAuthorizedKeys', label: 'SSH Authorized Keys' }
-      ];
-      requiredOci.forEach(({ key, label }) => {
-        if (!String(cloudSettings[key as keyof CloudSettings] || '').trim()) {
-          validationErrorsForRightPanel.push({ name: `OCI 필수값 누락`, desc: `Settings 탭에서 [${label}] 값을 입력하세요.`, isGlobal: true, targetField: key });
-        }
-      });
-    }
-  }
+  const validationErrorsForRightPanel = validationErrors;
 
   const globalErrorsRightPanel = validationErrorsForRightPanel.filter(e => e.isGlobal || !e.targetNodeId);
   const nodeErrorsMapRightPanel = new Map<string, typeof validationErrorsForRightPanel>();
@@ -767,7 +631,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
       {activeTab === 'Settings' && (
         <div className="settings-panel" onClick={e => e.stopPropagation()}>
-          <div className="tree-title">Settings {isViewer && <span style={{fontSize:'11px', color:'#e53e3e', fontWeight:'normal'}}>(보기 전용)</span>}</div>
+          <div className="tree-title">Settings {isViewer && <span style={{fontSize:'11px', color:'#e53e3e', fontWeight:'normal'}}>{canEditName ? '(노드 이름만 수정 가능)' : '(보기 전용)'}</span>}</div>
           <div className="settings-content">
 
             {cloudProvider !== 'LOCAL' && (
@@ -963,16 +827,16 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     
                     <div className="setting-row">
                       <label>노드 이름 (화면 표시용)</label>
-                      <input id="field-displayName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={selectedNode.name} 
+                      <input id="field-displayName" type="text" className={`custom-input ${!canEditName ? 'viewer-input' : ''}`} value={selectedNode.name} 
                         onChange={(e) => {
-                          if (isViewer) return;
+                          if (!canEditName) return;
                           const newName = e.target.value;
                           setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: newName } : n));
                           if (onNodeNameChange) onNodeNameChange(selectedNode.id, newName);
                           markFilesAsModified();
                           logActivity(`[수정] 노드의 화면 표시 이름이 '${newName}'(으)로 변경되었습니다.`);
                         }}
-                        style={inputStyle} readOnly={isViewer}
+                        style={inputStyle} readOnly={!canEditName}
                       />
                     </div>
 
@@ -1059,6 +923,58 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
                           <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                        </div>
+                      </>
+                    ) : selectedNode.type === 'PostgreSQL' ? (
+                      <>
+                        <div className="setting-row">
+                          <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="postgres_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                        </div>
+                        <div className="setting-row">
+                          <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
+                          <select id="field-imageVersion" className={`custom-input ${highlightedFields.includes('imageVersion') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} style={inputStyle} disabled={isViewer}>
+                            <option value="" disabled>버전을 선택하세요</option>
+                            <option value="postgres:17">postgres : 17</option>
+                            <option value="postgres:16">postgres : 16</option>
+                            <option value="postgres:15">postgres : 15</option>
+                            <option value="postgres:latest">postgres : latest</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <label>컨테이너 이름 (containerName)</label>
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="비우면 서비스 이름으로 생성" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                        </div>
+                        <div className="setting-row">
+                          <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 5432" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>내 PC에 열리는 포트입니다. 컨테이너 안쪽은 5432로 고정이라, PC에서 PostgreSQL을 이미 실행 중이면 5433처럼 다른 번호로 바꿔 주세요.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>볼륨 이름 (volumeName)</label>
+                          <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="비우면 볼륨 없이 생성" onChange={(e) => updateSetting('volumeName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                        </div>
+
+                        <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', marginTop: '-2px' }}>
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                          </svg>
+                          데이터베이스 설정 (env)
+                        </div>
+                        <div className="setting-row">
+                          <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 언더바(_)만 사용할 수 있습니다.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>PostgreSQL에서는 이 계정이 관리자(superuser)입니다.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
                         </div>
                       </>
                     ) : selectedNode.type === 'Spring Boot' ? (

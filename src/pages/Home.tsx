@@ -7,6 +7,20 @@ import type { CloudProvider } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
 
+const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i;
+const ENV_ASSIGNMENT = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/;
+const isEnvFile = (fileName?: string) => /(^|\/)\.env(\.[\w-]+)?$/.test(fileName || '');
+const isSecretEnvLine = (line: string) => {
+  const match = ENV_ASSIGNMENT.exec(line);
+  return Boolean(match && SECRET_ENV_KEY.test(match[2]) && match[4].trim() !== '');
+};
+const hasEnvSecrets = (content: string) => content.split(/\r?\n/).some(isSecretEnvLine);
+const maskEnvSecrets = (content: string) => content.split(/\r?\n/).map(line => {
+  if (!isSecretEnvLine(line)) return line;
+  const match = ENV_ASSIGNMENT.exec(line)!;
+  return `${match[1]}${match[2]}${match[3]}********`;
+}).join('\n');
+
 interface Project {
   projectId: number;
   title: string;
@@ -75,6 +89,8 @@ export default function Home() {
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
   const [projectToLeave, setProjectToLeave] = useState<number | null>(null);
   const [collaboratorToRemove, setCollaboratorToRemove] = useState<number | string | null>(null);
+  const [transferTarget, setTransferTarget] = useState<{ memberId: number | string; nickname: string } | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
@@ -87,6 +103,7 @@ export default function Home() {
   const [codeViewerFiles, setCodeViewerFiles] = useState<any[]>([]);
   const [codeViewerNodes, setCodeViewerNodes] = useState<any[]>([]);
   const [selectedViewFile, setSelectedViewFile] = useState<any>(null);
+  const [showViewerSecrets, setShowViewerSecrets] = useState(false);
 
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
@@ -196,7 +213,7 @@ export default function Home() {
     fetchCollaborators(projectId);
   };
 
-  const fetchCollaborators = async (projectId: number) => {
+  const fetchCollaborators = async (projectId: number, isOwnerOverride?: boolean) => {
     try {
       const res1 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`);
       let activeMembers: Collaborator[] = [];
@@ -211,9 +228,9 @@ export default function Home() {
       }
 
       let pendingMembers: Collaborator[] = [];
-      const project = projects.find(p => p.projectId === projectId);
+      const isOwner = isOwnerOverride ?? projects.find(p => p.projectId === projectId)?.myRole === 'OWNER';
 
-      if (project?.myRole === 'OWNER') {
+      if (isOwner) {
         try {
           const res2 = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators/invitations`);
           if (res2.ok) {
@@ -309,24 +326,24 @@ export default function Home() {
 
   const handleRemoveCollaborator = (memberId: number | string) => {
     if (!collabProjectId) return;
+
+    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대 취소 기능은 아직 지원되지 않습니다.' }));
+      return;
+    }
+
     setCollaboratorToRemove(memberId);
   };
 
   const confirmRemoveCollaborator = async () => {
-    if (!collabProjectId || !collaboratorToRemove) return;
+    if (!collabProjectId || collaboratorToRemove === null) return;
 
     try {
-      let res;
-      if (typeof collaboratorToRemove === 'string' && collaboratorToRemove.startsWith('inv-')) {
-        const invitationId = collaboratorToRemove.replace('inv-', '');
-        res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, { method: 'POST' });
-      } else {
-        res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, { method: 'DELETE' });
-      }
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, { method: 'DELETE' });
 
       if (res.ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '성공적으로 처리되었습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자를 프로젝트에서 퇴출했습니다.' }));
       } else {
         const text = await res.text();
         let msg = '처리 중 오류가 발생했습니다.';
@@ -367,24 +384,66 @@ export default function Home() {
     } catch (err) {}
   };
 
-  const handleTransferOwnership = async (memberId: number | string) => {
-    if (!collabProjectId) return;
+  const handleRequestTransfer = (memberId: number | string, nickname: string) => {
+    if (typeof memberId === 'string' && memberId.startsWith('inv-')) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 수락한 참여자에게만 소유권을 위임할 수 있습니다.' }));
+      return;
+    }
+    setOpenRoleDropdownId(null);
+    setTransferTarget({ memberId, nickname });
+  };
+
+  const confirmTransferOwnership = async () => {
+    if (!collabProjectId || !transferTarget || isTransferring) return;
+    const projectId = collabProjectId;
+    const target = transferTarget;
+    setIsTransferring(true);
+
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/ownership-transfer/${memberId}`, {
-        method: 'POST'
-      });
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+      const send = () => fetchWithAuth(`${BASE_URL}/projects/${projectId}/ownership-transfer/${target.memberId}`, { method: 'POST' });
+
+      let res = await send();
+      let data: any = await res.json().catch(() => ({}));
+
+      if (res.status === 409 && data.code === 'COMMON409_2') {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        res = await send();
+        data = await res.json().catch(() => ({}));
+      }
+
+      const isSuccess = res.ok && (data.isSuccess ?? data.is_success ?? true);
 
       if (isSuccess) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '소유권이 성공적으로 이전되었습니다.' }));
+        setTransferTarget(null);
+        setIsCollabEditMode(false);
+        setOpenRoleDropdownId(null);
+        setCollabTab('list');
+
+        setProjects(prev => prev.map(p => p.projectId === projectId ? { ...p, myRole: 'EDITOR' } : p));
+        setCollaborators(prev => prev.filter(c => String(c.memberId) !== String(target.memberId)));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${target.nickname}님에게 소유권을 위임했습니다. 이제 EDITOR로 참여합니다.` }));
+
+        fetchCollaborators(projectId, false);
         fetchDashboardData();
-        fetchCollaborators(collabProjectId);
-      } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '소유권 이전에 실패했습니다.' }));
+        return;
       }
+
+      let msg = data.message || '소유권 위임에 실패했습니다.';
+      if (data.code === 'PROJECT404_4') {
+        msg = '위임할 수 없는 참여자입니다. 같은 계정 유형(일반 회원↔일반 회원, 게스트↔게스트)의 활성 참여자에게만 위임할 수 있습니다.';
+      } else if (data.code === 'PROJECT404_1') {
+        msg = '프로젝트를 찾을 수 없거나 소유권을 위임할 권한이 없습니다.';
+        fetchCollaborators(projectId, false);
+        fetchDashboardData();
+      } else if (data.code === 'COMMON409_2') {
+        msg = '동시 요청으로 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+      }
+      setTransferTarget(null);
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -525,17 +584,13 @@ export default function Home() {
   const handleLeaveSingle = (e: React.MouseEvent, projectId: number) => {
     e.stopPropagation();
     setMenuOpenId(null);
-    if (!userInfo.id) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원 정보를 불러오는 중입니다. 잠시 후 다시 시도해주세요.' }));
-      return;
-    }
     setProjectToLeave(projectId);
   };
 
   const confirmLeaveSingle = async () => {
-    if (!projectToLeave || !userInfo.id) return;
+    if (!projectToLeave) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/${userInfo.id}`, { method: 'DELETE' });
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/me`, { method: 'DELETE' });
 
       if (res.ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
@@ -557,7 +612,6 @@ export default function Home() {
   };
 
   const confirmBulkDelete = async () => {
-    if (!userInfo.id) return;
     try {
       const results = await Promise.all(
         selectedIds.map(async (id) => {
@@ -566,7 +620,7 @@ export default function Home() {
             const isOwner = proj?.myRole === 'OWNER';
             const endpoint = isOwner 
               ? `${BASE_URL}/projects/${id}`
-              : `${BASE_URL}/projects/${id}/collaborators/${userInfo.id}`;
+              : `${BASE_URL}/projects/${id}/collaborators/me`;
 
             const res = await fetchWithAuth(endpoint, { method: 'DELETE' });
             return { id, isSuccess: res.ok };
@@ -797,6 +851,7 @@ export default function Home() {
       setCodeViewerFiles(allFiles);
       setCodeViewerNodes(nodes);
       setSelectedViewFile(allFiles[0]);
+      setShowViewerSecrets(false);
 
       setIsCodeViewerOpen(true);
     } catch (err) {
@@ -1341,46 +1396,42 @@ export default function Home() {
 
                           <div className="actions">
                             {member.status === 'PENDING' ? (
-                              <PendingBadge onClick={() => handleRemoveCollaborator(member.memberId)}>
-                                <span className="default-text">수락대기</span>
-                                <span className="hover-text">초대취소</span>
-                              </PendingBadge>
-                            ) : !isCollabEditMode || member.isMe ? (
+                              <PendingBadge title="상대방의 초대 수락을 기다리는 중입니다.">수락대기</PendingBadge>
+                            ) : !(isCollabOwner && isCollabEditMode) || member.isMe ? (
                               <span className={`role-text ${member.role.toLowerCase()}`}>{member.role}</span>
                             ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{ position: 'relative' }}>
+                              <div className="manage-actions">
+                                <div className="role-select-wrapper">
                                   <div
+                                    className="role-select"
                                     onClick={(e) => { e.stopPropagation(); setOpenRoleDropdownId(openRoleDropdownId === member.memberId ? null : member.memberId); }}
-                                    style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '4px', padding: '4px 8px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', fontWeight: 600, color: '#4a5568', cursor: 'pointer', whiteSpace: 'nowrap' }}
                                   >
                                     <span>{member.role}</span>
-                                    <span style={{ fontSize: '8px' }}>▼</span>
+                                    <span className="caret">▼</span>
                                   </div>
                                   {openRoleDropdownId === member.memberId && (
-                                    <div style={{ position: 'absolute', top: '100%', right: 0, minWidth: '100%', background: 'white', border: '1px solid #e2e8f0', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 100, marginTop: '2px', overflow: 'hidden' }}>
-                                      <div 
-                                        onClick={() => { handleRoleChange(member.memberId, 'EDITOR'); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7', textAlign: 'center' }}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                      >EDITOR</div>
-                                      <div 
-                                        onClick={() => { handleRoleChange(member.memberId, 'VIEWER'); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', borderBottom: '1px solid #edf2f7', textAlign: 'center' }}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                      >VIEWER</div>
-                                      <div 
-                                        onClick={() => { handleTransferOwnership(member.memberId); setOpenRoleDropdownId(null); }} 
-                                        style={{ padding: '6px 12px', fontSize: '11px', cursor: 'pointer', textAlign: 'center', color: '#c05621' }}
-                                        onMouseOver={(e) => e.currentTarget.style.background = '#f8f9fa'} 
-                                        onMouseOut={(e) => e.currentTarget.style.background = 'white'}
-                                      >OWNER 이전</div>
+                                    <div className="role-menu">
+                                      {(['EDITOR', 'VIEWER'] as const).map(role => (
+                                        <div
+                                          key={role}
+                                          className={`role-option ${member.role === role ? 'active' : ''}`}
+                                          onClick={() => {
+                                            if (member.role !== role) handleRoleChange(member.memberId, role);
+                                            setOpenRoleDropdownId(null);
+                                          }}
+                                        >{role}</div>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
-                                <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                <div className="manage-buttons">
+                                  <button
+                                    className="transfer-btn"
+                                    disabled={isTransferring}
+                                    onClick={() => handleRequestTransfer(member.memberId, member.nickname)}
+                                  >위임</button>
+                                  <button className="remove-btn" onClick={() => handleRemoveCollaborator(member.memberId)}>퇴출</button>
+                                </div>
                               </div>
                             )}
                           </div>
@@ -1398,18 +1449,35 @@ export default function Home() {
       {collaboratorToRemove !== null && (
         <ModalOverlay onClick={() => setCollaboratorToRemove(null)} style={{ zIndex: 1100 }}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
-              {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-') ? '초대 취소' : '참여자 퇴출'}
-            </ModalTitle>
+            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>참여자 퇴출</ModalTitle>
             <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-              {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-')
-                ? '이 사용자에게 보낸 초대를 취소하시겠습니까?'
-                : '정말 이 참여자를 프로젝트에서 퇴출하시겠습니까?'}
+              정말 이 참여자를 프로젝트에서 퇴출하시겠습니까?
             </p>
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" onClick={() => setCollaboratorToRemove(null)}>닫기</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmRemoveCollaborator}>
-                {typeof collaboratorToRemove === 'string' && String(collaboratorToRemove).startsWith('inv-') ? '초대취소' : '퇴출하기'}
+              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={confirmRemoveCollaborator}>퇴출하기</SubmitBtn>
+            </ModalActions>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {transferTarget !== null && (
+        <ModalOverlay onClick={() => { if (!isTransferring) setTransferTarget(null); }} style={{ zIndex: 1100 }}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalTitle style={{ color: '#c05621', fontSize: '18px' }}>소유권 위임</ModalTitle>
+            <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px 0' }}>
+              <strong style={{ color: '#2d3748' }}>{transferTarget.nickname}</strong>님에게 이 프로젝트의 소유권(OWNER)을 위임하시겠습니까?
+            </p>
+            <TransferNotice>
+              <li>수락 절차 없이 <strong>즉시</strong> 적용됩니다.</li>
+              <li>{transferTarget.nickname}님이 OWNER가 되고, 나는 <strong>EDITOR</strong>로 남습니다.</li>
+              <li>이름·설명 수정, 참여자 관리, 프로젝트 삭제, Generate는 더 이상 할 수 없습니다.</li>
+              <li>캔버스, 생성 이력, 파일은 그대로 유지됩니다.</li>
+            </TransferNotice>
+            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
+              <CancelBtn type="button" disabled={isTransferring} onClick={() => setTransferTarget(null)}>취소</CancelBtn>
+              <SubmitBtn type="button" disabled={isTransferring} style={{ background: '#dd6b20', opacity: isTransferring ? 0.7 : 1 }} onClick={confirmTransferOwnership}>
+                {isTransferring ? '위임 중...' : '위임하기'}
               </SubmitBtn>
             </ModalActions>
           </ModalContent>
@@ -1522,6 +1590,7 @@ export default function Home() {
                         $isViewing={isViewing}
                         onClick={() => {
                           setSelectedViewFile(file);
+                          setShowViewerSecrets(false);
                         }}
                       >
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', overflow: 'hidden' }}>
@@ -1553,12 +1622,28 @@ export default function Home() {
                     </CVAssignedNodes>
 
                     <CVSectionTitle>코드 내용</CVSectionTitle>
-                    <CVCodeContainer>
-                      <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0' }}>
-                        {selectedViewFile.fileName}
-                      </div>
-                      {selectedViewFile.content}
-                    </CVCodeContainer>
+                    {(() => {
+                      const content = String(selectedViewFile.content || '');
+                      const canMask = isEnvFile(selectedViewFile.fileName) && hasEnvSecrets(content);
+                      return (
+                        <CVCodeContainer>
+                          <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                            <span>{selectedViewFile.fileName}</span>
+                            {canMask && (
+                              <button
+                                type="button"
+                                className="secret-toggle-btn"
+                                onClick={() => setShowViewerSecrets(prev => !prev)}
+                                style={{ flexShrink: 0, padding: '3px 8px', fontSize: '11px', fontWeight: 600, color: '#4a5568', background: '#f1f3f5', border: '1px solid #cbd5e0', borderRadius: '4px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+                              >
+                                {showViewerSecrets ? '비밀번호 숨기기' : '비밀번호 표시'}
+                              </button>
+                            )}
+                          </div>
+                          {canMask && !showViewerSecrets ? maskEnvSecrets(content) : content}
+                        </CVCodeContainer>
+                      );
+                    })()}
                   </>
                 ) : (
                   <EmptyHistory>선택된 파일이 없습니다.</EmptyHistory>
@@ -1637,20 +1722,10 @@ const PendingBadge = styled.div`
   font-size: 12px;
   font-weight: 700;
   color: #d69e2e;
-  cursor: pointer;
+  cursor: default;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: 0.2s;
   text-align: center;
-
-  .hover-text { display: none; }
-
-  &:hover {
-    background: #fff5f5;
-    color: #e53e3e;
-    .default-text { display: none; }
-    .hover-text { display: inline; }
-  }
 `;
 
 const PageContainer = styled.div`
@@ -2213,13 +2288,14 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
   background: ${({ $isMe }) => $isMe ? '#f0fdfc' : 'white'};
   border-radius: 8px;
 
-  .user-info { 
-    display: flex; 
-    align-items: center; 
-    gap: 12px; 
-    flex: 1; 
-    min-width: 0; 
-    margin-right: 12px; 
+  .user-info {
+    display: flex;
+    align-items: center;
+    align-self: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    margin-right: 12px;
   }
   .avatar { 
     width: 36px; height: 36px; 
@@ -2229,9 +2305,9 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     font-weight: bold; font-size: 14px; 
     flex-shrink: 0;
   }
-  .details { 
-    display: flex; flex-direction: column; gap: 2px; 
-    flex: 1; min-width: 0; 
+  .details {
+    display: flex; flex-direction: column; justify-content: center; gap: 2px;
+    flex: 1; min-width: 0;
   }
   .name-wrapper { 
     display: flex; align-items: center; gap: 4px; 
@@ -2246,10 +2322,87 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
   }
 
-  .actions { 
-    display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px; 
-    flex-shrink: 0; 
+  .actions {
+    display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px;
+    align-self: center;
+    flex-shrink: 0;
   }
+
+  .manage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 128px;
+  }
+  .role-select-wrapper { position: relative; width: 100%; }
+  .role-select {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4a5568;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.2s;
+  }
+  .role-select:hover { border-color: #cbd5e0; }
+  .role-select .caret { font-size: 8px; }
+  .role-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 2px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 100;
+    overflow: hidden;
+  }
+  .role-option {
+    padding: 6px 12px;
+    font-size: 11px;
+    text-align: center;
+    color: #4a5568;
+    cursor: pointer;
+  }
+  .role-option + .role-option { border-top: 1px solid #edf2f7; }
+  .role-option:hover { background: #f8f9fa; }
+  .role-option.active { color: #28b4ad; font-weight: 700; }
+
+  .manage-buttons {
+    display: flex;
+    gap: 6px;
+  }
+  .manage-buttons button {
+    flex: 1;
+    padding: 4px 0;
+  }
+  .transfer-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fffaf0;
+    border: 1px solid #f6ad55;
+    color: #c05621;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: 0.2s;
+    white-space: nowrap;
+  }
+  .transfer-btn:hover { background: #feebc8; }
+  .transfer-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .role-text { font-size: 12px; font-weight: 700; margin-top: 0; }
   .role-text.owner { color: #c05621; }
@@ -2273,6 +2426,19 @@ const CollabItem = styled.div<{ $isMe?: boolean }>`
     white-space: nowrap;
   }
   .remove-btn:hover { background: #fed7d7; }
+`;
+
+const TransferNotice = styled.ul`
+  margin: 0 0 24px 0;
+  padding: 12px 14px 12px 30px;
+  background: #fffaf0;
+  border: 1px solid #fbd38d;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #744210;
+
+  strong { color: #c05621; }
 `;
 
 const InviteItem = styled.div`
