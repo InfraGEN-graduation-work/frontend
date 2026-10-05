@@ -92,8 +92,14 @@ const pickSnapshotVersion = (result: any): number | null => {
 type ResyncReason = 'connect' | 'resync' | 'conflict';
 
 const LIVE_SYNC_DEBOUNCE_MS = 500;
-const DRAG_OP_INTERVAL_MS = 200;
+const LIVE_SYNC_QUIET_MS = 400;
+const VERSIONED_WRITE_RETRIES = 3;
+const DRAG_OP_INTERVAL_MS = 50;
 const DRAG_OP_MAX_NODES = 3;
+const LOCAL_DRAG_HOLD_MS = 1500;
+const REMOTE_MOVE_START_MS = 80;
+const REMOTE_MOVE_IDLE_MS = 300;
+const REMOTE_MOVE_MAX_MS = 220;
 const NAME_OP_DEBOUNCE_MS = 300;
 
 const EDITOR_STRUCTURE_MESSAGE = 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. (노드 추가·삭제·연결·설정 변경은 OWNER만 가능)';
@@ -106,6 +112,20 @@ interface PendingOp {
   nodeId: string;
   payload: Record<string, unknown>;
 }
+
+interface RemoteMotion {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  start: number;
+  duration: number;
+}
+
+const motionPosition = (m: RemoteMotion, now: number) => {
+  const t = m.duration <= 0 ? 1 : Math.min(1, Math.max(0, (now - m.start) / m.duration));
+  return { x: m.fromX + (m.toX - m.fromX) * t, y: m.fromY + (m.toY - m.fromY) * t, done: t >= 1 };
+};
 
 interface SnapshotResult {
   project: any | null;
@@ -422,6 +442,12 @@ const MainPage: React.FC = () => {
 
   const lastDragOpAt = useRef(0);
   const lastSentDragPositions = useRef(new Map<string, { x: number; y: number }>());
+  const pendingDragPositions = useRef<DraggedNodePosition[] | null>(null);
+  const dragOpTimer = useRef<number | null>(null);
+  const locallyDraggedAt = useRef(new Map<string, number>());
+  const remoteMotions = useRef(new Map<string, RemoteMotion>());
+  const lastRemoteMoveAt = useRef(new Map<string, { at: number; avgGap: number | null }>());
+  const motionFrame = useRef<number | null>(null);
   const pendingNameEdits = useRef(new Map<string, { name: string; timer: number }>());
 
   const lastSyncedGraphSig = useRef<string | null>(null);
@@ -429,6 +455,9 @@ const MainPage: React.FC = () => {
   const liveSyncInFlight = useRef(false);
   const liveSyncAgain = useRef(false);
   const liveSyncFailedNotified = useRef(false);
+  const liveSyncTimer = useRef<{ sig: string; timer: number } | null>(null);
+  const liveSyncQuietTimer = useRef<number | null>(null);
+  const lastRemoteOpAt = useRef(0);
   const runLiveSyncRef = useRef<() => void>(() => {});
   const latestMappedRef = useRef<() => { mappedNodes: any[]; mappedEdges: any[] }>(() => ({ mappedNodes: [], mappedEdges: [] }));
   const graphStateRef = useRef({ nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings });
@@ -452,6 +481,8 @@ const MainPage: React.FC = () => {
 
   const restoreFullProjectGraph = useCallback((resultProject: any) => {
     isDataLoaded.current = false;
+    remoteMotions.current.clear();
+    lastRemoteMoveAt.current.clear();
 
     setProjectName(resultProject.title);
     setProjectDescription(resultProject.description || '');
@@ -554,8 +585,72 @@ const MainPage: React.FC = () => {
   const applyOperations = useCallback((ops: any[], options: { force?: boolean } = {}) => {
     const toApply = ops.filter(op => op && typeof op.operationId === 'string' && (options.force || !appliedOperations.current.has(op.operationId)));
     if (toApply.length === 0) return;
-    toApply.forEach(op => appliedOperations.current.add(op.operationId));
+    toApply.forEach(op => {
+      appliedOperations.current.add(op.operationId);
+      if (op.type === 'UPDATE_NODE_POSITION') remoteMotions.current.delete(op.nodeId);
+    });
     setNodes(prev => toApply.reduce<NodeData[]>((acc, op) => applyOpToNodes(acc, op), prev));
+  }, []);
+
+  const isLocallyDragging = useCallback((nodeId: string) => {
+    const at = locallyDraggedAt.current.get(nodeId);
+    return at !== undefined && Date.now() - at < LOCAL_DRAG_HOLD_MS;
+  }, []);
+
+  const runRemoteMotionFrame = useCallback(() => {
+    motionFrame.current = null;
+    const motions = remoteMotions.current;
+    if (motions.size === 0) return;
+    const now = performance.now();
+    const frame = new Map<string, { x: number; y: number }>();
+    motions.forEach((m, id) => {
+      const pos = motionPosition(m, now);
+      frame.set(id, pos);
+      if (pos.done) motions.delete(id);
+    });
+    setNodes(prev => prev.map(n => {
+      const pos = frame.get(n.id);
+      return pos ? { ...n, x: pos.x, y: pos.y } : n;
+    }));
+    if (motions.size > 0) motionFrame.current = requestAnimationFrame(runRemoteMotionFrame);
+  }, []);
+
+  const animateRemotePosition = useCallback((op: any) => {
+    const toX = Number(op.payload?.positionX);
+    const toY = Number(op.payload?.positionY);
+    if (!Number.isFinite(toX) || !Number.isFinite(toY)) return;
+    const nodeId = op.nodeId;
+    if (isLocallyDragging(nodeId)) return;
+
+    const now = performance.now();
+    const running = remoteMotions.current.get(nodeId);
+    let from: { x: number; y: number } | null = running ? motionPosition(running, now) : null;
+    if (!from) {
+      const node = nodesRef.current.find(n => n.id === nodeId);
+      if (!node) {
+        setNodes(prev => applyOpToNodes(prev, op));
+        return;
+      }
+      from = { x: node.x, y: node.y };
+    }
+
+    const last = lastRemoteMoveAt.current.get(nodeId);
+    const gap = last ? now - last.at : Infinity;
+    let duration = REMOTE_MOVE_START_MS;
+    let avgGap: number | null = null;
+    if (gap <= REMOTE_MOVE_IDLE_MS) {
+      avgGap = last?.avgGap == null ? gap : last.avgGap * 0.7 + gap * 0.3;
+      duration = Math.min(REMOTE_MOVE_MAX_MS, Math.max(16, avgGap * 1.3));
+    }
+    lastRemoteMoveAt.current.set(nodeId, { at: now, avgGap });
+
+    remoteMotions.current.set(nodeId, { fromX: from.x, fromY: from.y, toX, toY, start: now, duration });
+    if (motionFrame.current === null) motionFrame.current = requestAnimationFrame(runRemoteMotionFrame);
+  }, [isLocallyDragging, runRemoteMotionFrame]);
+
+  useEffect(() => () => {
+    if (motionFrame.current !== null) cancelAnimationFrame(motionFrame.current);
+    if (dragOpTimer.current !== null) window.clearTimeout(dragOpTimer.current);
   }, []);
 
   const processIncomingOp = useCallback((op: any) => {
@@ -566,16 +661,24 @@ const MainPage: React.FC = () => {
       const key = opKey(op);
       if (latestOwnOpByKey.current.get(key) === op.operationId) {
         latestOwnOpByKey.current.delete(key);
-        applyOperations([op], { force: true });
+        const draggingNow = op.type === 'UPDATE_NODE_POSITION' && isLocallyDragging(op.nodeId);
+        if (!draggingNow) applyOperations([op], { force: true });
       }
     } else {
+      lastRemoteOpAt.current = Date.now();
       const alreadyCovered = typeof op.serverVersion === 'number' && op.serverVersion <= serverVersionRef.current;
-      if (!alreadyCovered) applyOperations([op]);
+      if (!alreadyCovered) {
+        if (op.type === 'UPDATE_NODE_POSITION') {
+          if (!appliedOperations.current.has(op.operationId)) animateRemotePosition(op);
+        } else {
+          applyOperations([op]);
+        }
+      }
     }
 
     appliedOperations.current.add(op.operationId);
     bumpServerVersion(op.serverVersion);
-  }, [applyOperations, bumpServerVersion]);
+  }, [applyOperations, animateRemotePosition, isLocallyDragging, bumpServerVersion]);
 
   const fetchCollaborationData = useCallback(async (afterVer: number = 0, mode: 'full' | 'light' | 'none' = 'full'): Promise<SnapshotResult | null> => {
     if (!projectId) return null;
@@ -634,7 +737,7 @@ const MainPage: React.FC = () => {
     let res = await send(serverVersionRef.current, false);
     let data: any = await res.json().catch(() => ({}));
 
-    if (isVersionConflict(res, data)) {
+    for (let attempt = 0; attempt < VERSIONED_WRITE_RETRIES && isVersionConflict(res, data); attempt++) {
       await syncServerVersion();
       markSelfWrite();
       res = await send(serverVersionRef.current, true);
@@ -727,18 +830,43 @@ const MainPage: React.FC = () => {
     });
   }, [sendOperation]);
 
-  const handleNodesDragMove = useCallback((positions: DraggedNodePosition[]) => {
-    if (positions.length === 0 || positions.length > DRAG_OP_MAX_NODES) return;
-    const now = Date.now();
-    if (now - lastDragOpAt.current < DRAG_OP_INTERVAL_MS) return;
-    lastDragOpAt.current = now;
+  const flushDragPositions = useCallback(() => {
+    if (dragOpTimer.current !== null) {
+      window.clearTimeout(dragOpTimer.current);
+      dragOpTimer.current = null;
+    }
+    const positions = pendingDragPositions.current;
+    pendingDragPositions.current = null;
+    if (!positions) return;
+    lastDragOpAt.current = Date.now();
     sendNodePositions(positions, true);
   }, [sendNodePositions]);
 
+  const handleNodesDragMove = useCallback((positions: DraggedNodePosition[]) => {
+    if (positions.length === 0) return;
+    const now = Date.now();
+    positions.forEach(p => {
+      locallyDraggedAt.current.set(p.id, now);
+      remoteMotions.current.delete(p.id);
+    });
+    if (positions.length > DRAG_OP_MAX_NODES) return;
+
+    pendingDragPositions.current = positions;
+    const wait = DRAG_OP_INTERVAL_MS * positions.length - (now - lastDragOpAt.current);
+    if (wait <= 0) flushDragPositions();
+    else if (dragOpTimer.current === null) dragOpTimer.current = window.setTimeout(flushDragPositions, wait);
+  }, [flushDragPositions]);
+
   const handleNodesDragEnd = useCallback((positions: DraggedNodePosition[]) => {
+    if (dragOpTimer.current !== null) {
+      window.clearTimeout(dragOpTimer.current);
+      dragOpTimer.current = null;
+    }
+    pendingDragPositions.current = null;
     sendNodePositions(positions, false);
     lastSentDragPositions.current.clear();
     lastDragOpAt.current = 0;
+    positions.forEach(p => locallyDraggedAt.current.delete(p.id));
   }, [sendNodePositions]);
 
   const handleNodeNameChange = useCallback((nodeId: string, newName: string) => {
@@ -1322,12 +1450,13 @@ const MainPage: React.FC = () => {
         delete rawProperties.fileGeneratedCodes; delete rawProperties.fileIsTarget;
       }
 
+      const motion = remoteMotions.current.get(n.id);
       return {
         nodeId: n.id,
         nodeName: n.name,
         componentType: toComponentType(n.type),
-        positionX: Math.round(n.x),
-        positionY: Math.round(n.y),
+        positionX: Math.round(motion ? motion.toX : n.x),
+        positionY: Math.round(motion ? motion.toY : n.y),
         properties: processProperties(n, rawProperties)
       };
     });
@@ -1385,6 +1514,16 @@ const MainPage: React.FC = () => {
 
   const runLiveSync = async () => {
     if (myRole !== 'OWNER' || appMode !== 'editor' || !projectId || !hasLoadedOnce.current) return;
+    const quietFor = Date.now() - lastRemoteOpAt.current;
+    if (quietFor < LIVE_SYNC_QUIET_MS) {
+      if (liveSyncQuietTimer.current === null) {
+        liveSyncQuietTimer.current = window.setTimeout(() => {
+          liveSyncQuietTimer.current = null;
+          runLiveSyncRef.current();
+        }, LIVE_SYNC_QUIET_MS - quietFor + 20);
+      }
+      return;
+    }
     if (liveSyncInFlight.current) {
       liveSyncAgain.current = true;
       return;
@@ -1422,7 +1561,14 @@ const MainPage: React.FC = () => {
   });
 
   useEffect(() => {
-    if (myRole !== 'OWNER' || appMode !== 'editor') return;
+    const clearLiveSyncTimer = () => {
+      if (liveSyncTimer.current) window.clearTimeout(liveSyncTimer.current.timer);
+      liveSyncTimer.current = null;
+    };
+    if (myRole !== 'OWNER' || appMode !== 'editor') {
+      clearLiveSyncTimer();
+      return;
+    }
     const sig = buildGraphSignature(nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings);
     latestGraphSigRef.current = sig;
 
@@ -1431,12 +1577,25 @@ const MainPage: React.FC = () => {
       return;
     }
     if (sig === lastSyncedGraphSig.current) {
+      clearLiveSyncTimer();
       hasUnsavedChanges.current = false;
       return;
     }
-    const timer = window.setTimeout(() => runLiveSyncRef.current(), LIVE_SYNC_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    if (liveSyncTimer.current?.sig === sig) return;
+    clearLiveSyncTimer();
+    liveSyncTimer.current = {
+      sig,
+      timer: window.setTimeout(() => {
+        liveSyncTimer.current = null;
+        runLiveSyncRef.current();
+      }, LIVE_SYNC_DEBOUNCE_MS)
+    };
   }, [nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings, myRole, appMode]);
+
+  useEffect(() => () => {
+    if (liveSyncTimer.current) window.clearTimeout(liveSyncTimer.current.timer);
+    if (liveSyncQuietTimer.current !== null) window.clearTimeout(liveSyncQuietTimer.current);
+  }, []);
 
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
     if (appMode !== 'editor') return;
