@@ -4,6 +4,7 @@ import type { ViewportState } from '../MainPage';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
+import postgresqlIcon from '../assets/postgresql.png';
 
 const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'Redis'];
 
@@ -529,6 +530,7 @@ const Canvas: React.FC<CanvasProps> = ({
     if (type === 'MySQL') return mysqlIcon;
     if (type === 'Spring Boot') return springbootIcon;
     if (type === 'Redis') return redisIcon;
+    if (type === 'PostgreSQL') return postgresqlIcon;
     return null;
   };
 

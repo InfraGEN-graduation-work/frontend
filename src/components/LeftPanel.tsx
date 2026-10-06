@@ -3,6 +3,7 @@ import type { NodeData, CloudProvider } from '../types';
 import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
+import postgresqlIcon from '../assets/postgresql.png';
 
 interface LeftPanelProps {
   projectName: string;
@@ -104,6 +105,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     if (type === 'MySQL') return mysqlIcon;
     if (type === 'Spring Boot') return springbootIcon;
     if (type === 'Redis') return redisIcon;
+    if (type === 'PostgreSQL') return postgresqlIcon;
     return '';
   };
 
