@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { NodeData, FileGroup, Edge, SelectionArea, CloudProvider, CloudSettings } from '../types';
 import type { ViewportState } from '../MainPage';
 import JSZip from 'jszip';
@@ -60,6 +60,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const [openDropdownKey, setOpenDropdownKey] = useState<string | null>(null);
   const [highlightedFields, setHighlightedFields] = useState<string[]>([]);
+  const nameBeforeEdit = useRef<{ id: string; name: string } | null>(null);
   const [collapsedErrorGroups, setCollapsedErrorGroups] = useState<string[]>([]);
 
   const clearCanvasSelectionArea = () => {
@@ -828,13 +829,23 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                     <div className="setting-row">
                       <label>노드 이름 (화면 표시용)</label>
                       <input id="field-displayName" type="text" className={`custom-input ${!canEditName ? 'viewer-input' : ''}`} value={selectedNode.name} 
+                        onFocus={() => { nameBeforeEdit.current = { id: selectedNode.id, name: selectedNode.name }; }}
+                        onBlur={() => {
+                          const before = nameBeforeEdit.current;
+                          nameBeforeEdit.current = null;
+                          if (!canEditName || selectedNode.name.trim()) return;
+                          const restored = before && before.id === selectedNode.id && before.name.trim() ? before.name : selectedNode.type;
+                          setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: restored } : n));
+                          if (onNodeNameChange) onNodeNameChange(selectedNode.id, restored);
+                          window.dispatchEvent(new CustomEvent('global-toast', { detail: '노드 이름은 비워 둘 수 없어서 원래 이름으로 되돌렸습니다.' }));
+                        }}
                         onChange={(e) => {
                           if (!canEditName) return;
                           const newName = e.target.value;
                           setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, name: newName } : n));
                           if (onNodeNameChange) onNodeNameChange(selectedNode.id, newName);
                           markFilesAsModified();
-                          logActivity(`[수정] 노드의 화면 표시 이름이 '${newName}'(으)로 변경되었습니다.`);
+                          if (newName.trim()) logActivity(`[수정] 노드의 화면 표시 이름이 '${newName}'(으)로 변경되었습니다.`);
                         }}
                         style={inputStyle} readOnly={!canEditName}
                       />

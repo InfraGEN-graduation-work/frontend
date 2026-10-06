@@ -36,7 +36,10 @@ interface Collaborator {
   email?: string;
   role: 'EDITOR' | 'VIEWER' | 'OWNER';
   status?: 'PENDING' | 'ACCEPTED';
+  joinOrder?: number;
 }
+
+const ROLE_SORT_RANK: Record<string, number> = { EDITOR: 0, VIEWER: 1 };
 
 interface Invitation {
   invitationId: number;
@@ -79,6 +82,10 @@ export default function Home() {
   const [isCollabEditMode, setIsCollabEditMode] = useState(false);
 
   const [openRoleDropdownId, setOpenRoleDropdownId] = useState<number | string | null>(null);
+  const [memberSortByName, setMemberSortByName] = useState(false);
+  const [memberSortByRole, setMemberSortByRole] = useState(false);
+  const [memberSortDesc, setMemberSortDesc] = useState(false);
+  const [isMemberSortOpen, setIsMemberSortOpen] = useState(false);
   const [openInviteRoleDropdown, setOpenInviteRoleDropdown] = useState(false);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -117,6 +124,7 @@ export default function Home() {
       setIsProviderDropdownOpen(false);
       setOpenRoleDropdownId(null);
       setOpenInviteRoleDropdown(false);
+      setIsMemberSortOpen(false);
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
@@ -209,6 +217,10 @@ export default function Home() {
     setCollabSearchTerm('');
     setIsCollabEditMode(false);
     setOpenRoleDropdownId(null);
+    setMemberSortByName(false);
+    setMemberSortByRole(false);
+    setMemberSortDesc(false);
+    setIsMemberSortOpen(false);
     setIsCollabModalOpen(true);
     fetchCollaborators(projectId);
   };
@@ -220,10 +232,16 @@ export default function Home() {
       if (res1.ok) {
         const data1 = await res1.json();
         if (data1.isSuccess ?? data1.is_success) {
-          activeMembers = (data1.result.collaborators || []).map((c: any) => ({
+          activeMembers = (data1.result.collaborators || []).map((c: any, index: number) => ({
             ...c,
-            status: 'ACCEPTED'
+            role: String(c.role || 'VIEWER').toUpperCase() as Collaborator['role'],
+            status: 'ACCEPTED',
+            joinOrder: index
           }));
+          const owner = data1.result.owner;
+          if (owner?.memberId != null && !activeMembers.some(m => String(m.memberId) === String(owner.memberId))) {
+            activeMembers.unshift({ memberId: owner.memberId, nickname: owner.nickname || '방장', role: 'OWNER', status: 'ACCEPTED', joinOrder: -1 });
+          }
         }
       }
 
@@ -239,11 +257,12 @@ export default function Home() {
               const list = Array.isArray(data2.result) ? data2.result : (data2.result?.invitations || []);
               pendingMembers = list
                 .filter((inv: any) => inv.status === 'PENDING')
-                .map((inv: any) => ({
+                .map((inv: any, index: number) => ({
                   memberId: `inv-${inv.invitationId}`,
                   nickname: inv.inviteeNickname,
                   role: inv.role,
-                  status: 'PENDING'
+                  status: 'PENDING',
+                  joinOrder: index
                 }));
             }
           }
@@ -257,6 +276,11 @@ export default function Home() {
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!collabProjectId || !inviteCode.trim()) return;
+
+    if (!/^[A-Z0-9]{8}$/.test(inviteCode.trim())) {
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대 코드는 영문 대문자와 숫자로 된 8자리입니다.' }));
+      return;
+    }
 
     if (inviteCode.trim() === String(userInfo.inviteCode)) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
@@ -661,6 +685,10 @@ export default function Home() {
     if (!hasProfileChanges) { setIsUserInfoModalOpen(false); return; }
 
     if (userInfo.provider !== 'KAKAO') {
+      if (editProfileForm.password && !editProfileForm.password.trim()) {
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 공백만으로 만들 수 없습니다.' }));
+        return;
+      }
       if (editProfileForm.password && editProfileForm.password.length < 8) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 8자 이상이어야 합니다.' }));
         return;
@@ -906,7 +934,8 @@ export default function Home() {
       nickname: userInfo.nickname,
       email: userInfo.email,
       role: (currentCollabProject.myRole as 'OWNER' | 'EDITOR' | 'VIEWER') || 'VIEWER',
-      status: 'ACCEPTED'
+      status: 'ACCEPTED',
+      joinOrder: Number.MAX_SAFE_INTEGER
     });
   }
 
@@ -916,21 +945,27 @@ export default function Home() {
     email: c.email || ''
   }));
 
-  const allMembers = processedMembers.sort((a, b) => {
-    if (a.role === 'OWNER' && b.role !== 'OWNER') return -1;
-    if (b.role === 'OWNER' && a.role !== 'OWNER') return 1;
+  const compareMembers = (a: typeof processedMembers[number], b: typeof processedMembers[number]) => {
+    const direction = memberSortDesc ? -1 : 1;
+    if (memberSortByRole) {
+      const byRole = (ROLE_SORT_RANK[a.role] ?? 9) - (ROLE_SORT_RANK[b.role] ?? 9);
+      if (byRole !== 0) return byRole * direction;
+    }
+    if (memberSortByName) {
+      const byName = a.nickname.localeCompare(b.nickname, 'ko');
+      if (byName !== 0) return byName * direction;
+    }
+    return ((a.joinOrder ?? 0) - (b.joinOrder ?? 0)) * direction;
+  };
 
-    if (a.isMe && !b.isMe) return -1;
-    if (b.isMe && !a.isMe) return 1;
+  const allMembers = [
+    ...processedMembers.filter(m => m.role === 'OWNER'),
+    ...processedMembers.filter(m => m.role !== 'OWNER' && m.status !== 'PENDING').sort(compareMembers),
+    ...processedMembers.filter(m => m.role !== 'OWNER' && m.status === 'PENDING').sort(compareMembers)
+  ];
 
-    if (a.status === 'PENDING' && b.status !== 'PENDING') return 1;
-    if (b.status === 'PENDING' && a.status !== 'PENDING') return -1;
-
-    if (a.role === 'EDITOR' && b.role === 'VIEWER') return -1;
-    if (b.role === 'EDITOR' && a.role === 'VIEWER') return 1;
-
-    return a.nickname.localeCompare(b.nickname);
-  });
+  const isMemberSortCustom = memberSortByName || memberSortByRole || memberSortDesc;
+  const memberSortTitle = `정렬: ${[memberSortByRole ? '역할순' : '', memberSortByName ? '가나다순' : ''].filter(Boolean).join(' + ') || '참여순'} · ${memberSortDesc ? '내림차순' : '오름차순'}`;
 
   const filteredMembers = allMembers.filter(m => 
     m.nickname.toLowerCase().includes(collabSearchTerm.toLowerCase())
@@ -1130,6 +1165,7 @@ export default function Home() {
                       autoFocus={isEditingTargetOwner}
                       placeholder="예: My E-commerce Infra"
                       value={newTitle}
+                      maxLength={100}
                       onChange={(e) => setNewTitle(e.target.value)}
                       disabled={!isEditingTargetOwner}
                       style={{ 
@@ -1239,7 +1275,7 @@ export default function Home() {
 
               <InputGroup>
                 <label>닉네임</label>
-                <Input type="text" required value={editProfileForm.nickname} onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })} />
+                <Input type="text" required maxLength={50} value={editProfileForm.nickname} onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })} />
               </InputGroup>
               <InputGroup>
                 <label>이메일 (변경 불가)</label>
@@ -1250,11 +1286,11 @@ export default function Home() {
                 <>
                   <InputGroup>
                     <label>새 비밀번호</label>
-                    <Input type="password" placeholder="변경할 비밀번호 (선택사항, 8자 이상)" value={editProfileForm.password} onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })} />
+                    <Input type="password" placeholder="변경할 비밀번호 (선택사항, 8자 이상)" maxLength={100} value={editProfileForm.password} onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })} />
                   </InputGroup>
                   <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
                     <label>새 비밀번호 확인</label>
-                    <Input type="password" placeholder="비밀번호 재입력" value={editProfileForm.passwordConfirm} onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })} disabled={!editProfileForm.password} />
+                    <Input type="password" placeholder="비밀번호 재입력" maxLength={100} value={editProfileForm.passwordConfirm} onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })} disabled={!editProfileForm.password} />
                   </InputGroup>
                 </>
               )}
@@ -1310,7 +1346,10 @@ export default function Home() {
               )}
             </TabContainer>
 
-            <div style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}>
+            <div
+              style={{ padding: '24px', height: '280px', display: 'flex', flexDirection: 'column' }}
+              onClick={() => { setIsMemberSortOpen(false); setOpenRoleDropdownId(null); }}
+            >
               {collabTab === 'invite' && isCollabOwner ? (
                 <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                   <div style={{ flex: 1 }}>
@@ -1318,9 +1357,10 @@ export default function Home() {
                       <label>초대 코드 (초대할 회원의 코드 입력)</label>
                       <Input 
                         type="text" 
-                        placeholder="상대방의 초대 코드를 입력하세요" 
+                        placeholder="상대방의 초대 코드 8자리" 
                         value={inviteCode} 
-                        onChange={(e) => setInviteCode(e.target.value)} 
+                        autoCapitalize="characters"
+                        onChange={(e) => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))} 
                       />
                     </InputGroup>
                     <InputGroup>
@@ -1365,8 +1405,40 @@ export default function Home() {
                       placeholder="닉네임 검색" 
                       value={collabSearchTerm} 
                       onChange={(e) => setCollabSearchTerm(e.target.value)} 
-                      style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
+                      style={{ flex: 1, minWidth: 0, padding: '8px 12px', fontSize: '13px' }}
                     />
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <MemberSortToolbar>
+                        <button
+                          type="button"
+                          className={`member-sort-btn ${isMemberSortOpen ? 'open' : ''} ${isMemberSortCustom ? 'custom' : ''}`}
+                          title={memberSortTitle}
+                          aria-label={memberSortTitle}
+                          onClick={(e) => { e.stopPropagation(); setIsMemberSortOpen(!isMemberSortOpen); }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="4" y1="6" x2="20" y2="6"></line>
+                            <line x1="7" y1="12" x2="17" y2="12"></line>
+                            <line x1="10" y1="18" x2="14" y2="18"></line>
+                          </svg>
+                          <svg className="sort-direction" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: memberSortDesc ? 'rotate(180deg)' : 'none' }}>
+                            <line x1="12" y1="19" x2="12" y2="5"></line>
+                            <polyline points="5 12 12 5 19 12"></polyline>
+                          </svg>
+                        </button>
+                      </MemberSortToolbar>
+                      {isMemberSortOpen && (
+                        <MemberSortMenu className="member-sort-menu" onClick={(e) => e.stopPropagation()}>
+                          <div className="section-label">정렬 기준</div>
+                          <MemberSortOption $active={memberSortByName} onClick={() => setMemberSortByName(!memberSortByName)}>가나다순</MemberSortOption>
+                          <MemberSortOption $active={memberSortByRole} onClick={() => setMemberSortByRole(!memberSortByRole)}>역할순</MemberSortOption>
+                          <div className="divider" />
+                          <MemberSortOption $active={!memberSortDesc} onClick={() => setMemberSortDesc(false)}>오름차순</MemberSortOption>
+                          <MemberSortOption $active={memberSortDesc} onClick={() => setMemberSortDesc(true)}>내림차순</MemberSortOption>
+                          <div className="hint">기준을 고르지 않으면 참여한 순서로 보여요. 방장은 항상 맨 위에 있어요.</div>
+                        </MemberSortMenu>
+                      )}
+                    </div>
                     {isCollabOwner && (
                       <FilterBtn onClick={() => setIsCollabEditMode(!isCollabEditMode)} style={{ padding: '8px 16px' }}>
                         {isCollabEditMode ? '완료' : '편집'}
@@ -2103,6 +2175,67 @@ const DropdownMenu = styled.div`
   z-index: 100;
   overflow: hidden;
   animation: ${fadeIn} 0.15s ease-out forwards;
+`;
+
+const MemberSortToolbar = styled.div`
+  display: flex;
+  align-items: center;
+  height: 100%;
+  box-sizing: border-box;
+  background: #f1f3f5;
+  border-radius: 8px;
+  padding: 4px 6px;
+
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    min-width: 26px;
+    height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #555;
+    transition: 0.2s;
+  }
+  button:hover, button.open { background: #edf2f7; color: #28b4ad; }
+  button.custom { color: #28b4ad; }
+  .sort-direction { transition: transform 0.2s; }
+`;
+
+const MemberSortMenu = styled.div`
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 168px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 100;
+  padding: 6px;
+  box-sizing: border-box;
+  animation: ${fadeIn} 0.15s ease-out forwards;
+
+  .section-label { padding: 4px 8px 6px; font-size: 11px; font-weight: 700; color: #a0aec0; }
+  .divider { height: 1px; background: #edf2f7; margin: 6px 2px; }
+  .hint { padding: 8px 8px 4px; font-size: 11px; line-height: 1.5; color: #a0aec0; word-break: keep-all; }
+`;
+
+const MemberSortOption = styled.div<{ $active: boolean }>`
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: ${({ $active }) => $active ? 700 : 500};
+  color: ${({ $active }) => $active ? '#2c7a7b' : '#4a5568'};
+  background: ${({ $active }) => $active ? '#e6fffa' : 'transparent'};
+  cursor: pointer;
+  transition: 0.15s;
+  &:hover { background: ${({ $active }) => $active ? '#d5f5ef' : '#f8f9fa'}; }
+  & + & { margin-top: 2px; }
 `;
 
 const DropdownItem = styled.div`

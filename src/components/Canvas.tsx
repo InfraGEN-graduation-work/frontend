@@ -166,13 +166,16 @@ const Canvas: React.FC<CanvasProps> = ({
     const a = nodes.find(n => n.id === aId);
     const b = nodes.find(n => n.id === bId);
     if (!a || !b) return null;
+    if (unassignedNodeIds.includes(a.id) || unassignedNodeIds.includes(b.id)) {
+      return '낱개로 배치된 노드는 생성에 포함되지 않아 연결할 수 없습니다. 먼저 [생성할 노드 목록]으로 옮겨 주세요.';
+    }
     const app = a.type === 'Spring Boot' ? a : b.type === 'Spring Boot' ? b : null;
     const dependency = app === a ? b : a;
     if (!app || !DEPENDENCY_NODE_TYPES.includes(dependency.type)) return null;
 
     const alreadyConnected = edges.some(edge => {
       const otherId = edge.sourceId === app.id ? edge.targetId : edge.targetId === app.id ? edge.sourceId : null;
-      if (!otherId || otherId === dependency.id) return false;
+      if (!otherId || otherId === dependency.id || unassignedNodeIds.includes(otherId)) return false;
       return nodes.find(n => n.id === otherId)?.type === dependency.type;
     });
     return alreadyConnected

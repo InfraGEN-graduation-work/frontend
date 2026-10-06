@@ -150,7 +150,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
         {isEditing ? (
           <>
             <input
-              ref={inputRef} type="text" value={tempName}
+              ref={inputRef} type="text" value={tempName} maxLength={100}
               onChange={(e) => setTempName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleSaveClick(); }}
               onBlur={handleSaveClick}

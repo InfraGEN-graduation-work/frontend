@@ -333,6 +333,7 @@ export default function LoginPage() {
                     <InputField
                       type="email"
                       placeholder="가입한 이메일"
+                      maxLength={100}
                       value={findEmail}
                       onChange={(e) => { setFindEmail(e.target.value); setFindError(""); }}
                       style={{ flex: 1 }}

@@ -57,8 +57,17 @@ const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   PARSING400_5: '포트 번호는 1024~65535 사이여야 합니다.',
   PARSING400_4: '여러 노드가 같은 포트 번호를 쓰고 있습니다.',
   PARSING400_25: '하나의 Spring Boot에 같은 종류의 DB(MySQL·PostgreSQL·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
-  PARSING400_10: '연결 방향이 잘못되었습니다. Database에서 Spring Boot 방향으로 연결해 주세요.'
+  PARSING400_10: '연결 방향이 잘못되었습니다. Database에서 Spring Boot 방향으로 연결해 주세요.',
+  GENERATION400_3: '코드 생성 요청을 처리하지 못했습니다. 설정을 확인한 뒤 다시 시도해 주세요.',
+  GENERATION400_4: '배포 환경이 선택되지 않았습니다. 왼쪽 패널에서 LOCAL·AWS·OCI 중 하나를 골라 주세요.',
+  GENERATION400_5: '클라우드 배포 설정이 비어 있습니다. Settings 탭에서 클라우드 설정을 입력해 주세요.',
+  GENERATION400_6: '로컬 환경 설정이 올바르지 않습니다. 배포 환경을 다시 선택한 뒤 시도해 주세요.',
+  GENERATION400_7: '선택한 배포 환경과 클라우드 설정이 맞지 않습니다. 배포 환경을 다시 선택해 주세요.',
+  GENERATION400_8: '클라우드 필수 설정값이 비어 있거나 올바르지 않습니다. Settings 탭에서 확인해 주세요.',
+  GENERATION400_9: '하나의 Spring Boot에 같은 종류의 DB(MySQL·PostgreSQL·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
+  COMMON400_1: '입력값 중 형식이 올바르지 않은 항목이 있습니다. 노드 설정과 클라우드 설정을 다시 확인해 주세요.'
 };
+const GENERATE_SETTINGS_ERROR_CODES = ['GENERATION400_4', 'GENERATION400_5', 'GENERATION400_6', 'GENERATION400_7', 'GENERATION400_8'];
 
 const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i;
 const ENV_ASSIGNMENT = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/;
@@ -1186,6 +1195,24 @@ const MainPage: React.FC = () => {
   const activeNodes = nodes.filter(n => !unassignedNodeIds.includes(n.id));
   const activeEdges = edges.filter(e => !unassignedNodeIds.includes(e.sourceId) && !unassignedNodeIds.includes(e.targetId));
 
+  const prevAssignedNodeIds = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const assigned = new Set(files.flatMap(f => f.nodeIds));
+    const previous = prevAssignedNodeIds.current;
+    prevAssignedNodeIds.current = assigned;
+    if (!previous || myRole !== 'OWNER' || !isDataLoaded.current || isUndoRedo.current) return;
+
+    const nodeIdSet = new Set(nodes.map(n => n.id));
+    const movedOut = new Set(Array.from(previous).filter(id => !assigned.has(id) && nodeIdSet.has(id)));
+    if (movedOut.size === 0) return;
+
+    const cut = edges.filter(e => movedOut.has(e.sourceId) || movedOut.has(e.targetId));
+    if (cut.length === 0) return;
+    setEdges(prev => prev.filter(e => !movedOut.has(e.sourceId) && !movedOut.has(e.targetId)));
+    const movedNames = nodes.filter(n => movedOut.has(n.id)).map(n => `'${n.name}'`).join(', ');
+    logActivity(`[연결 해제] ${movedNames} 노드를 낱개로 옮겨 연결을 끊었습니다.`);
+  }, [files, nodes, edges, myRole, logActivity]);
+
   const validationErrors: ValidationError[] = [];
 
   if (activeNodes.length === 0 && nodes.length > 0) {
@@ -1208,6 +1235,10 @@ const MainPage: React.FC = () => {
 
   activeNodes.forEach(node => {
     const settings = node.settings || {};
+
+    if (!String(node.name || '').trim()) {
+      validationErrors.push({ name: '노드 이름 누락', desc: `${node.type} 노드의 [노드 이름]이 비어 있습니다.`, targetNodeId: node.id, targetField: 'displayName' });
+    }
 
     const checkNameFormat = (val: string | undefined, label: string, fieldKey: string) => {
       if (val && !nameRegex.test(val)) {
@@ -1301,6 +1332,17 @@ const MainPage: React.FC = () => {
         });
       }
     }
+  });
+
+  const connectedNodeIds = new Set(activeEdges.flatMap(e => [e.sourceId, e.targetId]));
+  activeNodes.forEach(node => {
+    if (connectedNodeIds.has(node.id)) return;
+    validationErrors.push({
+      name: '연결되지 않은 노드',
+      desc: `'${node.name}' 노드가 다른 노드와 연결되어 있지 않습니다. 다른 노드와 연결하거나, 생성에서 빼려면 [낱개로 배치된 Node]로 옮겨 주세요.`,
+      targetNodeId: node.id,
+      isProjectTab: true
+    });
   });
 
   activeNodes.filter(n => n.type === 'Spring Boot').forEach(app => {
@@ -1494,7 +1536,7 @@ const MainPage: React.FC = () => {
       const motion = remoteMotions.current.get(n.id);
       return {
         nodeId: n.id,
-        nodeName: n.name,
+        nodeName: String(n.name || '').trim() ? n.name : n.type,
         componentType: toComponentType(n.type),
         positionX: Math.round(motion ? motion.toX : n.x),
         positionY: Math.round(motion ? motion.toY : n.y),
@@ -1892,7 +1934,11 @@ const MainPage: React.FC = () => {
         const code = String(generateData?.code || '');
         showToast(GENERATE_ERROR_MESSAGES[code] || generateData?.message || '코드 생성에 실패했습니다. 올바른 값이 입력되었는지 확인해주세요.');
         setAppMode('editor');
-        if (code.startsWith('PARSING400')) {
+        if (GENERATE_SETTINGS_ERROR_CODES.includes(code)) {
+          setSelectedNodeIds([]);
+          setLeftActiveTab('Settings');
+          setShowRightSidebar(true);
+        } else if (code.startsWith('PARSING400') || code === 'GENERATION400_9' || code === 'COMMON400_1') {
           setLeftActiveTab('Validation');
           setShowRightSidebar(true);
         }

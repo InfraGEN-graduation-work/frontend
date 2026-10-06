@@ -174,6 +174,7 @@ export default function SignupPage() {
                 type="email"
                 name="email"
                 placeholder="example@email.com"
+                maxLength={100}
                 value={form.email}
                 onChange={handleChange}
                 hasError={!!errors.email}
