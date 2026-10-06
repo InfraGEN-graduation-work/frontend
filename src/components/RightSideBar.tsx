@@ -856,6 +856,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
                           <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="mysql_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
@@ -870,14 +871,17 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
                           <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="mysql_container" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
                           <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 3306" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>내 PC에서 MySQL에 접속할 때 쓰는 포트입니다. PC에서 MySQL을 이미 실행 중이면 3307처럼 다른 번호로 바꿔 주세요.</span>
                         </div>
                         <div className="setting-row">
                           <label>볼륨 이름 (volumeName)</label>
                           <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>DB 데이터를 보관할 볼륨 이름입니다. 지정해 두면 컨테이너를 다시 만들어도 데이터가 남습니다.</span>
                         </div>
 
                         <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
@@ -890,18 +894,22 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
                           <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 언더바(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
                           <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="dbuser" onChange={(e) => updateSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>MySQL에 새로 만들어지는 사용자 계정입니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있고, root는 관리자 계정 이름이라 쓸 수 없습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>사용자 비밀번호 (userPassword) <span style={{color:'red'}}>*</span></label>
                           <input id="field-userPassword" type="password" className={`custom-input ${highlightedFields.includes('userPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateSetting('userPassword', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>위 사용자 계정의 비밀번호입니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>루트 비밀번호 (rootPassword) <span style={{color:'red'}}>*</span></label>
                           <input id="field-rootPassword" type="password" className={`custom-input ${highlightedFields.includes('rootPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateSetting('rootPassword', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>MySQL 관리자(root) 계정의 비밀번호입니다. 8자 이상 입력해 주세요.</span>
                         </div>
                       </>
                     ) : selectedNode.type === 'Redis' ? (
@@ -909,6 +917,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
                           <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="redis_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
@@ -922,14 +931,17 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
                           <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="redis_container" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
                           <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 6379" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>내 PC에서 Redis에 접속할 때 쓰는 포트입니다. PC에서 Redis를 이미 실행 중이면 6380처럼 다른 번호로 바꿔 주세요.</span>
                         </div>
                         <div className="setting-row">
                           <label>볼륨 이름 (volumeName)</label>
                           <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="volume" onChange={(e) => updateSetting('volumeName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>DB 데이터를 보관할 볼륨 이름입니다. 지정해 두면 컨테이너를 다시 만들어도 데이터가 남습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
@@ -941,6 +953,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
                           <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="postgres_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
@@ -955,6 +968,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName)</label>
                           <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="비우면 서비스 이름으로 생성" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>비우면 서비스 이름으로 만들어집니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
@@ -964,6 +978,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>볼륨 이름 (volumeName)</label>
                           <input id="field-volumeName" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="비우면 볼륨 없이 생성" onChange={(e) => updateSetting('volumeName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>DB 데이터를 보관할 볼륨 이름입니다. 비우면 볼륨 없이 만들어져, 컨테이너를 지우면 데이터도 함께 사라집니다.</span>
                         </div>
 
                         <div className="setting-section-title" style={{ marginTop: '24px', marginBottom: '12px', fontSize: '12px', color: '#e53e3e' }}>
@@ -986,6 +1001,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
                           <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요.</span>
                         </div>
                       </>
                     ) : selectedNode.type === 'Spring Boot' ? (
@@ -993,6 +1009,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
                           <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="spring_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>Java 버전 <span style={{color:'red'}}>*</span></label>
@@ -1006,10 +1023,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName) <span style={{color:'red'}}>*</span></label>
                           <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="spring_container" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
                           <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 8080" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>Spring Boot 애플리케이션이 사용할 포트입니다. 다른 노드와 같은 번호는 쓸 수 없습니다.</span>
                         </div>
                       </>
                     ) : null}

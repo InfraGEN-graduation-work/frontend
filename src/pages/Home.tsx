@@ -1435,7 +1435,6 @@ export default function Home() {
                           <div className="divider" />
                           <MemberSortOption $active={!memberSortDesc} onClick={() => setMemberSortDesc(false)}>오름차순</MemberSortOption>
                           <MemberSortOption $active={memberSortDesc} onClick={() => setMemberSortDesc(true)}>내림차순</MemberSortOption>
-                          <div className="hint">기준을 고르지 않으면 참여한 순서로 보여요. 방장은 항상 맨 위에 있어요.</div>
                         </MemberSortMenu>
                       )}
                     </div>
@@ -2222,7 +2221,6 @@ const MemberSortMenu = styled.div`
 
   .section-label { padding: 4px 8px 6px; font-size: 11px; font-weight: 700; color: #a0aec0; }
   .divider { height: 1px; background: #edf2f7; margin: 6px 2px; }
-  .hint { padding: 8px 8px 4px; font-size: 11px; line-height: 1.5; color: #a0aec0; word-break: keep-all; }
 `;
 
 const MemberSortOption = styled.div<{ $active: boolean }>`
