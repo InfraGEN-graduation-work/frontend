@@ -72,7 +72,7 @@ export default function SignupPage() {
       }
     } catch (error) {
       console.error("이메일 발송 에러:", error);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -119,7 +119,7 @@ export default function SignupPage() {
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();
         console.error("Non-JSON Response:", text);
-        throw new Error(`서버 에러입니다. (Status: ${res.status})`);
+        throw new Error('SIGNUP_UNAVAILABLE');
       }
 
       const data = await res.json();
@@ -133,7 +133,7 @@ export default function SignupPage() {
       }
     } catch (error) {
       console.error("Signup Request Failed:", error);
-      setErrors({ general: error.message || "서버와 통신할 수 없습니다. 다시 시도해주세요." });
+      setErrors({ general: "연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요." });
     }
   };
 

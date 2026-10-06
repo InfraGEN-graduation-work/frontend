@@ -89,13 +89,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const errorData = await response.clone().json();
           const msg = (errorData.result && typeof errorData.result === 'string') 
                       ? errorData.result 
-                      : (errorData.message || '서버 통신 중 오류가 발생했습니다.');
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+                      : (errorData.message || '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+          if (!String(errorData.code || '').startsWith('COLLAB409')) {
+            window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+          }
         } else {
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: `오류가 발생했습니다. (Status: ${response.status})` }));
+          window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
         }
       } catch (e) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: `오류가 발생했습니다. (Status: ${response.status})` }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
       }
     }
 

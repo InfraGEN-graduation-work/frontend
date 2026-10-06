@@ -216,7 +216,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
         cancelSelectionMode(); 
       });
     } else {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 코드가 없습니다. (먼저 코드를 Generate 해주세요)' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '다운로드할 코드가 없습니다. Generate 버튼으로 코드를 먼저 생성해 주세요.' }));
     }
   };
 
@@ -970,7 +970,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
                           <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>PostgreSQL에서는 이 계정이 관리자(superuser)입니다.</span>
+                          <span style={hintStyle}>PostgreSQL에서는 이 계정이 관리자 계정입니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>

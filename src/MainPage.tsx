@@ -91,18 +91,33 @@ const pickSnapshotVersion = (result: any): number | null => {
 
 type ResyncReason = 'connect' | 'resync' | 'conflict';
 
-const LIVE_SYNC_DEBOUNCE_MS = 500;
+const LIVE_SYNC_DEBOUNCE_MS = 300;
 const LIVE_SYNC_QUIET_MS = 400;
 const VERSIONED_WRITE_RETRIES = 3;
-const DRAG_OP_INTERVAL_MS = 50;
+const DRAG_OP_INTERVAL_MS = 40;
+const DRAG_OP_PIPELINE = 2;
+const DRAG_OP_ACK_TIMEOUT_MS = 1000;
 const DRAG_OP_MAX_NODES = 3;
 const LOCAL_DRAG_HOLD_MS = 1500;
-const REMOTE_MOVE_START_MS = 80;
+const REMOTE_MOVE_START_MS = 50;
 const REMOTE_MOVE_IDLE_MS = 300;
-const REMOTE_MOVE_MAX_MS = 220;
+const REMOTE_MOVE_MAX_MS = 160;
 const NAME_OP_DEBOUNCE_MS = 300;
 
 const EDITOR_STRUCTURE_MESSAGE = 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. (노드 추가·삭제·연결·설정 변경은 OWNER만 가능)';
+const GENERATE_OWNER_ONLY_MESSAGE = '코드 생성은 방장(OWNER)만 할 수 있습니다.';
+const CONFLICT_SAVE_MESSAGE = '다른 사람이 편집 중이라 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const GENERIC_ERROR_MESSAGE = '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+const saveNotAllowedMessage = (role: string) => role === 'EDITOR'
+  ? 'EDITOR는 프로젝트를 저장할 수 없습니다. 노드 이동과 이름 변경은 자동으로 저장됩니다.'
+  : 'VIEWER는 프로젝트를 수정하거나 저장할 수 없습니다.';
+const writeFailMessage = (data: any, fallback: string) => String(data?.code || '').startsWith('COLLAB409')
+  ? CONFLICT_SAVE_MESSAGE
+  : (data?.message || fallback);
+const OPERATION_ERROR_MESSAGES: Record<string, string> = {
+  PROJECT403_1: '이 프로젝트를 수정할 권한이 없습니다.',
+  PROJECT404_1: '프로젝트를 찾을 수 없습니다.'
+};
 
 type CollabOpType = 'UPDATE_NODE_NAME' | 'UPDATE_NODE_POSITION';
 
@@ -444,6 +459,8 @@ const MainPage: React.FC = () => {
   const lastSentDragPositions = useRef(new Map<string, { x: number; y: number }>());
   const pendingDragPositions = useRef<DraggedNodePosition[] | null>(null);
   const dragOpTimer = useRef<number | null>(null);
+  const positionOpSentAt = useRef(new Map<string, number>());
+  const dragFlushRef = useRef<() => void>(() => {});
   const locallyDraggedAt = useRef(new Map<string, number>());
   const remoteMotions = useRef(new Map<string, RemoteMotion>());
   const lastRemoteMoveAt = useRef(new Map<string, { at: number; avgGap: number | null }>());
@@ -640,7 +657,7 @@ const MainPage: React.FC = () => {
     let avgGap: number | null = null;
     if (gap <= REMOTE_MOVE_IDLE_MS) {
       avgGap = last?.avgGap == null ? gap : last.avgGap * 0.7 + gap * 0.3;
-      duration = Math.min(REMOTE_MOVE_MAX_MS, Math.max(16, avgGap * 1.3));
+      duration = Math.min(REMOTE_MOVE_MAX_MS, Math.max(16, avgGap * 1.1));
     }
     lastRemoteMoveAt.current.set(nodeId, { at: now, avgGap });
 
@@ -658,6 +675,9 @@ const MainPage: React.FC = () => {
 
     if (inFlightOps.current.has(op.operationId)) {
       inFlightOps.current.delete(op.operationId);
+      if (op.type === 'UPDATE_NODE_POSITION' && positionOpSentAt.current.delete(op.operationId) && pendingDragPositions.current) {
+        dragFlushRef.current();
+      }
       const key = opKey(op);
       if (latestOwnOpByKey.current.get(key) === op.operationId) {
         latestOwnOpByKey.current.delete(key);
@@ -816,8 +836,19 @@ const MainPage: React.FC = () => {
     const op: PendingOp = { operationId: makeId('op'), type, nodeId, payload };
     appliedOperations.current.add(op.operationId);
     latestOwnOpByKey.current.set(opKey(op), op.operationId);
+    if (type === 'UPDATE_NODE_POSITION') positionOpSentAt.current.set(op.operationId, Date.now());
     publishOp(op);
   }, [publishOp]);
+
+  const countPositionOpsInFlight = useCallback(() => {
+    const now = Date.now();
+    let count = 0;
+    positionOpSentAt.current.forEach((sentAt, operationId) => {
+      if (!inFlightOps.current.has(operationId) || now - sentAt > DRAG_OP_ACK_TIMEOUT_MS) positionOpSentAt.current.delete(operationId);
+      else count++;
+    });
+    return count;
+  }, []);
 
   const sendNodePositions = useCallback((positions: DraggedNodePosition[], skipUnchanged: boolean) => {
     positions.forEach(p => {
@@ -836,11 +867,23 @@ const MainPage: React.FC = () => {
       dragOpTimer.current = null;
     }
     const positions = pendingDragPositions.current;
-    pendingDragPositions.current = null;
     if (!positions) return;
-    lastDragOpAt.current = Date.now();
+    const now = Date.now();
+    const wait = DRAG_OP_INTERVAL_MS * positions.length - (now - lastDragOpAt.current);
+    if (wait > 0) {
+      dragOpTimer.current = window.setTimeout(flushDragPositions, wait);
+      return;
+    }
+    if (countPositionOpsInFlight() >= DRAG_OP_PIPELINE * positions.length) {
+      dragOpTimer.current = window.setTimeout(flushDragPositions, DRAG_OP_ACK_TIMEOUT_MS);
+      return;
+    }
+    pendingDragPositions.current = null;
+    lastDragOpAt.current = now;
     sendNodePositions(positions, true);
-  }, [sendNodePositions]);
+  }, [sendNodePositions, countPositionOpsInFlight]);
+
+  useEffect(() => { dragFlushRef.current = flushDragPositions; }, [flushDragPositions]);
 
   const handleNodesDragMove = useCallback((positions: DraggedNodePosition[]) => {
     if (positions.length === 0) return;
@@ -852,9 +895,7 @@ const MainPage: React.FC = () => {
     if (positions.length > DRAG_OP_MAX_NODES) return;
 
     pendingDragPositions.current = positions;
-    const wait = DRAG_OP_INTERVAL_MS * positions.length - (now - lastDragOpAt.current);
-    if (wait <= 0) flushDragPositions();
-    else if (dragOpTimer.current === null) dragOpTimer.current = window.setTimeout(flushDragPositions, wait);
+    if (dragOpTimer.current === null) flushDragPositions();
   }, [flushDragPositions]);
 
   const handleNodesDragEnd = useCallback((positions: DraggedNodePosition[]) => {
@@ -983,7 +1024,7 @@ const MainPage: React.FC = () => {
     if (ops.length === 0) return;
     const snapshot = await fetchCollaborationData(0, 'none');
     if (!snapshot?.project) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 상태를 불러오지 못했습니다. 새로고침해 주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '최신 내용을 불러오지 못했습니다. 새로고침해 주세요.' }));
       return;
     }
     const serverNodes = computeServerNodeStates(snapshot.project, snapshot.operations);
@@ -1050,7 +1091,7 @@ const MainPage: React.FC = () => {
           if (code === 'COLLAB409_1' || code === 'COLLAB409_2') {
             collabHandlers.current.runSync('conflict');
           } else {
-            window.dispatchEvent(new CustomEvent('global-toast', { detail: result?.message || '협업 동기화 중 오류가 발생했습니다.' }));
+            window.dispatchEvent(new CustomEvent('global-toast', { detail: OPERATION_ERROR_MESSAGES[code] || '변경 내용을 반영하지 못했습니다. 새로고침해 주세요.' }));
           }
         });
 
@@ -1156,7 +1197,7 @@ const MainPage: React.FC = () => {
   if (targetFileIds.length === 0) {
     validationErrors.push({ 
       name: '생성 대상 없음', 
-      desc: '생성할 노드 목록(Target)이 존재하지 않습니다.', 
+      desc: '[생성할 노드 목록]이 없습니다.', 
       isProjectTab: true, 
       targetField: 'target-file-box' 
     });
@@ -1600,7 +1641,7 @@ const MainPage: React.FC = () => {
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
     if (appMode !== 'editor') return;
     if (myRole === 'VIEWER' || myRole === 'EDITOR') {
-      if (!isAutoSave) window.dispatchEvent(new CustomEvent('global-toast', { detail: '현재 권한으로는 전체 프로젝트를 강제 저장(PUT)할 수 없습니다. (자동 동기화 적용 중)' }));
+      if (!isAutoSave) showToast(saveNotAllowedMessage(myRole));
       return;
     }
 
@@ -1628,10 +1669,10 @@ const MainPage: React.FC = () => {
           setTimeout(() => setToastMessage(null), 3000);
         }
       } else {
-        if (!isAutoSave) showToast(data?.message || '저장에 실패했습니다.');
+        if (!isAutoSave) showToast(writeFailMessage(data, '저장에 실패했습니다.'));
       }
     } catch (err) {
-      if (!isAutoSave) showToast('서버 오류가 발생했습니다.');
+      if (!isAutoSave) showToast(GENERIC_ERROR_MESSAGE);
     }
   };
 
@@ -1673,13 +1714,13 @@ const MainPage: React.FC = () => {
       }));
 
       if (!ok) {
-        showToast(data?.message || '프로젝트 이름 저장에 실패했습니다.');
+        showToast(writeFailMessage(data, '프로젝트 이름 저장에 실패했습니다.'));
         setProjectName(previousName);
       } else {
         hasUnsavedChanges.current = hadUnsavedChanges;
       }
     } catch (err) {
-      showToast('서버 오류가 발생했습니다.');
+      showToast(GENERIC_ERROR_MESSAGE);
       setProjectName(previousName);
     }
   };
@@ -1713,7 +1754,7 @@ const MainPage: React.FC = () => {
 
   const handleGenerateClick = () => {
     if (myRole === 'VIEWER' || myRole === 'EDITOR') {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드 생성(Generate)은 OWNER 권한만 가능합니다.' }));
+      showToast(GENERATE_OWNER_ONLY_MESSAGE);
       return;
     }
     if (validationErrors.length > 0) setIsErrorModalOpen(true);
@@ -1735,7 +1776,7 @@ const MainPage: React.FC = () => {
       const firstSave = await putProjectGraph();
       if (!firstSave.ok) {
         clearInterval(progressInterval);
-        showToast(firstSave.data?.message || '프로젝트 저장 중 오류가 발생하여 코드 생성을 중단합니다.');
+        showToast(writeFailMessage(firstSave.data, '프로젝트 저장 중 오류가 발생하여 코드 생성을 중단합니다.'));
         setAppMode('editor');
         return;
       }
@@ -1858,7 +1899,7 @@ const MainPage: React.FC = () => {
       }
     } catch (err) {
       clearInterval(progressInterval);
-      showToast('서버 오류가 발생했습니다.');
+      showToast(GENERIC_ERROR_MESSAGE);
       setAppMode('editor');
     }
   };
@@ -2136,10 +2177,10 @@ const MainPage: React.FC = () => {
       </style>
 
      <Header 
-      onGenerate={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드 생성(Generate)은 방장(OWNER)만 가능합니다.' })) : handleGenerateClick} 
+      onGenerate={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(GENERATE_OWNER_ONLY_MESSAGE) : handleGenerateClick} 
       isGenerateMode={appMode === 'generating'} 
       onResetUI={handleResetUI} 
-      onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => window.dispatchEvent(new CustomEvent('global-toast', { detail: '현재 권한으로는 강제 저장(PUT)을 실행할 수 없습니다. 변경 사항은 자동 동기화됩니다.' })) : () => handleSaveCanvas(false)}
+      onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(saveNotAllowedMessage(myRole)) : () => handleSaveCanvas(false)}
       onOpenTutorial={() => setShowTutorial(true)}
       onGoHome={handleGoHome}
     />
@@ -2375,7 +2416,7 @@ const MainPage: React.FC = () => {
       )}
 
       {isConflictSyncing && (
-        <SyncBanner>동시 편집 충돌을 정리하는 중입니다. 잠시 편집이 멈춥니다…</SyncBanner>
+        <SyncBanner>다른 사람의 편집 내용과 맞추는 중입니다. 잠시만 기다려 주세요…</SyncBanner>
       )}
 
       {unappliedOps.length > 0 && (
@@ -2383,7 +2424,7 @@ const MainPage: React.FC = () => {
           <div className="modal-content">
             <div className="modal-title error">반영되지 않은 변경이 있습니다</div>
             <div className="modal-body" style={{ fontSize: '13px', lineHeight: 1.6 }}>
-              <div style={{ marginBottom: '8px' }}>다른 사람의 편집과 겹쳐 아래 변경이 서버에 저장되지 않았습니다. 다시 적용할까요?</div>
+              <div style={{ marginBottom: '8px' }}>다른 사람의 편집과 겹쳐 아래 변경이 저장되지 않았습니다. 다시 적용할까요?</div>
               {unappliedOps.map(op => (
                 <div key={op.operationId} style={{ color: '#4a5568' }}>• {describeOp(op)}</div>
               ))}

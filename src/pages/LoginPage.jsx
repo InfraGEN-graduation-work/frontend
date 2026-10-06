@@ -62,7 +62,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (kakaoError) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '카카오 로그인 연동에 실패했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '카카오 로그인에 실패했습니다.' }));
       window.history.replaceState({}, "", "/");
       setIsKakaoProcessing(false);
       return;
@@ -93,7 +93,7 @@ export default function LoginPage() {
     } catch (err) {
       window.history.replaceState({}, "", "/");
       setIsKakaoProcessing(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     }
   };
 
@@ -162,11 +162,11 @@ export default function LoginPage() {
         setAccessToken(data.result.accessToken);
         navigate("/dashboard");
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || "유효하지 않은 토큰입니다." }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || "게스트로 시작하지 못했습니다. 잠시 후 다시 시도해 주세요." }));
       }
     } catch (error) {
       console.error("Guest Login Failed:", error);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: "예기치 않은 서버 오류가 발생했습니다." }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: "예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." }));
     }
   };
 
@@ -202,7 +202,7 @@ export default function LoginPage() {
       }
     } catch (error) {
       console.error("Login Request Failed:", error);
-      setError("예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      setError("예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
   };
 
@@ -233,7 +233,7 @@ export default function LoginPage() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '인증번호 발송에 실패했습니다.' }));
       }
     } catch (error) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -274,13 +274,13 @@ export default function LoginPage() {
         setShowEmailForm(true);
       } else {
         if (res.status === 404) {
-           setFindError("현재 백엔드 서버에 비밀번호 재설정 API가 존재하지 않습니다.");
+           setFindError("비밀번호 재설정 기능은 아직 준비 중입니다.");
         } else {
            setFindError(data.message || "인증번호가 올바르지 않거나 재설정에 실패했습니다.");
         }
       }
     } catch (error) {
-      setFindError("서버와 통신할 수 없습니다. 다시 시도해주세요.");
+      setFindError("연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.");
     }
   };
 

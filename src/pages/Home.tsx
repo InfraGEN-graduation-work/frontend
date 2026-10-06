@@ -284,7 +284,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 초대에 실패했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -302,7 +302,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대 수락 처리 중 오류가 발생했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 통신 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -320,7 +320,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '거절 처리 중 오류가 발생했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 통신 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -354,7 +354,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     } finally {
       setCollaboratorToRemove(null);
     }
@@ -436,12 +436,12 @@ export default function Home() {
         fetchCollaborators(projectId, false);
         fetchDashboardData();
       } else if (data.code === 'COMMON409_2') {
-        msg = '동시 요청으로 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+        msg = '다른 작업과 겹쳐 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
       }
       setTransferTarget(null);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 연동 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
     } finally {
       setIsTransferring(false);
     }
@@ -505,7 +505,7 @@ export default function Home() {
           window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '수정에 실패했습니다.' }));
         }
       } catch (err) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
       }
     }
   };
@@ -547,7 +547,7 @@ export default function Home() {
       }
     } catch (err) {
        console.error("OpenEdit Error: ", err);
-       window.dispatchEvent(new CustomEvent('global-toast', { detail: '서버 오류가 발생했습니다.' }));
+       window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
     }
   };
 
@@ -575,7 +575,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
     } finally {
       setProjectToDelete(null);
     }
@@ -637,7 +637,7 @@ export default function Home() {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 정리에 실패했습니다.' }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
     } finally {
       setSelectedIds([]);
       setIsSelectMode(false);
@@ -684,13 +684,13 @@ export default function Home() {
       const data = await res.json().catch(() => ({}));
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
-      if (!res.ok || !isSuccess) throw new Error(data.message || `서버 연동 오류 (${res.status})`);
+      if (!res.ok || !isSuccess) throw new Error(data.message || '회원정보를 수정하지 못했습니다.');
 
       setUserInfo(prev => ({ ...prev, nickname: editProfileForm.nickname }));
       setIsUserInfoModalOpen(false);
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '회원정보가 성공적으로 수정되었습니다.' }));
     } catch (err: any) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err instanceof TypeError ? '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' : (err.message || '오류가 발생했습니다.') }));
     }
   };
 
@@ -733,7 +733,7 @@ export default function Home() {
       }, 1500);
     } catch (err: any) {
       setIsWithdrawConfirmOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err.message || '오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: err instanceof TypeError ? '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' : (err.message || '오류가 발생했습니다.') }));
     }
   };
 
@@ -844,7 +844,7 @@ export default function Home() {
       }
 
       if (allFiles.length === 0) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 코드 내역이 없습니다. (에디터에서 Generate를 진행해주세요)' }));
+        window.dispatchEvent(new CustomEvent('global-toast', { detail: '생성된 코드가 없습니다. 에디터에서 Generate 버튼으로 코드를 먼저 생성해 주세요.' }));
         return;
       }
 
@@ -855,7 +855,7 @@ export default function Home() {
 
       setIsCodeViewerOpen(true);
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드를 불러오는 중 서버 오류가 발생했습니다.' }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: '코드를 불러오는 중 오류가 발생했습니다.' }));
     }
   };
 
@@ -1471,7 +1471,7 @@ export default function Home() {
             <TransferNotice>
               <li>수락 절차 없이 <strong>즉시</strong> 적용됩니다.</li>
               <li>{transferTarget.nickname}님이 OWNER가 되고, 나는 <strong>EDITOR</strong>로 남습니다.</li>
-              <li>이름·설명 수정, 참여자 관리, 프로젝트 삭제, Generate는 더 이상 할 수 없습니다.</li>
+              <li>이름·설명 수정, 참여자 관리, 프로젝트 삭제, 코드 생성은 더 이상 할 수 없습니다.</li>
               <li>캔버스, 생성 이력, 파일은 그대로 유지됩니다.</li>
             </TransferNotice>
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
@@ -1492,7 +1492,7 @@ export default function Home() {
             </ModalTitle>
             
             {isWithdrawalLoading ? (
-              <p style={{ color: '#4a5568', fontSize: '14px', margin: '0 0 24px 0' }}>탈퇴 전처리 정보를 확인하는 중입니다...</p>
+              <p style={{ color: '#4a5568', fontSize: '14px', margin: '0 0 24px 0' }}>탈퇴 전에 확인할 내용을 불러오는 중입니다...</p>
             ) : (
               <>
                 <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px 0' }}>
@@ -1617,7 +1617,7 @@ export default function Home() {
                           </CVNodeBadge>
                       ))}
                       {codeViewerNodes.filter(n => n.properties?.fileName === selectedViewFile.folderName).length === 0 && (
-                        <span style={{ fontSize: 12, color: '#a0aec0' }}>이 파일에 매핑된 노드가 없습니다.</span>
+                        <span style={{ fontSize: 12, color: '#a0aec0' }}>이 파일에 연결된 노드가 없습니다.</span>
                       )}
                     </CVAssignedNodes>
 
