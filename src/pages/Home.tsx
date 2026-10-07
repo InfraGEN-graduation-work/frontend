@@ -1,4 +1,4 @@
-import React, { useState, useEffect} from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled, { keyframes, css } from 'styled-components';
 import logo from '../assets/mainlogo.png';
@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 import type { CloudProvider } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
+const INVITATION_POLL_MS = 15000;
+const INVITATION_REFOCUS_GAP_MS = 3000;
 
 const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i;
 const ENV_ASSIGNMENT = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/;
@@ -56,6 +58,9 @@ export default function Home() {
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...', provider: 'LOCAL', inviteCode: '불러오는 중...', role: 'ROLE_USER' });
   const [projects, setProjects] = useState<Project[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [isInvitationsLoading, setIsInvitationsLoading] = useState(false);
+  const invitationFetchSeqRef = useRef(0);
+  const lastInvitationFetchAtRef = useRef(0);
 
   const [filterMode, setFilterMode] = useState<'ALL' | 'OWNER' | 'PARTICIPANT'>('ALL');
 
@@ -176,31 +181,83 @@ export default function Home() {
         }
       }
 
+      await fetchProjects();
+      await fetchReceivedInvitations();
+    } catch (err) {}
+  };
+
+  const fetchProjects = async () => {
+    try {
       const projRes = await fetchWithAuth(`${BASE_URL}/projects`);
       const projData = await projRes.json();
 
       if (projRes.ok && (projData.isSuccess ?? projData.is_success)) {
-        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({ 
-          ...p, 
+        const mappedProjects = (projData.result.projectList || []).map((p: any) => ({
+          ...p,
           myRole: String(p.accessRole || p.role || 'OWNER').toUpperCase()
         }));
         setProjects(mappedProjects);
       }
-
-      const invRes = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/received?status=PENDING`);
-      if (invRes.ok) {
-        const invData = await invRes.json();
-        if (invData.isSuccess ?? invData.is_success) {
-          const list = Array.isArray(invData.result) ? invData.result : (invData.result?.invitations || []);
-          setInvitations(list.filter((i: any) => i.status === 'PENDING'));
-        }
-      }
     } catch (err) {}
+  };
+
+  const fetchReceivedInvitations = async () => {
+    const seq = ++invitationFetchSeqRef.current;
+    lastInvitationFetchAtRef.current = Date.now();
+    try {
+      const invRes = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/received?status=PENDING`);
+      if (!invRes.ok) return;
+      const invData = await invRes.json();
+      if (seq !== invitationFetchSeqRef.current) return;
+      if (invData.isSuccess ?? invData.is_success) {
+        const list = Array.isArray(invData.result) ? invData.result : (invData.result?.invitations || []);
+        setInvitations(list.filter((i: any) => i.status === 'PENDING'));
+      }
+    } catch (err) {
+    } finally {
+      if (seq === invitationFetchSeqRef.current) setIsInvitationsLoading(false);
+    }
+  };
+
+  const fetchReceivedInvitationsRef = useRef(fetchReceivedInvitations);
+  fetchReceivedInvitationsRef.current = fetchReceivedInvitations;
+
+  const handleOpenInviteModal = () => {
+    setIsProfileMenuOpen(false);
+    setIsInvitationsLoading(true);
+    setIsInviteModalOpen(true);
+    fetchReceivedInvitations();
+  };
+
+  const handleToggleProfileMenu = () => {
+    const willOpen = !isProfileMenuOpen;
+    setIsProfileMenuOpen(willOpen);
+    if (willOpen) fetchReceivedInvitations();
   };
 
   useEffect(() => {
     fetchDashboardData();
   }, [navigate, fetchWithAuth, setIsAutoSaveEnabled]);
+
+  useEffect(() => {
+    const isVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+    const poll = () => {
+      if (isVisible()) fetchReceivedInvitationsRef.current();
+    };
+    const refreshOnReturn = () => {
+      if (!isVisible()) return;
+      if (Date.now() - lastInvitationFetchAtRef.current < INVITATION_REFOCUS_GAP_MS) return;
+      fetchReceivedInvitationsRef.current();
+    };
+    const timer = window.setInterval(poll, INVITATION_POLL_MS);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    window.addEventListener('focus', refreshOnReturn);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+      window.removeEventListener('focus', refreshOnReturn);
+    };
+  }, []);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -319,11 +376,16 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (isSuccess) {
+        invitationFetchSeqRef.current++;
+        setIsInvitationsLoading(false);
+        setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 수락했습니다.' }));
         setIsInviteModalOpen(false);
-        fetchDashboardData(); 
+        fetchProjects();
+        fetchReceivedInvitations();
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대 수락 처리 중 오류가 발생했습니다.' }));
+        fetchReceivedInvitations();
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
@@ -337,11 +399,14 @@ export default function Home() {
       const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
 
       if (isSuccess) {
+        invitationFetchSeqRef.current++;
+        setIsInvitationsLoading(false);
         setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 거절했습니다.' }));
-        if (invitations.length <= 1) setIsInviteModalOpen(false); 
+        if (invitations.length <= 1) setIsInviteModalOpen(false);
       } else {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '거절 처리 중 오류가 발생했습니다.' }));
+        fetchReceivedInvitations();
       }
     } catch (err) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
@@ -985,7 +1050,7 @@ export default function Home() {
         <UserInfo>
           <ProfileWrapper onClick={(e) => { 
             e.stopPropagation(); 
-            setIsProfileMenuOpen(!isProfileMenuOpen); 
+            handleToggleProfileMenu(); 
           }}>
             <Avatar>
               {userInfo.nickname.charAt(0).toUpperCase()}
@@ -1013,7 +1078,7 @@ export default function Home() {
                 <ProfileActionRow style={{ marginBottom: '8px' }}>
                   <ProfileActionBtn 
                     style={{ position: 'relative' }} 
-                    onClick={() => { setIsInviteModalOpen(true); setIsProfileMenuOpen(false); }}
+                    onClick={handleOpenInviteModal}
                   >
                     초대 목록 {invitations.length > 0 && <BadgeIndicator>{invitations.length}</BadgeIndicator>}
                   </ProfileActionBtn>
@@ -1319,7 +1384,7 @@ export default function Home() {
             <ModalTitle>받은 초대 목록</ModalTitle>
             <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
               {invitations.length === 0 ? (
-                <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>새로운 초대가 없습니다.</EmptyState>
+                <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>{isInvitationsLoading ? '초대 목록을 불러오는 중입니다...' : '새로운 초대가 없습니다.'}</EmptyState>
               ) : (
                 invitations.map(inv => (
                   <InviteItem key={inv.invitationId}>
