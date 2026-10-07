@@ -676,15 +676,18 @@ export default function Home() {
     setIsProfileMenuOpen(false);
   };
 
+  const isGuestUser = userInfo.role === 'ROLE_GUEST';
+  const canChangePassword = userInfo.provider !== 'KAKAO' && !isGuestUser;
+
   const hasProfileChanges = 
     editProfileForm.nickname !== userInfo.nickname || 
-    (userInfo.provider !== 'KAKAO' && editProfileForm.password !== '');
+    (canChangePassword && editProfileForm.password !== '');
 
   const handleUpdateUserInfo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hasProfileChanges) { setIsUserInfoModalOpen(false); return; }
 
-    if (userInfo.provider !== 'KAKAO') {
+    if (canChangePassword) {
       if (editProfileForm.password && !editProfileForm.password.trim()) {
         window.dispatchEvent(new CustomEvent('global-toast', { detail: '비밀번호는 공백만으로 만들 수 없습니다.' }));
         return;
@@ -701,7 +704,7 @@ export default function Home() {
 
     try {
       const payload: any = { nickname: editProfileForm.nickname };
-      if (userInfo.provider !== 'KAKAO' && editProfileForm.password) payload.password = editProfileForm.password;
+      if (canChangePassword && editProfileForm.password) payload.password = editProfileForm.password;
 
       const res = await fetchWithAuth(`${BASE_URL}/members/me`, {
         method: 'PATCH',
@@ -1018,7 +1021,8 @@ export default function Home() {
 
                 {userInfo.role === 'ROLE_GUEST' ? (
                   <ProfileActionRow>
-                    <ProfileActionBtn className="danger" onClick={handleOpenWithdrawConfirm}>이용 종료(탈퇴)</ProfileActionBtn>
+                    <ProfileActionBtn onClick={handleOpenUserInfo}>회원정보</ProfileActionBtn>
+                    <ProfileActionBtn className="danger" onClick={handleOpenWithdrawConfirm}>이용 종료</ProfileActionBtn>
                   </ProfileActionRow>
                 ) : (
                   <ProfileActionRow>
@@ -1277,12 +1281,14 @@ export default function Home() {
                 <label>닉네임</label>
                 <Input type="text" required maxLength={50} value={editProfileForm.nickname} onChange={(e) => setEditProfileForm({ ...editProfileForm, nickname: e.target.value })} />
               </InputGroup>
-              <InputGroup>
-                <label>이메일 (변경 불가)</label>
-                <Input type="email" value={userInfo.email} disabled />
-              </InputGroup>
+              {!isGuestUser && (
+                <InputGroup>
+                  <label>이메일 (변경 불가)</label>
+                  <Input type="email" value={userInfo.email} disabled />
+                </InputGroup>
+              )}
 
-              {userInfo.provider !== 'KAKAO' && (
+              {canChangePassword && (
                 <>
                   <InputGroup>
                     <label>새 비밀번호</label>
@@ -1295,8 +1301,8 @@ export default function Home() {
                 </>
               )}
 
-              <ModalActions style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-                <WithdrawBtn type="button" onClick={handleOpenWithdrawConfirm}>회원 탈퇴</WithdrawBtn>
+              <ModalActions style={{ justifyContent: isGuestUser ? 'flex-end' : 'space-between', alignItems: 'center', marginTop: '20px' }}>
+                {!isGuestUser && <WithdrawBtn type="button" onClick={handleOpenWithdrawConfirm}>회원 탈퇴</WithdrawBtn>}
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <CancelBtn type="button" onClick={() => setIsUserInfoModalOpen(false)}>취소</CancelBtn>
                   <SubmitBtn type="submit">{hasProfileChanges ? '저장하기' : '확인'}</SubmitBtn>
