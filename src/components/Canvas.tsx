@@ -42,13 +42,16 @@ interface CanvasProps {
   onNodesDragEnd?: (positions: DraggedNodePosition[]) => void;
   canMoveNodes?: boolean;
   canEditStructure?: boolean;
+  onCursorMove?: (point: { x: number; y: number } | null) => void;
+  overlay?: React.ReactNode;
 }
 
 const Canvas: React.FC<CanvasProps> = ({ 
   nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
   focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar,
-  focusEdgeId, setFocusEdgeId, onNodesDragMove, onNodesDragEnd, canMoveNodes = true, canEditStructure = true
+  focusEdgeId, setFocusEdgeId, onNodesDragMove, onNodesDragEnd, canMoveNodes = true, canEditStructure = true,
+  onCursorMove, overlay
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
   const [isGroupDragging, setIsGroupDragging] = useState(false);
@@ -65,6 +68,9 @@ const Canvas: React.FC<CanvasProps> = ({
   const viewportRef = useRef<HTMLElement>(null);
   const lastPointerRef = useRef<{ clientX: number, clientY: number } | null>(null);
   const dragPositionsRef = useRef<DraggedNodePosition[]>([]);
+  const cursorClientRef = useRef<{ clientX: number, clientY: number } | null>(null);
+  const onCursorMoveRef = useRef(onCursorMove);
+  onCursorMoveRef.current = onCursorMove;
 
   const NODE_W = 210;
   const NODE_H = 66;
@@ -159,6 +165,40 @@ const Canvas: React.FC<CanvasProps> = ({
       y: (clientY - rect.top + container.scrollTop) / currentZoom
     };
   };
+
+  const reportCursor = (clientX: number, clientY: number) => {
+    const container = viewportRef.current;
+    const report = onCursorMoveRef.current;
+    if (!container || !report) return;
+    const rect = container.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+      hideCursor();
+      return;
+    }
+    cursorClientRef.current = { clientX, clientY };
+    report(getCoords(clientX, clientY, container, stateRef.current.zoomLevel));
+  };
+
+  const hideCursor = () => {
+    cursorClientRef.current = null;
+    onCursorMoveRef.current?.(null);
+  };
+
+  const handleViewportScroll = () => {
+    handleScroll();
+    const last = cursorClientRef.current;
+    if (last) reportCursor(last.clientX, last.clientY);
+  };
+
+  useEffect(() => {
+    const last = cursorClientRef.current;
+    if (last) reportCursor(last.clientX, last.clientY);
+  }, [zoomLevel]);
+
+  useEffect(() => () => {
+    cursorClientRef.current = null;
+    onCursorMoveRef.current?.(null);
+  }, []);
 
   const notify = (message: string) => window.dispatchEvent(new CustomEvent('global-toast', { detail: message }));
 
@@ -418,6 +458,7 @@ const Canvas: React.FC<CanvasProps> = ({
   const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     lastPointerRef.current = { clientX: e.clientX, clientY: e.clientY };
     handlePointerMoveLogic(e.clientX, e.clientY);
+    reportCursor(e.clientX, e.clientY);
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
@@ -541,10 +582,11 @@ const Canvas: React.FC<CanvasProps> = ({
     <main 
       ref={viewportRef} 
       className="canvas-viewport" 
-      onScroll={handleScroll} 
+      onScroll={handleViewportScroll} 
       onPointerDown={onPointerDown} 
       onPointerMove={onPointerMove} 
       onPointerUp={onPointerUp} 
+      onPointerLeave={hideCursor}
       onContextMenu={onContextMenu} 
       onDragOver={onDragOver} 
       onDrop={handleDrop}
@@ -726,6 +768,7 @@ const Canvas: React.FC<CanvasProps> = ({
             </div>
           )}
         </div>
+        {overlay}
       </div>
     </main>
   );

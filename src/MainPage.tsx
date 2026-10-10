@@ -7,6 +7,8 @@ import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
 import Canvas from './components/Canvas';
 import type { DraggedNodePosition } from './components/Canvas';
+import { CollabCursorLayer, CursorSender, LocalCursor, RemoteCursorStore, cursorColor } from './components/CollabCursors';
+import type { CursorPoint, RemoteCursor } from './components/CollabCursors';
 import RightSideBar from './components/RightSideBar';
 import Generate from './components/Generate'; 
 import type { NodeData, SelectionArea, Edge, FileGroup, CloudProvider, CloudSettings } from './types';
@@ -112,6 +114,10 @@ const REMOTE_MOVE_START_MS = 50;
 const REMOTE_MOVE_IDLE_MS = 300;
 const REMOTE_MOVE_MAX_MS = 160;
 const NAME_OP_DEBOUNCE_MS = 300;
+const CURSOR_NAMES_MIN_GAP_MS = 2000;
+const OPERATION_ERROR_WINDOW_MS = 2000;
+const OWNER_CURSOR_LABEL = '방장';
+const PROJECT_ACCESS_LOST_MESSAGE = '이 프로젝트에 접근할 권한이 없습니다. 홈에서 프로젝트 목록을 확인해 주세요.';
 
 const EDITOR_STRUCTURE_MESSAGE = 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. (노드 추가·삭제·연결·설정 변경은 OWNER만 가능)';
 const GENERATE_OWNER_ONLY_MESSAGE = '코드 생성은 방장(OWNER)만 할 수 있습니다.';
@@ -429,6 +435,27 @@ const MainPage: React.FC = () => {
   const appliedOperations = useRef<Set<string>>(new Set());
   const stompClient = useRef<Client | null>(null);
   const nodesRef = useRef(nodes);
+
+  const cursorReadyRef = useRef(false);
+  const cursorProjectIdRef = useRef<string | undefined>(projectId);
+  const lastOperationSentAt = useRef(0);
+  const [cursorStore] = useState(() => new RemoteCursorStore());
+  const [cursorSender] = useState(() => new CursorSender(payload => {
+    const client = stompClient.current;
+    const targetProjectId = cursorProjectIdRef.current;
+    if (!client?.connected || !cursorReadyRef.current || !targetProjectId) return false;
+    try {
+      client.publish({ destination: `/app/projects/${targetProjectId}/cursors`, body: JSON.stringify(payload) });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }));
+  const [cursorNames, setCursorNames] = useState<{ names: Record<string, string>; fetchedAt: number } | null>(null);
+  const cursorNamesRef = useRef(cursorNames);
+  const cursorNamesRequestedAt = useRef(0);
+  const cursorNamesTimer = useRef<number | null>(null);
+  const cursorNamesUnavailable = useRef(false);
 
   const isDataLoaded = useRef(false);
   const isUndoRedo = useRef(false);
@@ -822,6 +849,7 @@ const MainPage: React.FC = () => {
       return;
     }
     inFlightOps.current.set(op.operationId, op);
+    lastOperationSentAt.current = Date.now();
     try {
       client.publish({
         destination: `/app/projects/${projectId}/operations`,
@@ -1010,6 +1038,10 @@ const MainPage: React.FC = () => {
       if (restored) reapplyPendingNameEdits();
       flushHeldOps();
       if (reason === 'conflict') setIsConflictSyncing(false);
+      if (reason === 'connect' && stompClient.current?.connected) {
+        cursorReadyRef.current = true;
+        cursorSender.connectionReady();
+      }
     }
   };
 
@@ -1070,6 +1102,8 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     if (!projectId || !userInfo.id || !hasAccessToken) return;
+    const myMemberId = userInfo.id;
+    cursorProjectIdRef.current = projectId;
 
     const client: Client = new Client({
       brokerURL: `${WS_BASE_URL}/ws/collaboration`,
@@ -1081,6 +1115,9 @@ const MainPage: React.FC = () => {
         console.log('STOMP Collaboration Connected');
         syncPausedRef.current = true;
         bufferedBroadcasts.current = [];
+        cursorReadyRef.current = false;
+        cursorSender.connectionLost();
+        cursorStore.clear();
 
         client.subscribe(`/topic/projects/${projectId}/operations`, (msg) => {
           let op: any;
@@ -1093,10 +1130,24 @@ const MainPage: React.FC = () => {
           collabHandlers.current.runSync('resync');
         });
 
+        client.subscribe(`/topic/projects/${projectId}/cursors`, (msg) => {
+          let message: any;
+          try { message = JSON.parse(msg.body); } catch (e) { return; }
+          cursorStore.receive(message, myMemberId);
+        });
+
         client.subscribe(`/user/queue/projects/${projectId}/operation-results`, (msg) => {
           let result: any = {};
           try { result = JSON.parse(msg.body); } catch (e) {}
           const code = String(result?.code || '');
+          if (code === 'COLLAB400_3') return;
+          if (code === 'PROJECT403_1' && Date.now() - lastOperationSentAt.current > OPERATION_ERROR_WINDOW_MS) {
+            if (!cursorSender.isDisabled()) {
+              cursorSender.disable();
+              showToast(PROJECT_ACCESS_LOST_MESSAGE);
+            }
+            return;
+          }
           if (code === 'COLLAB409_1' || code === 'COLLAB409_2') {
             collabHandlers.current.runSync('conflict');
           } else {
@@ -1112,6 +1163,9 @@ const MainPage: React.FC = () => {
       },
       onWebSocketClose: () => {
         syncPausedRef.current = true;
+        cursorReadyRef.current = false;
+        cursorSender.connectionLost();
+        cursorStore.clear();
       }
     });
 
@@ -1119,10 +1173,108 @@ const MainPage: React.FC = () => {
     client.activate();
 
     return () => {
+      cursorSender.hide();
+      cursorReadyRef.current = false;
+      cursorStore.clear();
       client.deactivate();
       if (stompClient.current === client) stompClient.current = null;
     };
-  }, [projectId, userInfo.id, hasAccessToken]);
+  }, [projectId, userInfo.id, hasAccessToken, cursorSender, cursorStore]);
+
+  useEffect(() => {
+    const isWindowActive = () => document.visibilityState !== 'hidden' && document.hasFocus();
+    const handleFocus = () => cursorSender.setActive(isWindowActive());
+    const handleBlur = () => cursorSender.setActive(false);
+    cursorSender.setActive(isWindowActive());
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [cursorSender]);
+
+  useEffect(() => () => {
+    cursorSender.dispose();
+    cursorStore.clear();
+  }, [cursorSender, cursorStore]);
+
+  useEffect(() => { cursorNamesRef.current = cursorNames; }, [cursorNames]);
+
+  const fetchCursorNames = useCallback(async () => {
+    if (!projectId) return;
+    const requestedAt = Date.now();
+    cursorNamesRequestedAt.current = requestedAt;
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaborators`, undefined, { silent: true });
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        cursorNamesUnavailable.current = true;
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (!isApiSuccess(data)) return;
+      if (cursorProjectIdRef.current !== projectId) return;
+      const names: Record<string, string> = {};
+      const list = Array.isArray(data.result?.collaborators) ? data.result.collaborators : [];
+      list.forEach((c: any) => {
+        if (c?.memberId != null && c?.nickname) names[String(c.memberId)] = String(c.nickname);
+      });
+      const owner = data.result?.owner;
+      if (owner?.memberId != null && owner?.nickname) names[String(owner.memberId)] = String(owner.nickname);
+      const next = { names, fetchedAt: requestedAt };
+      cursorNamesRef.current = next;
+      setCursorNames(next);
+    } catch (e) {}
+  }, [projectId, fetchWithAuth]);
+
+  const requestCursorNames = useCallback(() => {
+    if (cursorNamesUnavailable.current || cursorNamesTimer.current !== null) return;
+    const wait = Math.max(0, CURSOR_NAMES_MIN_GAP_MS - (Date.now() - cursorNamesRequestedAt.current));
+    cursorNamesTimer.current = window.setTimeout(() => {
+      cursorNamesTimer.current = null;
+      fetchCursorNames();
+    }, wait);
+  }, [fetchCursorNames]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    cursorProjectIdRef.current = projectId;
+    cursorNamesUnavailable.current = false;
+    cursorNamesRequestedAt.current = 0;
+    cursorNamesRef.current = null;
+    setCursorNames(null);
+    cursorStore.reset();
+    fetchCursorNames();
+    return () => {
+      if (cursorNamesTimer.current !== null) {
+        window.clearTimeout(cursorNamesTimer.current);
+        cursorNamesTimer.current = null;
+      }
+    };
+  }, [projectId, fetchCursorNames, cursorStore]);
+
+  useEffect(() => cursorStore.subscribe(() => {
+    const known = cursorNamesRef.current;
+    const hasNewStranger = cursorStore.getSnapshot().some(c =>
+      !known?.names[String(c.actorMemberId)] && (!known || c.since > known.fetchedAt)
+    );
+    if (hasNewStranger) requestCursorNames();
+  }), [cursorStore, requestCursorNames]);
+
+  const getCursorLabel = (cursor: RemoteCursor) => {
+    if (!cursorNames) return undefined;
+    const name = cursorNames.names[String(cursor.actorMemberId)];
+    if (name) return name;
+    if (myRole !== 'OWNER' && cursor.since <= cursorNames.fetchedAt) return OWNER_CURSOR_LABEL;
+    return undefined;
+  };
+
+  const handleCursorMove = useCallback((point: CursorPoint | null) => {
+    cursorSender.move(point);
+  }, [cursorSender]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -2206,6 +2358,7 @@ const MainPage: React.FC = () => {
 
   return (
     <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
+      {userInfo.id > 0 && <LocalCursor color={cursorColor(userInfo.id)} />}
       <style>
         {unassignedNodeIds.map(id => `
           div[data-id="${id}"], div[id="${id}"] {
@@ -2271,6 +2424,8 @@ const MainPage: React.FC = () => {
             onNodesDragEnd={handleNodesDragEnd}
             focusEdgeId={focusEdgeId}
             setFocusEdgeId={setFocusEdgeId}
+            onCursorMove={handleCursorMove}
+            overlay={<CollabCursorLayer store={cursorStore} zoom={zoomLevel} getLabel={getCursorLabel} />}
           />
 
           {selectedFileId && (

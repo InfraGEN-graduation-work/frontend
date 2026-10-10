@@ -2,10 +2,14 @@ import { createContext, useContext, useState, useEffect, useRef, type ReactNode 
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
 
+interface FetchConfig {
+  silent?: boolean;
+}
+
 interface AuthContextType {
   accessToken: string | null;
   setAccessToken: (token: string | null) => void;
-  fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>;
+  fetchWithAuth: (url: string, options?: RequestInit, config?: FetchConfig) => Promise<Response>;
   logout: () => Promise<void>;
   isInitializing: boolean;
   isAutoSaveEnabled: boolean;
@@ -82,7 +86,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return reissueInFlight.current;
   };
 
-  const fetchWithAuth = async (url: string, options: RequestInit = {}): Promise<Response> => {
+  const fetchWithAuth = async (url: string, options: RequestInit = {}, config: FetchConfig = {}): Promise<Response> => {
     let currentToken = accessTokenRef.current;
     
     if (!currentToken) {
@@ -109,7 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    if (!response.ok && response.status !== 401) {
+    if (!response.ok && response.status !== 401 && !config.silent) {
       try {
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
