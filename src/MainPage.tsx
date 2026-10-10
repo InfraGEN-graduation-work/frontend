@@ -368,10 +368,26 @@ const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
   const location = useLocation();
-  const navState = location.state as { initialProvider?: CloudProvider } | null;
+  const navState = location.state as { initialProvider?: CloudProvider; justCreated?: boolean } | null;
   const { fetchWithAuth, isAutoSaveEnabled, accessToken } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
+
+  // 프로젝트를 새로 만든 직후, 헤더의 도움말 버튼 위치를 알려주는 말풍선
+  const [showTutorialHint, setShowTutorialHint] = useState(false);
+
+  const dismissTutorialHint = useCallback(() => {
+    setShowTutorialHint(false);
+    try { if (projectId) sessionStorage.setItem(`infragen-tutorial-hint-${projectId}`, '1'); } catch (e) {}
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!navState?.justCreated || !projectId) return;
+    try { if (sessionStorage.getItem(`infragen-tutorial-hint-${projectId}`)) return; } catch (e) {}
+    setShowTutorialHint(true);
+    const timer = window.setTimeout(dismissTutorialHint, 10000);
+    return () => window.clearTimeout(timer);
+  }, [navState?.justCreated, projectId, dismissTutorialHint]);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
   const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('VIEWER');
@@ -2380,7 +2396,9 @@ const MainPage: React.FC = () => {
       isGenerateMode={appMode === 'generating'} 
       onResetUI={handleResetUI} 
       onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(saveNotAllowedMessage(myRole)) : () => handleSaveCanvas(false)}
-      onOpenTutorial={() => setShowTutorial(true)}
+      onOpenTutorial={() => { dismissTutorialHint(); setShowTutorial(true); }}
+      showTutorialHint={showTutorialHint}
+      onDismissTutorialHint={dismissTutorialHint}
       onGoHome={handleGoHome}
     />
 
