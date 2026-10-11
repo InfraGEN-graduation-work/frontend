@@ -7,8 +7,8 @@ import Header from './components/Header';
 import LeftPanel from './components/LeftPanel';
 import Canvas from './components/Canvas';
 import type { DraggedNodePosition } from './components/Canvas';
-import { CollabCursorLayer, CursorSender, LocalCursor, RemoteCursorStore, cursorColor } from './components/CollabCursors';
-import type { CursorPoint, RemoteCursor } from './components/CollabCursors';
+import { CollabCursorLayer, CursorSender, LocalCursor, RemoteCursorStore, CURSOR_ROLE_COLORS, CURSOR_UNKNOWN_COLOR } from './components/CollabCursors';
+import type { CursorAppearance, CursorPoint, CursorRole, RemoteCursor } from './components/CollabCursors';
 import RightSideBar from './components/RightSideBar';
 import Generate from './components/Generate'; 
 import type { NodeData, SelectionArea, Edge, FileGroup, CloudProvider, CloudSettings } from './types';
@@ -451,7 +451,7 @@ const MainPage: React.FC = () => {
       return false;
     }
   }));
-  const [cursorNames, setCursorNames] = useState<{ names: Record<string, string>; fetchedAt: number } | null>(null);
+  const [cursorNames, setCursorNames] = useState<{ members: Record<string, { nickname?: string; role?: CursorRole }>; fetchedAt: number } | null>(null);
   const cursorNamesRef = useRef(cursorNames);
   const cursorNamesRequestedAt = useRef(0);
   const cursorNamesTimer = useRef<number | null>(null);
@@ -1217,14 +1217,21 @@ const MainPage: React.FC = () => {
       const data = await res.json().catch(() => null);
       if (!isApiSuccess(data)) return;
       if (cursorProjectIdRef.current !== projectId) return;
-      const names: Record<string, string> = {};
+      const members: Record<string, { nickname?: string; role?: CursorRole }> = {};
+      const toRole = (value: unknown): CursorRole | undefined => {
+        const role = String(value || '').toUpperCase();
+        return role === 'OWNER' || role === 'EDITOR' || role === 'VIEWER' ? role : undefined;
+      };
       const list = Array.isArray(data.result?.collaborators) ? data.result.collaborators : [];
       list.forEach((c: any) => {
-        if (c?.memberId != null && c?.nickname) names[String(c.memberId)] = String(c.nickname);
+        if (c?.memberId == null) return;
+        members[String(c.memberId)] = { nickname: c.nickname ? String(c.nickname) : undefined, role: toRole(c.role) };
       });
       const owner = data.result?.owner;
-      if (owner?.memberId != null && owner?.nickname) names[String(owner.memberId)] = String(owner.nickname);
-      const next = { names, fetchedAt: requestedAt };
+      if (owner?.memberId != null) {
+        members[String(owner.memberId)] = { nickname: owner.nickname ? String(owner.nickname) : undefined, role: 'OWNER' };
+      }
+      const next = { members, fetchedAt: requestedAt };
       cursorNamesRef.current = next;
       setCursorNames(next);
     } catch (e) {}
@@ -1259,17 +1266,20 @@ const MainPage: React.FC = () => {
   useEffect(() => cursorStore.subscribe(() => {
     const known = cursorNamesRef.current;
     const hasNewStranger = cursorStore.getSnapshot().some(c =>
-      !known?.names[String(c.actorMemberId)] && (!known || c.since > known.fetchedAt)
+      !known?.members[String(c.actorMemberId)] && (!known || c.since > known.fetchedAt)
     );
     if (hasNewStranger) requestCursorNames();
   }), [cursorStore, requestCursorNames]);
 
-  const getCursorLabel = (cursor: RemoteCursor) => {
-    if (!cursorNames) return undefined;
-    const name = cursorNames.names[String(cursor.actorMemberId)];
-    if (name) return name;
-    if (myRole !== 'OWNER' && cursor.since <= cursorNames.fetchedAt) return OWNER_CURSOR_LABEL;
-    return undefined;
+  const describeCursor = (cursor: RemoteCursor): CursorAppearance => {
+    const member = cursorNames?.members[String(cursor.actorMemberId)];
+    if (member) {
+      return { color: member.role ? CURSOR_ROLE_COLORS[member.role] : CURSOR_UNKNOWN_COLOR, label: member.nickname };
+    }
+    if (cursorNames && myRole !== 'OWNER' && cursor.since <= cursorNames.fetchedAt) {
+      return { color: CURSOR_ROLE_COLORS.OWNER, label: OWNER_CURSOR_LABEL };
+    }
+    return { color: CURSOR_UNKNOWN_COLOR };
   };
 
   const handleCursorMove = useCallback((point: CursorPoint | null) => {
@@ -2358,7 +2368,7 @@ const MainPage: React.FC = () => {
 
   return (
     <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
-      {userInfo.id > 0 && <LocalCursor color={cursorColor(userInfo.id)} />}
+      <LocalCursor />
       <style>
         {unassignedNodeIds.map(id => `
           div[data-id="${id}"], div[id="${id}"] {
@@ -2425,7 +2435,7 @@ const MainPage: React.FC = () => {
             focusEdgeId={focusEdgeId}
             setFocusEdgeId={setFocusEdgeId}
             onCursorMove={handleCursorMove}
-            overlay={<CollabCursorLayer store={cursorStore} zoom={zoomLevel} getLabel={getCursorLabel} />}
+            overlay={<CollabCursorLayer store={cursorStore} zoom={zoomLevel} describe={describeCursor} />}
           />
 
           {selectedFileId && (

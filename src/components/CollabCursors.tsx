@@ -22,9 +22,20 @@ export const CURSOR_EXPIRE_MS = 10000;
 const CURSOR_SWEEP_MS = 1000;
 const CURSOR_COORD_LIMIT = 9999999.999;
 
-const CURSOR_COLORS = ['#e5484d', '#3e63dd', '#30a46c', '#f76b15', '#8e4ec6', '#d6409f', '#0797b9', '#a07c00'];
+export type CursorRole = 'OWNER' | 'EDITOR' | 'VIEWER';
 
-export const cursorColor = (memberId: number) => CURSOR_COLORS[Math.abs(Math.trunc(memberId)) % CURSOR_COLORS.length];
+export interface CursorAppearance {
+  color: string;
+  label?: string;
+}
+
+export const CURSOR_ROLE_COLORS: Record<CursorRole, string> = {
+  OWNER: '#e5484d',
+  EDITOR: '#8e4ec6',
+  VIEWER: '#f76b15'
+};
+export const CURSOR_UNKNOWN_COLOR = '#8b8d98';
+const LOCAL_CURSOR_COLOR = '#1a1a1a';
 
 const NATIVE_CURSOR_SELECTOR = [
   'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="image"])',
@@ -271,10 +282,10 @@ export class RemoteCursorStore {
 interface CollabCursorLayerProps {
   store: RemoteCursorStore;
   zoom: number;
-  getLabel: (cursor: RemoteCursor) => string | undefined;
+  describe: (cursor: RemoteCursor) => CursorAppearance;
 }
 
-export const CollabCursorLayer: React.FC<CollabCursorLayerProps> = ({ store, zoom, getLabel }) => {
+export const CollabCursorLayer: React.FC<CollabCursorLayerProps> = ({ store, zoom, describe }) => {
   const cursors = useSyncExternalStore(store.subscribe, store.getSnapshot);
   if (cursors.length === 0) return null;
   const inverseZoom = 1 / (zoom || 1);
@@ -285,8 +296,7 @@ export const CollabCursorLayer: React.FC<CollabCursorLayerProps> = ({ store, zoo
       style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none', zIndex: 30 }}
     >
       {cursors.map(cursor => {
-        const color = cursorColor(cursor.actorMemberId);
-        const label = getLabel(cursor);
+        const { color, label } = describe(cursor);
         return (
           <div
             key={cursor.cursorId}
@@ -335,7 +345,7 @@ export const CollabCursorLayer: React.FC<CollabCursorLayerProps> = ({ store, zoo
   );
 };
 
-export const LocalCursor: React.FC<{ color: string }> = ({ color }) => {
+export const LocalCursor: React.FC = () => {
   const pointerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -392,7 +402,7 @@ export const LocalCursor: React.FC<{ color: string }> = ({ color }) => {
         className="collab-local-cursor-pointer"
         style={{ position: 'fixed', left: 0, top: 0, zIndex: 2147483647, pointerEvents: 'none', opacity: 0, willChange: 'transform' }}
       >
-        <CursorArrow color={color} />
+        <CursorArrow color={LOCAL_CURSOR_COLOR} />
       </div>
     </>
   );
