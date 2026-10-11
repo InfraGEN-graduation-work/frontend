@@ -556,7 +556,7 @@ export default function Home() {
         const data = await res.json();
         if (res.ok && (data.isSuccess ?? data.is_success)) {
           setModalMode(null);
-          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider as CloudProvider } });
+          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider as CloudProvider, justCreated: true } });
         }
       } catch (err) {}
     } 

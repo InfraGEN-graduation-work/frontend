@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import './Tutorial.css';
 
 interface HighlightRect {
@@ -96,7 +96,7 @@ const STEPS: TutorialStepConfig[] = [
     title: '튜토리얼 8단계',
     description: '생성할 노드 목록을 확인해주세요',
     subText: '확인하였으면 다음 버튼을 눌러주세요',
-    targetSelector: '.tree-content',
+    targetSelector: '#field-target-file-box',
     tooltipPlacement: 'left',
   },
   {
@@ -105,7 +105,8 @@ const STEPS: TutorialStepConfig[] = [
     description: '노드를 완성하셨으면\nGenerate 버튼을 클릭하세요',
     targetSelector: '.generate-btn',
     tooltipPlacement: 'bottom',
-    // goNext에서 hasErrors 값을 보고 10단계(오류) 또는 14단계(생성 확인)로 분기한다.
+    // 클릭하면 항상 10단계로 이동한다.
+    // 10단계의 내용은 오류 유무에 따라 달라진다(NO_ERROR_STEP_10 참고).
     advanceOn: { selector: '.generate-btn', event: 'click' },
   },
   {
@@ -165,6 +166,18 @@ const STEPS: TutorialStepConfig[] = [
   },
 ];
 
+// 9단계에서 Generate를 눌렀을 때 오류가 없으면, 10단계를 오류 안내 대신
+// '생성 확인 모달의 생성 버튼 클릭' 안내로 바꿔서 보여준다. (14단계와 같은 내용)
+// 이 경우 생성 버튼을 누르면 11~14단계를 건너뛰고 바로 완료 화면으로 이동한다.
+const NO_ERROR_STEP_10: Partial<TutorialStepConfig> = {
+  description: '생성 버튼을 클릭하세요',
+  subText: '프로젝트 생성이 시작됩니다',
+  targetSelector: '#generate-confirm-btn',
+  tooltipPlacement: 'left',
+  noDim: true,
+  advanceOn: { selector: '#generate-confirm-btn', event: 'click' },
+};
+
 const TOTAL_VISIBLE = STEPS.filter(s => !s.isFinale).length;
 const PADDING = 8;
 const TOOLTIP_GAP = 14;
@@ -186,9 +199,21 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
   const [dropTargetVisible, setDropTargetVisible] = useState(true);
   const [showNodeWarning, setShowNodeWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState('');
+  // 9단계에서 Generate를 눌렀을 때 오류가 없었는지 여부
+  const [noErrorFlow, setNoErrorFlow] = useState(false);
 
-  const step = STEPS[idx];
+  const baseStep = STEPS[idx];
+  // measure/useEffect 의존성이므로 useMemo로 참조를 고정한다(매 렌더 새 객체면 무한 루프).
+  const step = useMemo<TutorialStepConfig>(
+    () => (noErrorFlow && baseStep.step === '10' ? { ...baseStep, ...NO_ERROR_STEP_10 } : baseStep),
+    [baseStep, noErrorFlow]
+  );
   const isLast = idx === STEPS.length - 1;
+
+  // 진행 점(dots) 표시 위치.
+  // 오류 없음 흐름의 10단계는 11~14단계를 건너뛰고 바로 완료로 가는 마지막 단계이므로
+  // 14단계(생성 버튼 클릭)와 같은 마지막 점을 활성화한다.
+  const activeDotIdx = noErrorFlow && baseStep.step === '10' ? TOTAL_VISIBLE - 1 : idx;
 
   const measure = useCallback(() => {
     if (!step.targetSelector) { setHl(null); return; }
@@ -259,9 +284,23 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
 
     setShowNodeWarning(false);
 
-    // Generate 버튼 클릭 분기: 오류가 있으면 오류 안내(10단계)로,
-    // 없으면 생성 확인(14단계)로 바로 이동한다.
-    if (currentStep === '9' || currentStep === '13') {
+    // 9단계: 오류 유무를 기록하고 10단계로 이동한다(아래 기본 +1 이동).
+    // 오류가 없으면 10단계가 '생성 버튼 클릭' 안내로, 있으면 '오류 확인' 안내로 표시된다.
+    if (currentStep === '9') setNoErrorFlow(!hasErrors);
+
+    // 10단계(오류 없음 흐름): 생성 버튼을 눌렀으므로 11~14단계를 건너뛰고 완료 화면으로 이동한다.
+    if (currentStep === '10' && noErrorFlow) {
+      const finaleIdx = STEPS.findIndex(s => s.isFinale);
+      if (finaleIdx !== -1) {
+        setVisible(false);
+        setTimeout(() => { setIdx(finaleIdx); setVisible(false); }, 320);
+        return;
+      }
+    }
+
+    // 13단계(오류 흐름): Generate 재클릭 시 오류가 남아 있으면 다시 10단계(오류 확인),
+    // 없으면 14단계(생성 확인)로 이동한다.
+    if (currentStep === '13') {
       const targetStepId = hasErrors ? '10' : '14';
       const targetIdx = STEPS.findIndex(s => s.step === targetStepId);
       if (targetIdx !== -1) {
@@ -274,7 +313,14 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
     if (isLast) { setVisible(false); setTimeout(onFinish, 300); return; }
     setVisible(false);
     setTimeout(() => { setIdx(p => p + 1); setVisible(false); }, 320);
-  }, [isLast, onFinish, idx, nodes.length, selectedNodeIds, hasErrors, showWarning, onJumpToNextError]);
+  }, [isLast, onFinish, idx, noErrorFlow, nodes.length, selectedNodeIds, hasErrors, showWarning, onJumpToNextError]);
+
+  const goBack = useCallback(() => {
+    if (idx === 0) return;
+    setShowNodeWarning(false);
+    setVisible(false);
+    setTimeout(() => { setIdx(p => p - 1); setVisible(false); }, 320);
+  }, [idx]);
 
   useEffect(() => {
     if (!step.advanceOn) return;
@@ -352,7 +398,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
     const { top, left, width, height } = hl;
     switch (step.tooltipPlacement) {
       case 'right':        return { top, left: left + width + TOOLTIP_GAP };
-      case 'left':         return { top: top + (step.step === '12' ? 120 : 0), right: window.innerWidth - left + TOOLTIP_GAP };
+      case 'left':         return { top: top + (step.step === '12' ? 260 : 0), right: window.innerWidth - left + TOOLTIP_GAP };
       case 'bottom':       return { top: top + height + TOOLTIP_GAP, left };
       case 'top':          return { bottom: window.innerHeight - top + TOOLTIP_GAP, left };
       case 'bottom-center':return { top: top + height + TOOLTIP_GAP, left: left + width / 2, transform: 'translateX(-50%)' };
@@ -447,10 +493,15 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
           <div className="tutorial-tooltip-footer">
             <div className="tutorial-dots">
               {Array.from({ length: TOTAL_VISIBLE }).map((_, i) => (
-                <span key={i} className={`tutorial-dot ${i === idx ? 'active' : ''}`} />
+                <span key={i} className={`tutorial-dot ${i === activeDotIdx ? 'active' : ''}`} />
               ))}
             </div>
             <div className="tutorial-tooltip-actions">
+              {idx > 0 && (
+                <button type="button" className="tutorial-back-btn" onClick={goBack} title="이전 단계" aria-label="이전 단계">
+                  ←
+                </button>
+              )}
               <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={handleSkip}>
                 건너뛰기
               </button>
