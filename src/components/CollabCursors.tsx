@@ -37,18 +37,45 @@ export const CURSOR_ROLE_COLORS: Record<CursorRole, string> = {
 export const CURSOR_UNKNOWN_COLOR = '#8b8d98';
 const LOCAL_CURSOR_COLOR = '#1a1a1a';
 
-const NATIVE_CURSOR_SELECTOR = [
+const TEXT_FIELD_SELECTOR = [
   'input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="image"])',
-  'textarea',
-  '.resizer'
+  'textarea'
 ].join(', ');
 
+const NATIVE_CURSOR_SELECTOR = `${TEXT_FIELD_SELECTOR}, .resizer`;
+
 const LOCAL_CURSOR_CLASS = 'collab-local-cursor';
+
+const svgCursor = (svg: string, hotX: number, hotY: number, fallback: string) =>
+  `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${hotX} ${hotY}, ${fallback}`;
+
+const TEXT_CURSOR = svgCursor(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='24' viewBox='0 0 16 24'>`
+  + `<path d='M5 3.5h6M8 3.5v17M5 20.5h6' fill='none' stroke='white' stroke-width='3.6' stroke-linecap='round'/>`
+  + `<path d='M5 3.5h6M8 3.5v17M5 20.5h6' fill='none' stroke='${LOCAL_CURSOR_COLOR}' stroke-width='1.6' stroke-linecap='round'/>`
+  + `</svg>`,
+  8, 12, 'text'
+);
+
+const COL_RESIZE_CURSOR = svgCursor(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'>`
+  + `<path d='M1.5 12 L6.5 7 L6.5 10.2 L17.5 10.2 L17.5 7 L22.5 12 L17.5 17 L17.5 13.8 L6.5 13.8 L6.5 17 Z' fill='${LOCAL_CURSOR_COLOR}' stroke='white' stroke-width='1.5' stroke-linejoin='round'/>`
+  + `</svg>`,
+  12, 12, 'col-resize'
+);
 
 const LOCAL_CURSOR_STYLE = `
   body.${LOCAL_CURSOR_CLASS}:not([style*="cursor"]),
   body.${LOCAL_CURSOR_CLASS}:not([style*="cursor"]) *:not(:is(${NATIVE_CURSOR_SELECTOR})) {
     cursor: none !important;
+  }
+  body.${LOCAL_CURSOR_CLASS} :is(${TEXT_FIELD_SELECTOR}) {
+    cursor: ${TEXT_CURSOR} !important;
+  }
+  body.${LOCAL_CURSOR_CLASS} .resizer,
+  body.${LOCAL_CURSOR_CLASS}[style*="col-resize"],
+  body.${LOCAL_CURSOR_CLASS}[style*="col-resize"] :is(*, ${TEXT_FIELD_SELECTOR}) {
+    cursor: ${COL_RESIZE_CURSOR} !important;
   }
 `;
 
@@ -351,7 +378,6 @@ export const LocalCursor: React.FC = () => {
   useEffect(() => {
     const body = document.body;
     body.classList.add(LOCAL_CURSOR_CLASS);
-    let isNativeDragging = false;
 
     const setVisible = (visible: boolean) => {
       if (pointerRef.current) pointerRef.current.style.opacity = visible ? '1' : '0';
@@ -359,7 +385,7 @@ export const LocalCursor: React.FC = () => {
     const handlePointer = (e: PointerEvent) => {
       const el = pointerRef.current;
       if (!el) return;
-      if (e.pointerType === 'touch' || isNativeDragging) {
+      if (e.pointerType === 'touch') {
         setVisible(false);
         return;
       }
@@ -369,28 +395,20 @@ export const LocalCursor: React.FC = () => {
     const handleMouseOut = (e: MouseEvent) => {
       if (!e.relatedTarget) setVisible(false);
     };
-    const handleDragStart = () => {
-      isNativeDragging = true;
-      setVisible(false);
-    };
-    const handleDragEnd = () => {
-      isNativeDragging = false;
+    const handleDragStart = (e: DragEvent) => {
+      if (!e.defaultPrevented) setVisible(false);
     };
 
     window.addEventListener('pointermove', handlePointer, true);
     window.addEventListener('pointerdown', handlePointer, true);
     document.addEventListener('mouseout', handleMouseOut);
-    window.addEventListener('dragstart', handleDragStart, true);
-    window.addEventListener('dragend', handleDragEnd, true);
-    window.addEventListener('drop', handleDragEnd, true);
+    window.addEventListener('dragstart', handleDragStart);
     return () => {
       body.classList.remove(LOCAL_CURSOR_CLASS);
       window.removeEventListener('pointermove', handlePointer, true);
       window.removeEventListener('pointerdown', handlePointer, true);
       document.removeEventListener('mouseout', handleMouseOut);
-      window.removeEventListener('dragstart', handleDragStart, true);
-      window.removeEventListener('dragend', handleDragEnd, true);
-      window.removeEventListener('drop', handleDragEnd, true);
+      window.removeEventListener('dragstart', handleDragStart);
     };
   }, []);
 

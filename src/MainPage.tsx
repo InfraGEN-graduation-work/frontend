@@ -119,6 +119,20 @@ const OPERATION_ERROR_WINDOW_MS = 2000;
 const OWNER_CURSOR_LABEL = '방장';
 const PROJECT_ACCESS_LOST_MESSAGE = '이 프로젝트에 접근할 권한이 없습니다. 홈에서 프로젝트 목록을 확인해 주세요.';
 
+const NO_SELECT_STYLE = `
+  .app-container, .app-container * {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .app-container input, .app-container textarea, .app-container .code-viewer-text, .app-container .code-viewer-text * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .app-container img {
+    -webkit-user-drag: none;
+  }
+`;
+
 const EDITOR_STRUCTURE_MESSAGE = 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. (노드 추가·삭제·연결·설정 변경은 OWNER만 가능)';
 const GENERATE_OWNER_ONLY_MESSAGE = '코드 생성은 방장(OWNER)만 할 수 있습니다.';
 const CONFLICT_SAVE_MESSAGE = '다른 사람이 편집 중이라 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
@@ -368,26 +382,10 @@ const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
   const location = useLocation();
-  const navState = location.state as { initialProvider?: CloudProvider; justCreated?: boolean } | null;
+  const navState = location.state as { initialProvider?: CloudProvider } | null;
   const { fetchWithAuth, isAutoSaveEnabled, accessToken } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
-
-  // 프로젝트를 새로 만든 직후, 헤더의 도움말 버튼 위치를 알려주는 말풍선
-  const [showTutorialHint, setShowTutorialHint] = useState(false);
-
-  const dismissTutorialHint = useCallback(() => {
-    setShowTutorialHint(false);
-    try { if (projectId) sessionStorage.setItem(`infragen-tutorial-hint-${projectId}`, '1'); } catch (e) {}
-  }, [projectId]);
-
-  useEffect(() => {
-    if (!navState?.justCreated || !projectId) return;
-    try { if (sessionStorage.getItem(`infragen-tutorial-hint-${projectId}`)) return; } catch (e) {}
-    setShowTutorialHint(true);
-    const timer = window.setTimeout(dismissTutorialHint, 10000);
-    return () => window.clearTimeout(timer);
-  }, [navState?.justCreated, projectId, dismissTutorialHint]);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
   const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('VIEWER');
@@ -831,6 +829,17 @@ const MainPage: React.FC = () => {
     };
     window.addEventListener('global-toast', handleGlobalToast);
     return () => window.removeEventListener('global-toast', handleGlobalToast);
+  }, []);
+
+  useEffect(() => {
+    const blockImageDrag = (e: DragEvent) => {
+      const target = e.target;
+      if (!(target instanceof HTMLImageElement || target instanceof HTMLAnchorElement)) return;
+      if (target.parentElement?.closest('[draggable="true"]')) return;
+      e.preventDefault();
+    };
+    window.addEventListener('dragstart', blockImageDrag, true);
+    return () => window.removeEventListener('dragstart', blockImageDrag, true);
   }, []);
 
   useEffect(() => {
@@ -2385,6 +2394,7 @@ const MainPage: React.FC = () => {
   return (
     <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
       <LocalCursor />
+      <style>{NO_SELECT_STYLE}</style>
       <style>
         {unassignedNodeIds.map(id => `
           div[data-id="${id}"], div[id="${id}"] {
@@ -2406,9 +2416,7 @@ const MainPage: React.FC = () => {
       isGenerateMode={appMode === 'generating'} 
       onResetUI={handleResetUI} 
       onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(saveNotAllowedMessage(myRole)) : () => handleSaveCanvas(false)}
-      onOpenTutorial={() => { dismissTutorialHint(); setShowTutorial(true); }}
-      showTutorialHint={showTutorialHint}
-      onDismissTutorialHint={dismissTutorialHint}
+      onOpenTutorial={() => setShowTutorial(true)}
       onGoHome={handleGoHome}
     />
 
@@ -2490,7 +2498,7 @@ const MainPage: React.FC = () => {
                               const content = current?.content || '';
                               const canMask = isEnvFile(current?.fileName) && hasEnvSecrets(content);
                               return (
-                                <div style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
+                                <div className="code-viewer-text" style={{ padding: '16px', overflowY: 'auto', flex: 1, background: 'white', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontSize: '12px', fontFamily: "'Consolas', 'Courier New', monospace" }}>
                                   <div style={{ fontWeight: 'bold', color: '#2d3748', marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                                     <span>{current?.fileName}</span>
                                     {canMask && (
