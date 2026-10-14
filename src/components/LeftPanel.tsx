@@ -4,6 +4,8 @@ import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
 import postgresqlIcon from '../assets/postgresql.png';
+import nodejsIcon from '../assets/nodejs.png';
+import mongodbIcon from '../assets/mongodb.png';
 
 interface LeftPanelProps {
   projectName: string;
@@ -60,8 +62,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   }, [resetTrigger]);
 
   const nodeTemplates: Record<string, string[]> = {
-    Server: ['Spring Boot'],
-    Database: ['MySQL', 'PostgreSQL', 'Redis'] 
+    Server: ['Spring Boot', 'Node.js'],
+    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'] 
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;
@@ -106,6 +108,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     if (type === 'Spring Boot') return springbootIcon;
     if (type === 'Redis') return redisIcon;
     if (type === 'PostgreSQL') return postgresqlIcon;
+    if (type === 'Node.js') return nodejsIcon;
+    if (type === 'MongoDB') return mongodbIcon;
     return '';
   };
 

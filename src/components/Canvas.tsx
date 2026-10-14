@@ -5,8 +5,11 @@ import mysqlIcon from '../assets/mysql.png';
 import springbootIcon from '../assets/springboot.png';
 import redisIcon from '../assets/redis.png';
 import postgresqlIcon from '../assets/postgresql.png';
+import nodejsIcon from '../assets/nodejs.png';
+import mongodbIcon from '../assets/mongodb.png';
 
-const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'Redis'];
+const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
+const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
 
 export interface DraggedNodePosition {
   id: string;
@@ -209,7 +212,7 @@ const Canvas: React.FC<CanvasProps> = ({
     if (unassignedNodeIds.includes(a.id) || unassignedNodeIds.includes(b.id)) {
       return '낱개로 배치된 노드는 생성에 포함되지 않아 연결할 수 없습니다. 먼저 [생성할 노드 목록]으로 옮겨 주세요.';
     }
-    const app = a.type === 'Spring Boot' ? a : b.type === 'Spring Boot' ? b : null;
+    const app = APP_NODE_TYPES.includes(a.type) ? a : APP_NODE_TYPES.includes(b.type) ? b : null;
     const dependency = app === a ? b : a;
     if (!app || !DEPENDENCY_NODE_TYPES.includes(dependency.type)) return null;
 
@@ -575,6 +578,8 @@ const Canvas: React.FC<CanvasProps> = ({
     if (type === 'Spring Boot') return springbootIcon;
     if (type === 'Redis') return redisIcon;
     if (type === 'PostgreSQL') return postgresqlIcon;
+    if (type === 'Node.js') return nodejsIcon;
+    if (type === 'MongoDB') return mongodbIcon;
     return null;
   };
 

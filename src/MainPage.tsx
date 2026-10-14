@@ -35,18 +35,46 @@ const showToast = (message: string) => window.dispatchEvent(new CustomEvent('glo
 
 const COMPONENT_TYPE_TO_NODE_TYPE: Record<string, string> = {
   SPRING_BOOT: 'Spring Boot',
+  NODE_JS: 'Node.js',
   MYSQL: 'MySQL',
   POSTGRESQL: 'PostgreSQL',
+  MONGODB: 'MongoDB',
   REDIS: 'Redis'
 };
-const toComponentType = (nodeType: string) => nodeType.toUpperCase().replace(/ /g, '_');
+const NODE_TYPE_TO_COMPONENT_TYPE: Record<string, string> = Object.fromEntries(
+  Object.entries(COMPONENT_TYPE_TO_NODE_TYPE).map(([componentType, nodeType]) => [nodeType, componentType])
+);
+const toComponentType = (nodeType: string) => NODE_TYPE_TO_COMPONENT_TYPE[nodeType] || nodeType.toUpperCase().replace(/ /g, '_');
 
-const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'Redis'];
+const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
+const NODES_WITHOUT_SERVICE_NAME = ['MongoDB'];
+const NODES_WITH_OPTIONAL_CONTAINER = ['PostgreSQL', 'Node.js', 'MongoDB'];
 const isDependencyType = (type?: string) => Boolean(type && DEPENDENCY_NODE_TYPES.includes(type));
+const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
+const isAppType = (type?: string) => Boolean(type && APP_NODE_TYPES.includes(type));
+const NODE_VERSION_REGEX = /^[0-9]+$/;
+
+const ENV_FORBIDDEN_CHARS = /["\\$\r\n\0]/;
+const ENV_VALUE_FIELDS: Record<string, { key: string; label: string }[]> = {
+  MySQL: [
+    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
+    { key: 'userPassword', label: '사용자 비밀번호' }, { key: 'rootPassword', label: '루트 비밀번호' }
+  ],
+  PostgreSQL: [
+    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
+    { key: 'password', label: '비밀번호' }
+  ],
+  MongoDB: [
+    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
+    { key: 'password', label: '비밀번호' }
+  ],
+  Redis: [{ key: 'password', label: '비밀번호' }]
+};
 
 const ENV_KEYS_BY_COMPONENT: Record<string, string[]> = {
   MYSQL: ['databaseName', 'username', 'userPassword', 'rootPassword'],
-  POSTGRESQL: ['databaseName', 'username', 'password']
+  POSTGRESQL: ['databaseName', 'username', 'password'],
+  MONGODB: ['databaseName', 'username', 'password']
 };
 
 const DB_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
@@ -55,21 +83,30 @@ const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   PARSING400_23: 'PostgreSQL 노드의 [도커 이미지 버전]이 비어 있습니다.',
   PARSING400_24: 'PostgreSQL 노드의 [사용자 이름]이 비어 있습니다.',
   PARSING400_6: '데이터베이스 이름에는 영문, 숫자, 언더바(_)만 사용할 수 있습니다.',
-  PARSING400_7: '데이터베이스 비밀번호는 8자 이상이어야 합니다. (MySQL은 루트 비밀번호, PostgreSQL은 비밀번호)',
+  PARSING400_7: '데이터베이스 비밀번호는 8자 이상이어야 합니다. (MySQL은 루트 비밀번호, PostgreSQL·MongoDB는 비밀번호)',
+  PARSING400_26: 'MongoDB 노드의 [도커 이미지 버전]이 비어 있습니다.',
+  PARSING400_27: 'MongoDB 노드의 [사용자 이름]이 비어 있습니다.',
   PARSING400_5: '포트 번호는 1024~65535 사이여야 합니다.',
   PARSING400_4: '여러 노드가 같은 포트 번호를 쓰고 있습니다.',
-  PARSING400_25: '하나의 Spring Boot에 같은 종류의 DB(MySQL·PostgreSQL·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
-  PARSING400_10: '연결 방향이 잘못되었습니다. Database에서 Spring Boot 방향으로 연결해 주세요.',
+  PARSING400_25: '하나의 애플리케이션(Spring Boot·Node.js)에 같은 종류의 DB(MySQL·PostgreSQL·MongoDB·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
+  PARSING400_10: '연결 방향이 잘못되었습니다. Database에서 애플리케이션(Spring Boot·Node.js) 방향으로 연결해 주세요.',
+  PARSING400_30: 'Node.js 노드의 [서비스 이름]이 비어 있습니다.',
+  PARSING400_31: 'Node.js 노드의 [Node.js 버전]이 비어 있습니다.',
+  PARSING400_32: 'Node.js 버전은 숫자로만 입력해야 합니다. (예: 22)',
   GENERATION400_3: '코드 생성 요청을 처리하지 못했습니다. 설정을 확인한 뒤 다시 시도해 주세요.',
   GENERATION400_4: '배포 환경이 선택되지 않았습니다. 왼쪽 패널에서 LOCAL·AWS·OCI 중 하나를 골라 주세요.',
   GENERATION400_5: '클라우드 배포 설정이 비어 있습니다. Settings 탭에서 클라우드 설정을 입력해 주세요.',
   GENERATION400_6: '로컬 환경 설정이 올바르지 않습니다. 배포 환경을 다시 선택한 뒤 시도해 주세요.',
   GENERATION400_7: '선택한 배포 환경과 클라우드 설정이 맞지 않습니다. 배포 환경을 다시 선택해 주세요.',
   GENERATION400_8: '클라우드 필수 설정값이 비어 있거나 올바르지 않습니다. Settings 탭에서 확인해 주세요.',
-  GENERATION400_9: '하나의 Spring Boot에 같은 종류의 DB(MySQL·PostgreSQL·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
+  GENERATION400_9: '하나의 애플리케이션(Spring Boot·Node.js)에 같은 종류의 DB(MySQL·PostgreSQL·MongoDB·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
+  GENERATION400_10: '클라우드 배포는 애플리케이션 노드(Spring Boot·Node.js)를 하나만 지원합니다. 하나만 남기거나 배포 환경을 LOCAL로 바꿔 주세요.',
+  GENERATION400_13: 'DB 사용자 이름이나 비밀번호에 줄바꿈 같은 특수 문자는 쓸 수 없습니다. 노드 설정을 확인해 주세요.',
+  GENERATION400_14: 'DB 사용자 이름이나 비밀번호에 큰따옴표("), 백슬래시(\\), 달러 기호($)는 쓸 수 없습니다. 노드 설정을 확인해 주세요.',
   COMMON400_1: '입력값 중 형식이 올바르지 않은 항목이 있습니다. 노드 설정과 클라우드 설정을 다시 확인해 주세요.'
 };
 const GENERATE_SETTINGS_ERROR_CODES = ['GENERATION400_4', 'GENERATION400_5', 'GENERATION400_6', 'GENERATION400_7', 'GENERATION400_8'];
+const GENERATE_VALIDATION_ERROR_CODES = ['GENERATION400_9', 'GENERATION400_10', 'GENERATION400_13', 'GENERATION400_14', 'COMMON400_1'];
 
 const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i;
 const ENV_ASSIGNMENT = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/;
@@ -382,10 +419,19 @@ const MainPage: React.FC = () => {
   const { projectId } = useParams(); 
   const navigate = useNavigate();
   const location = useLocation();
-  const navState = location.state as { initialProvider?: CloudProvider } | null;
+  const navState = location.state as { initialProvider?: CloudProvider; showTutorial?: boolean } | null;
+  const initialProvider = navState?.initialProvider;
   const { fetchWithAuth, isAutoSaveEnabled, accessToken } = useAuth();
 
   const [showTutorial, setShowTutorial] = useState(false);
+  const firstProjectTutorial = useRef(Boolean(navState?.showTutorial));
+
+  useEffect(() => {
+    if (!firstProjectTutorial.current) return;
+    firstProjectTutorial.current = false;
+    navigate(location.pathname, { replace: true, state: { ...(navState || {}), showTutorial: false } });
+    setShowTutorial(true);
+  }, []);
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
   const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('VIEWER');
@@ -573,9 +619,9 @@ const MainPage: React.FC = () => {
       setIncludeLocal(loadedIncludeLocal);
       setCloudSettings(loadedCloudSettings);
     } else {
-      if (navState?.initialProvider) {
-        setCloudProvider(navState.initialProvider);
-        if (navState.initialProvider === 'OCI') {
+      if (initialProvider) {
+        setCloudProvider(initialProvider);
+        if (initialProvider === 'OCI') {
           setCloudSettings(prev => ({
             ...prev, region: 'ap-seoul-1', instanceType: 'VM.Standard.E2.1.Micro', amiId: '' 
           }));
@@ -647,7 +693,7 @@ const MainPage: React.FC = () => {
     prevTargetFileIds.current = loadedTargetFileIds;
     hasLoadedOnce.current = true;
     setTimeout(() => { isDataLoaded.current = true; hasUnsavedChanges.current = false; }, 100);
-  }, [navState]);
+  }, [initialProvider]);
 
   const applyOperations = useCallback((ops: any[], options: { force?: boolean } = {}) => {
     const toApply = ops.filter(op => op && typeof op.operationId === 'string' && (options.force || !appliedOperations.current.has(op.operationId)));
@@ -1437,8 +1483,10 @@ const MainPage: React.FC = () => {
       }
     };
 
-    if (!settings.name) validationErrors.push({ name: '서비스 이름 누락', desc: `'${node.name}' 노드의 [서비스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'name' });
-    else checkNameFormat(settings.name, '서비스 이름', 'name');
+    if (!NODES_WITHOUT_SERVICE_NAME.includes(node.type)) {
+      if (!settings.name) validationErrors.push({ name: '서비스 이름 누락', desc: `'${node.name}' 노드의 [서비스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'name' });
+      else checkNameFormat(settings.name, '서비스 이름', 'name');
+    }
 
     const checkDatabaseName = (val: string) => {
       if (!DB_NAME_REGEX.test(val)) {
@@ -1447,7 +1495,7 @@ const MainPage: React.FC = () => {
     };
 
     if (!settings.containerName) {
-      if (node.type !== 'PostgreSQL') validationErrors.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
+      if (!NODES_WITH_OPTIONAL_CONTAINER.includes(node.type)) validationErrors.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
     }
     else checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
 
@@ -1486,9 +1534,30 @@ const MainPage: React.FC = () => {
       if (!settings.password || String(settings.password).length < 8) validationErrors.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
     }
 
+    if (node.type === 'MongoDB') {
+      if (!String(settings.imageVersion || '').trim()) validationErrors.push({ name: 'MongoDB 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      if (!settings.databaseName) validationErrors.push({ name: 'DB 이름 누락', desc: `'${node.name}' 노드의 [데이터베이스 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'databaseName' });
+      else checkDatabaseName(String(settings.databaseName));
+      if (!String(settings.username || '').trim()) validationErrors.push({ name: 'DB 사용자 누락', desc: `'${node.name}' 노드의 [사용자 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'username' });
+      if (!settings.password || String(settings.password).length < 8) validationErrors.push({ name: 'DB 비밀번호 오류', desc: `'${node.name}' 노드의 [비밀번호]를 8자리 이상 입력해주세요.`, targetNodeId: node.id, targetField: 'password' });
+    }
+
     if (node.type === 'Spring Boot') {
       if (!settings.javaVersion) validationErrors.push({ name: 'Spring Boot 버전 누락', desc: `'${node.name}' 노드의 [Java 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'javaVersion' });
     }
+
+    if (node.type === 'Node.js') {
+      const nodeVersion = String(settings.nodeVersion ?? '');
+      if (!nodeVersion.trim()) validationErrors.push({ name: 'Node.js 버전 누락', desc: `'${node.name}' 노드의 [Node.js 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'nodeVersion' });
+      else if (!NODE_VERSION_REGEX.test(nodeVersion)) validationErrors.push({ name: 'Node.js 버전 형식 오류', desc: `'${node.name}' 노드의 [Node.js 버전]은 숫자로만 입력해야 합니다. (예: 22)`, targetNodeId: node.id, targetField: 'nodeVersion' });
+    }
+
+    (ENV_VALUE_FIELDS[node.type] || []).forEach(({ key, label }) => {
+      const value = settings[key];
+      if (typeof value === 'string' && ENV_FORBIDDEN_CHARS.test(value)) {
+        validationErrors.push({ name: '사용할 수 없는 문자', desc: `'${node.name}' 노드의 [${label}]에는 큰따옴표("), 백슬래시(\\), 달러 기호($), 줄바꿈을 쓸 수 없습니다.`, targetNodeId: node.id, targetField: key });
+      }
+    });
   });
 
   portMap.forEach((nodesInfo, port) => {
@@ -1509,11 +1578,11 @@ const MainPage: React.FC = () => {
     const tNode = activeNodes.find(n => n.id === edge.targetId);
     if (sNode && tNode) {
       const isSourceDb = isDependencyType(sNode.type);
-      const isTargetServer = tNode.type === 'Spring Boot';
+      const isTargetServer = isAppType(tNode.type);
       if (!isSourceDb || !isTargetServer) {
         validationErrors.push({
           name: '잘못된 노드 연결 방향',
-          desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 Spring Boot 방향이어야 합니다.`,
+          desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 애플리케이션(Spring Boot·Node.js) 방향이어야 합니다.`,
           targetNodeId: sNode.id,
           edgeId: edge.id
         });
@@ -1532,7 +1601,25 @@ const MainPage: React.FC = () => {
     });
   });
 
-  activeNodes.filter(n => n.type === 'Spring Boot').forEach(app => {
+  const appNodes = activeNodes.filter(n => isAppType(n.type));
+  const mongoLinkedAppTypes = activeEdges.flatMap(edge => {
+    const s = activeNodes.find(n => n.id === edge.sourceId);
+    const t = activeNodes.find(n => n.id === edge.targetId);
+    if (s?.type === 'MongoDB' && isAppType(t?.type)) return [t!.type];
+    if (t?.type === 'MongoDB' && isAppType(s?.type)) return [s!.type];
+    return [];
+  });
+  if (cloudProvider !== 'LOCAL' && appNodes.length > 1) {
+    appNodes.forEach(app => {
+      validationErrors.push({
+        name: '클라우드 배포 애플리케이션 개수 초과',
+        desc: `클라우드 배포는 애플리케이션 노드(Spring Boot·Node.js)를 하나만 지원합니다. 지금 ${appNodes.length}개(${appNodes.map(n => n.name).join(', ')})가 있습니다. 하나만 남기거나 배포 환경을 LOCAL로 바꿔 주세요.`,
+        targetNodeId: app.id
+      });
+    });
+  }
+
+  appNodes.forEach(app => {
     const connectedByType = new Map<string, { names: string[]; edgeId: string }>();
     activeEdges.forEach(edge => {
       const otherId = edge.sourceId === app.id ? edge.targetId : edge.targetId === app.id ? edge.sourceId : null;
@@ -1734,7 +1821,7 @@ const MainPage: React.FC = () => {
     const mappedEdges = edges.map(e => {
       let sNode = nodes.find(n => n.id === e.sourceId);
       let tNode = nodes.find(n => n.id === e.targetId);
-      if (sNode?.type === 'Spring Boot' && isDependencyType(tNode?.type)) {
+      if (isAppType(sNode?.type) && isDependencyType(tNode?.type)) {
         const temp = sNode; sNode = tNode; tNode = temp;
       }
       return {
@@ -2040,7 +2127,7 @@ const MainPage: React.FC = () => {
         const sourceNode = nodes.find(n => n.id === e.sourceId);
         const targetNode = nodes.find(n => n.id === e.targetId);
         let finalSourceId = e.sourceId; let finalTargetId = e.targetId;
-        if (sourceNode?.type === 'Spring Boot' && isDependencyType(targetNode?.type)) {
+        if (isAppType(sourceNode?.type) && isDependencyType(targetNode?.type)) {
           finalSourceId = e.targetId; finalTargetId = e.sourceId;
         }
         return { edgeId: e.id, sourceNodeId: finalSourceId, targetNodeId: finalTargetId, connectionType: "DEFAULT" };
@@ -2125,7 +2212,7 @@ const MainPage: React.FC = () => {
           setSelectedNodeIds([]);
           setLeftActiveTab('Settings');
           setShowRightSidebar(true);
-        } else if (code.startsWith('PARSING400') || code === 'GENERATION400_9' || code === 'COMMON400_1') {
+        } else if (code.startsWith('PARSING400') || GENERATE_VALIDATION_ERROR_CODES.includes(code)) {
           setLeftActiveTab('Validation');
           setShowRightSidebar(true);
         }
@@ -2225,12 +2312,18 @@ const MainPage: React.FC = () => {
     } else if (type === 'Spring Boot') {
       defaultSettings.javaVersion = '17';
       defaultSettings.port = '8080';
+    } else if (type === 'Node.js') {
+      defaultSettings.nodeVersion = '22';
+      defaultSettings.port = '3000';
     } else if (type === 'Redis') {
       defaultSettings.imageVersion = 'redis:7.0';
       defaultSettings.port = '6379';
     } else if (type === 'PostgreSQL') {
       defaultSettings.imageVersion = 'postgres:17';
       defaultSettings.port = '5432';
+    } else if (type === 'MongoDB') {
+      defaultSettings.imageVersion = 'mongo:8.0';
+      defaultSettings.port = '27017';
     }
 
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
@@ -2558,7 +2651,12 @@ const MainPage: React.FC = () => {
           )}
         </div>
       ) : (
-        <Generate genProgress={genProgress} targetFileIds={targetFileIds} files={files} projectName={projectName} onBack={() => { setAppMode('editor'); }} />
+        <Generate
+          genProgress={genProgress} targetFileIds={targetFileIds} files={files} projectName={projectName} onBack={() => { setAppMode('editor'); }}
+          nodeJsGuide={activeNodes.some(n => n.type === 'Node.js') ? { local: cloudProvider === 'LOCAL' || includeLocal, cloud: cloudProvider !== 'LOCAL' } : null}
+          mongoGuide={mongoLinkedAppTypes.length > 0 ? { nodeJs: mongoLinkedAppTypes.includes('Node.js'), cloud: cloudProvider !== 'LOCAL' } : null}
+          nodes={nodes}
+        />
       )}
 
       {isErrorModalOpen && (
