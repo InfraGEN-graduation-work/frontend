@@ -536,18 +536,6 @@ export default function Home() {
     }
   };
 
-  const isFirstOwnProject = async (newProjectId: number) => {
-    try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects`);
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        const owned = (data.result?.projectList || []).filter((p: any) => String(p.accessRole || p.role || 'OWNER').toUpperCase() === 'OWNER');
-        return owned.every((p: any) => Number(p.projectId) === Number(newProjectId));
-      }
-    } catch (err) {}
-    return !projects.some(p => p.myRole === 'OWNER' && p.projectId !== newProjectId);
-  };
-
   const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -567,10 +555,8 @@ export default function Home() {
 
         const data = await res.json();
         if (res.ok && (data.isSuccess ?? data.is_success)) {
-          const newProjectId = data.result.projectId;
-          const showTutorial = await isFirstOwnProject(newProjectId);
           setModalMode(null);
-          navigate(`/project/${newProjectId}`, { state: { initialProvider: modalProvider as CloudProvider, showTutorial } });
+          navigate(`/project/${data.result.projectId}`, { state: { initialProvider: modalProvider as CloudProvider, justCreated: true } });
         }
       } catch (err) {}
     } 
