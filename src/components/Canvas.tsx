@@ -10,6 +10,7 @@ import mongodbIcon from '../assets/mongodb.png';
 
 const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
 const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
+const SYNCING_MESSAGE = '다른 사람의 편집 내용과 맞추는 중입니다. 잠시 후 다시 시도해 주세요.';
 
 export interface DraggedNodePosition {
   id: string;
@@ -45,6 +46,7 @@ interface CanvasProps {
   onNodesDragEnd?: (positions: DraggedNodePosition[]) => void;
   canMoveNodes?: boolean;
   canEditStructure?: boolean;
+  isSyncing?: boolean;
   onCursorMove?: (point: { x: number; y: number } | null) => void;
   overlay?: React.ReactNode;
 }
@@ -53,7 +55,7 @@ const Canvas: React.FC<CanvasProps> = ({
   nodes, setNodes, edges, setEdges, unassignedNodeIds, selectedNodeIds, setSelectedNodeIds, 
   addNode, zoomLevel, isSelectMode, selection, setSelection, saveHistory, markFilesAsModified, setSelectedFileId, setViewport,
   focusNodeId, setFocusNodeId, resetTrigger, setActiveTab, setShowRightSidebar,
-  focusEdgeId, setFocusEdgeId, onNodesDragMove, onNodesDragEnd, canMoveNodes = true, canEditStructure = true,
+  focusEdgeId, setFocusEdgeId, onNodesDragMove, onNodesDragEnd, canMoveNodes = true, canEditStructure = true, isSyncing = false,
   onCursorMove, overlay
 }) => {
   const [isAreaSelecting, setIsAreaSelecting] = useState(false);
@@ -517,7 +519,7 @@ const Canvas: React.FC<CanvasProps> = ({
     
     if (!canEditStructure) {
       if (drawingEdgeSource) setDrawingEdgeSource(null);
-      if (targetNode) notify('노드 연결은 OWNER만 변경할 수 있습니다.');
+      if (targetNode) notify(isSyncing ? SYNCING_MESSAGE : 'VIEWER는 노드 연결을 바꿀 수 없습니다.');
       return;
     }
 
@@ -557,7 +559,7 @@ const Canvas: React.FC<CanvasProps> = ({
     
     if (nodeType) {
       if (!canEditStructure) {
-        notify('노드 추가는 OWNER만 할 수 있습니다.');
+        notify(isSyncing ? SYNCING_MESSAGE : 'VIEWER는 노드를 추가할 수 없습니다.');
         return;
       }
       const contentEl = viewportRef.current.querySelector('.canvas-content') as HTMLElement;

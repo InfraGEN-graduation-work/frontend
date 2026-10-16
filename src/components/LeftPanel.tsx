@@ -113,14 +113,12 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     return '';
   };
 
+  const canWrite = myRole !== 'VIEWER';
+
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
-    if (myRole !== 'OWNER') {
+    if (!canWrite) {
       e.preventDefault();
-      window.dispatchEvent(new CustomEvent('global-toast', {
-        detail: myRole === 'EDITOR'
-          ? 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. 노드 추가는 OWNER만 가능합니다.'
-          : 'VIEWER는 노드를 추가할 수 없습니다.'
-      }));
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: 'VIEWER는 노드를 추가할 수 없습니다.' }));
       return;
     }
     e.dataTransfer.setData('nodeType', nodeName);
@@ -182,13 +180,13 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
       <div style={{ position: 'relative', marginBottom: '16px' }}>
         <div
           onClick={() => {
-            if (myRole !== 'OWNER') {
-              window.dispatchEvent(new CustomEvent('global-toast', { detail: '클라우드 환경 옵션은 방장(OWNER)만 수정할 수 있습니다.' }));
+            if (!canWrite) {
+              window.dispatchEvent(new CustomEvent('global-toast', { detail: 'VIEWER는 클라우드 환경 옵션을 바꿀 수 없습니다.' }));
               return;
             }
             setIsCloudDropdownOpen(!isCloudDropdownOpen);
           }}
-          style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor: myRole === 'OWNER' ? 'pointer' : 'not-allowed', opacity: myRole === 'OWNER' ? 1 : 0.6, transition: '0.2s' }}
+          style={{ display:'flex', justifyContent:'space-between', alignItems: 'center', padding:'10px 14px', background:'#f8f9fa', border:'1px solid #e2e8f0', borderRadius:'8px', fontSize:'13px', fontWeight:600, color: '#4a5568', cursor: canWrite ? 'pointer' : 'not-allowed', opacity: canWrite ? 1 : 0.6, transition: '0.2s' }}
         >
           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, marginRight: '8px' }}>
             {cloudProvider === 'AWS' ? 'AWS (Amazon Web Services)' : cloudProvider === 'OCI' ? 'OCI (Oracle Cloud)' : 'LOCAL (로컬 전용)'}

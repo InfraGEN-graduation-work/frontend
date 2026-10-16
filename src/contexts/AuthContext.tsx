@@ -1,6 +1,24 @@
 import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://infragen.p-e.kr/api/v1";
+const TOKEN_REFRESH_LEAD_MS = 60000;
+const TOKEN_REFRESH_MIN_DELAY_MS = 10000;
+const MAX_TIMER_DELAY_MS = 2147483647;
+
+const readTokenLifetimeMs = (token: string): number | null => {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+    const exp = Number(payload?.exp);
+    if (!Number.isFinite(exp)) return null;
+    const iat = Number(payload?.iat);
+    return Number.isFinite(iat) ? (exp - iat) * 1000 : exp * 1000 - Date.now();
+  } catch (e) {
+    return null;
+  }
+};
 
 interface FetchConfig {
   silent?: boolean;
@@ -48,7 +66,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     headers: csrfToken ? { "X-XSRF-TOKEN": csrfToken } : {}
   });
 
-  const runReissue = async (): Promise<string | null> => {
+  const runReissue = async (quiet: boolean): Promise<string | null> => {
     try {
       let res = await requestReissue(csrfTokenRef.current ?? await bootstrapCsrf());
 
@@ -70,7 +88,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       console.error("Token reissue failed", err);
     }
-    
+
+    if (quiet) return null;
     setAccessToken(null);
     const path = window.location.pathname;
     if (path !== '/' && path !== '/login' && path !== '/signup' && path !== '/oauth/kakao/callback') {
@@ -79,9 +98,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return null;
   };
 
-  const reissueToken = (): Promise<string | null> => {
+  const reissueToken = (quiet: boolean = false): Promise<string | null> => {
     if (!reissueInFlight.current) {
-      reissueInFlight.current = runReissue().finally(() => { reissueInFlight.current = null; });
+      reissueInFlight.current = runReissue(quiet).finally(() => { reissueInFlight.current = null; });
     }
     return reissueInFlight.current;
   };
@@ -163,6 +182,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     reissueToken().finally(() => setIsInitializing(false));
   }, []);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    const lifetime = readTokenLifetimeMs(accessToken);
+    if (lifetime === null || lifetime <= 0) return;
+    const lead = Math.min(TOKEN_REFRESH_LEAD_MS, lifetime / 2);
+    const delay = Math.min(Math.max(lifetime - lead, TOKEN_REFRESH_MIN_DELAY_MS), MAX_TIMER_DELAY_MS);
+    const dueAt = Date.now() + delay;
+    const refresh = () => {
+      if (accessTokenRef.current === accessToken) reissueToken(true);
+    };
+    const timer = window.setTimeout(refresh, delay);
+    const refreshIfDue = () => {
+      if (document.visibilityState !== 'hidden' && Date.now() >= dueAt) refresh();
+    };
+    window.addEventListener('focus', refreshIfDue);
+    document.addEventListener('visibilitychange', refreshIfDue);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('focus', refreshIfDue);
+      document.removeEventListener('visibilitychange', refreshIfDue);
+    };
+  }, [accessToken]);
 
   return (
     <AuthContext.Provider value={{ 

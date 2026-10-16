@@ -18,8 +18,6 @@ import { useAuth } from './contexts/AuthContext';
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://infragen.p-e.kr/api/v1';
 const WS_BASE_URL = BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '');
 
-const SELF_WRITE_WINDOW_MS = 5000;
-
 const DEFAULT_CLOUD_SETTINGS: CloudSettings = {
   region: 'ap-northeast-2', vpcName: 'infragen-vpc', subnetName: 'infragen-subnet',
   internetGatewayName: 'infragen-igw', routeTableName: 'infragen-rt', securityGroupName: 'infragen-sg',
@@ -57,16 +55,14 @@ const NODE_VERSION_REGEX = /^[0-9]+$/;
 const ENV_FORBIDDEN_CHARS = /["\\$\r\n\0]/;
 const ENV_VALUE_FIELDS: Record<string, { key: string; label: string }[]> = {
   MySQL: [
-    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
+    { key: 'username', label: '사용자 이름' },
     { key: 'userPassword', label: '사용자 비밀번호' }, { key: 'rootPassword', label: '루트 비밀번호' }
   ],
   PostgreSQL: [
-    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
-    { key: 'password', label: '비밀번호' }
+    { key: 'username', label: '사용자 이름' }, { key: 'password', label: '비밀번호' }
   ],
   MongoDB: [
-    { key: 'databaseName', label: '데이터베이스 이름' }, { key: 'username', label: '사용자 이름' },
-    { key: 'password', label: '비밀번호' }
+    { key: 'username', label: '사용자 이름' }, { key: 'password', label: '비밀번호' }
   ],
   Redis: [{ key: 'password', label: '비밀번호' }]
 };
@@ -78,6 +74,8 @@ const ENV_KEYS_BY_COMPONENT: Record<string, string[]> = {
 };
 
 const DB_NAME_REGEX = /^[a-zA-Z0-9_]+$/;
+
+const ENV_CHAR_ERROR_MESSAGE = '사용자 이름이나 비밀번호에 쓸 수 없는 문자가 있습니다. 각 노드의 값을 확인해 주세요.';
 
 const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   PARSING400_23: 'PostgreSQL 노드의 [도커 이미지 버전]이 비어 있습니다.',
@@ -101,8 +99,9 @@ const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   GENERATION400_8: '클라우드 필수 설정값이 비어 있거나 올바르지 않습니다. Settings 탭에서 확인해 주세요.',
   GENERATION400_9: '하나의 애플리케이션(Spring Boot·Node.js)에 같은 종류의 DB(MySQL·PostgreSQL·MongoDB·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
   GENERATION400_10: '클라우드 배포는 애플리케이션 노드(Spring Boot·Node.js)를 하나만 지원합니다. 하나만 남기거나 배포 환경을 LOCAL로 바꿔 주세요.',
-  GENERATION400_13: 'DB 사용자 이름이나 비밀번호에 줄바꿈 같은 특수 문자는 쓸 수 없습니다. 노드 설정을 확인해 주세요.',
-  GENERATION400_14: 'DB 사용자 이름이나 비밀번호에 큰따옴표("), 백슬래시(\\), 달러 기호($)는 쓸 수 없습니다. 노드 설정을 확인해 주세요.',
+  GENERATION400_13: ENV_CHAR_ERROR_MESSAGE,
+  GENERATION400_14: ENV_CHAR_ERROR_MESSAGE,
+  PARSING400_33: ENV_CHAR_ERROR_MESSAGE,
   COMMON400_1: '입력값 중 형식이 올바르지 않은 항목이 있습니다. 노드 설정과 클라우드 설정을 다시 확인해 주세요.'
 };
 const GENERATE_SETTINGS_ERROR_CODES = ['GENERATION400_4', 'GENERATION400_5', 'GENERATION400_6', 'GENERATION400_7', 'GENERATION400_8'];
@@ -125,7 +124,7 @@ const maskEnvSecrets = (content: string) => content.split(/\r?\n/).map(line => {
 const isVersionConflict = (res: Response, data: any) => {
   if (res.status !== 409) return false;
   const code = String(data?.code || '');
-  return code === '' || code.startsWith('COLLAB409');
+  return code === '' || code === 'COLLAB409_2';
 };
 
 const pickSnapshotVersion = (result: any): number | null => {
@@ -137,7 +136,13 @@ const pickSnapshotVersion = (result: any): number | null => {
   return null;
 };
 
-type ResyncReason = 'connect' | 'resync' | 'conflict';
+type ResyncReason = 'connect' | 'resync' | 'conflict' | 'rebase';
+type ProjectRole = 'OWNER' | 'EDITOR' | 'VIEWER';
+
+const toProjectRole = (value: unknown): ProjectRole => {
+  const role = String(value || '').toUpperCase();
+  return role === 'OWNER' || role === 'EDITOR' ? role : 'VIEWER';
+};
 
 const LIVE_SYNC_DEBOUNCE_MS = 300;
 const LIVE_SYNC_QUIET_MS = 400;
@@ -155,6 +160,15 @@ const CURSOR_NAMES_MIN_GAP_MS = 2000;
 const OPERATION_ERROR_WINDOW_MS = 2000;
 const OWNER_CURSOR_LABEL = '방장';
 const PROJECT_ACCESS_LOST_MESSAGE = '이 프로젝트에 접근할 권한이 없습니다. 홈에서 프로젝트 목록을 확인해 주세요.';
+const ROLE_CHECK_GAP_MS = 30000;
+const ROLE_CHECK_INTERVAL_MS = 60000;
+const ROLE_RECHECK_MIN_GAP_MS = 2000;
+const OWN_WRITE_VERSIONS_KEPT = 50;
+const ROLE_CHANGED_MESSAGES: Record<ProjectRole, string> = {
+  OWNER: '이 프로젝트의 방장(OWNER)이 되었습니다.',
+  EDITOR: '내 권한이 EDITOR로 바뀌었습니다. 프로젝트 이름과 설명은 방장만 바꿀 수 있습니다.',
+  VIEWER: '내 권한이 VIEWER로 바뀌어 이제 보기만 할 수 있습니다.'
+};
 
 const NO_SELECT_STYLE = `
   .app-container, .app-container * {
@@ -170,18 +184,26 @@ const NO_SELECT_STYLE = `
   }
 `;
 
-const EDITOR_STRUCTURE_MESSAGE = 'EDITOR는 노드 이동과 이름 변경만 할 수 있습니다. (노드 추가·삭제·연결·설정 변경은 OWNER만 가능)';
-const GENERATE_OWNER_ONLY_MESSAGE = '코드 생성은 방장(OWNER)만 할 수 있습니다.';
+const VIEWER_GENERATE_MESSAGE = 'VIEWER는 코드를 생성할 수 없습니다.';
+const VIEWER_SAVE_MESSAGE = 'VIEWER는 프로젝트를 수정하거나 저장할 수 없습니다.';
+const PROJECT_NAME_OWNER_ONLY_MESSAGE = '프로젝트 이름은 방장(OWNER)만 수정할 수 있습니다.';
+const NO_WRITE_PERMISSION_MESSAGE = '이 프로젝트를 수정할 권한이 없습니다.';
 const CONFLICT_SAVE_MESSAGE = '다른 사람이 편집 중이라 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
 const GENERIC_ERROR_MESSAGE = '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
-const saveNotAllowedMessage = (role: string) => role === 'EDITOR'
-  ? 'EDITOR는 프로젝트를 저장할 수 없습니다. 노드 이동과 이름 변경은 자동으로 저장됩니다.'
-  : 'VIEWER는 프로젝트를 수정하거나 저장할 수 없습니다.';
-const writeFailMessage = (data: any, fallback: string) => String(data?.code || '').startsWith('COLLAB409')
-  ? CONFLICT_SAVE_MESSAGE
-  : (data?.message || fallback);
+const LIVE_SYNC_FAIL_MESSAGE = '변경 사항을 실시간으로 저장하지 못했습니다. 상단 저장 버튼으로 다시 저장해 주세요.';
+const mergeConflictMessage = (names: string[]) => {
+  const shown = names.slice(0, 2).map(name => `'${name}'`).join(', ');
+  const more = names.length > 2 ? ` 외 ${names.length - 2}개` : '';
+  return `${shown}${more} 노드는 다른 사람이 먼저 바꿔서 그 내용으로 맞췄습니다.`;
+};
+const writeFailMessage = (data: any, fallback: string) => {
+  const code = String(data?.code || '');
+  if (code === 'COLLAB409_2') return CONFLICT_SAVE_MESSAGE;
+  if (code === 'PROJECT403_1') return NO_WRITE_PERMISSION_MESSAGE;
+  return data?.message || fallback;
+};
 const OPERATION_ERROR_MESSAGES: Record<string, string> = {
-  PROJECT403_1: '이 프로젝트를 수정할 권한이 없습니다.',
+  PROJECT403_1: NO_WRITE_PERMISSION_MESSAGE,
   PROJECT404_1: '프로젝트를 찾을 수 없습니다.'
 };
 
@@ -288,26 +310,366 @@ const coalesceOps = (ops: PendingOp[]) => {
   return Array.from(latest.values());
 };
 
+const byFirstItem = (a: unknown[], b: unknown[]) => String(a[0]).localeCompare(String(b[0]));
+
 const buildGraphSignature = (
   graphNodes: NodeData[], graphEdges: Edge[], graphFiles: FileGroup[], graphTargetIds: string[],
   provider: CloudProvider, local: boolean, settings: CloudSettings
-) => JSON.stringify({
-  n: graphNodes.map(n => {
-    const s = n.settings || {};
-    const keys = Object.keys(s).filter(k => !k.startsWith('file') && !k.startsWith('global')).sort();
-    return [n.id, n.type, keys.map(k => [k, s[k]])];
-  }),
-  e: graphEdges.map(e => [e.sourceId, e.targetId]),
-  f: graphFiles.map(f => [
-    f.id, f.name, f.nodeIds, f.isGenerated,
-    (f.generatedFiles || []).length,
-    (f.generatedFiles || []).reduce((sum, g) => sum + (g.content?.length || 0), 0)
-  ]),
-  t: graphTargetIds,
-  p: provider,
-  l: local,
-  c: settings
-});
+) => {
+  const typeById = new Map(graphNodes.map(n => [n.id, n.type]));
+  return JSON.stringify({
+    n: graphNodes.map(n => {
+      const s = n.settings || {};
+      const keys = Object.keys(s).filter(k => !k.startsWith('file') && !k.startsWith('global')).sort();
+      return [n.id, n.type, keys.map(k => [k, s[k]])];
+    }).sort(byFirstItem),
+    e: graphEdges.map(e => {
+      const swap = isAppType(typeById.get(e.sourceId)) && isDependencyType(typeById.get(e.targetId));
+      return swap ? `${e.targetId}>${e.sourceId}` : `${e.sourceId}>${e.targetId}`;
+    }).sort(),
+    f: graphFiles.map(f => [
+      f.id, f.name, [...f.nodeIds].sort(), f.isGenerated,
+      (f.generatedFiles || []).length,
+      (f.generatedFiles || []).reduce((sum, g) => sum + (g.content?.length || 0), 0)
+    ]).sort(byFirstItem),
+    t: [...graphTargetIds].sort(),
+    p: provider,
+    l: local,
+    c: settings
+  });
+};
+
+interface GraphGlobals {
+  cloudProvider: CloudProvider;
+  includeLocal: boolean;
+  cloudSettings: CloudSettings;
+}
+
+interface GraphState extends GraphGlobals {
+  nodes: NodeData[];
+  edges: Edge[];
+  files: FileGroup[];
+  targetFileIds: string[];
+}
+
+interface MappedNode {
+  nodeId: string;
+  nodeName: string;
+  componentType: string;
+  positionX: number;
+  positionY: number;
+  properties: Record<string, any>;
+}
+
+interface MappedEdge {
+  edgeId?: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceNodeName?: string;
+  targetNodeName?: string;
+}
+
+interface MappedGraph {
+  nodes: MappedNode[];
+  edges: MappedEdge[];
+}
+
+interface ParsedProject {
+  nodes: NodeData[];
+  edges: Edge[];
+  files: FileGroup[];
+  targetFileIds: string[];
+  globals: GraphGlobals | null;
+}
+
+const graphSignature = (g: GraphState) =>
+  buildGraphSignature(g.nodes, g.edges, g.files, g.targetFileIds, g.cloudProvider, g.includeLocal, g.cloudSettings);
+
+const processProperties = (n: NodeData, rawProperties: any) => {
+  const finalProperties: Record<string, any> = {};
+  for (const key in rawProperties) {
+    if (rawProperties[key] !== undefined && rawProperties[key] !== null && rawProperties[key] !== '') {
+      if (typeof rawProperties[key] === 'object') finalProperties[key] = rawProperties[key];
+      else if (key === 'port') finalProperties[key] = Number(rawProperties[key]);
+      else if (key === 'fileGeneratedCodes' || key.startsWith('global')) finalProperties[key] = rawProperties[key];
+      else finalProperties[key] = String(rawProperties[key]).trim();
+    }
+  }
+
+  const envKeys = ENV_KEYS_BY_COMPONENT[toComponentType(n.type)];
+  if (envKeys) {
+    const envObj: Record<string, string> = {};
+    envKeys.forEach(k => {
+      if (finalProperties[k]) {
+        envObj[k] = String(finalProperties[k]).trim();
+        delete finalProperties[k];
+      }
+    });
+    finalProperties.env = envObj;
+  }
+
+  return finalProperties;
+};
+
+const mapGraphState = (g: GraphState, motions?: Map<string, { toX: number; toY: number }>): MappedGraph => {
+  const nodes: MappedNode[] = g.nodes.map(n => {
+    const file = g.files.find(f => f.nodeIds.includes(n.id));
+    const rawProperties: any = { ...(n.settings || {}) };
+
+    rawProperties.globalCloudProvider = g.cloudProvider;
+    rawProperties.globalIncludeLocal = String(g.includeLocal);
+    rawProperties.globalCloudSettings = JSON.stringify(g.cloudSettings);
+
+    if (file) {
+      rawProperties.fileId = file.id;
+      rawProperties.fileName = file.name;
+      rawProperties.fileIsGenerated = String(file.isGenerated);
+      rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
+      rawProperties.fileIsTarget = String(g.targetFileIds.includes(file.id));
+    } else {
+      delete rawProperties.fileId; delete rawProperties.fileName; delete rawProperties.fileIsGenerated;
+      delete rawProperties.fileGeneratedCodes; delete rawProperties.fileIsTarget;
+    }
+
+    const motion = motions?.get(n.id);
+    return {
+      nodeId: n.id,
+      nodeName: String(n.name || '').trim() ? n.name : n.type,
+      componentType: toComponentType(n.type),
+      positionX: Math.round(motion ? motion.toX : n.x),
+      positionY: Math.round(motion ? motion.toY : n.y),
+      properties: processProperties(n, rawProperties)
+    };
+  });
+
+  const edges: MappedEdge[] = g.edges.map(e => {
+    let sNode = g.nodes.find(n => n.id === e.sourceId);
+    let tNode = g.nodes.find(n => n.id === e.targetId);
+    if (isAppType(sNode?.type) && isDependencyType(tNode?.type)) {
+      const temp = sNode; sNode = tNode; tNode = temp;
+    }
+    return {
+      edgeId: e.id,
+      sourceNodeId: sNode?.id || '',
+      targetNodeId: tNode?.id || '',
+      sourceNodeName: sNode?.name || '',
+      targetNodeName: tNode?.name || ''
+    };
+  }).filter(e => e.sourceNodeId && e.targetNodeId);
+
+  return { nodes, edges };
+};
+
+const parseProjectGraph = (project: any): ParsedProject => {
+  const fetchedNodes: any[] = Array.isArray(project?.nodes) ? project.nodes : [];
+  let globals: GraphGlobals | null = null;
+  if (fetchedNodes.length > 0) {
+    const firstProps = fetchedNodes[0]?.properties || {};
+    let cloudSettings: CloudSettings = { ...DEFAULT_CLOUD_SETTINGS };
+    if (firstProps.globalCloudSettings) {
+      try { cloudSettings = { ...cloudSettings, ...JSON.parse(firstProps.globalCloudSettings) }; } catch (e) {}
+    }
+    globals = {
+      cloudProvider: (firstProps.globalCloudProvider as CloudProvider) || 'LOCAL',
+      includeLocal: firstProps.globalIncludeLocal !== undefined ? String(firstProps.globalIncludeLocal) === 'true' : true,
+      cloudSettings
+    };
+  }
+
+  const nodes: NodeData[] = fetchedNodes.map(n => {
+    const props: Record<string, any> = { ...(n.properties || {}) };
+    const envKeys = ENV_KEYS_BY_COMPONENT[n.componentType];
+    if (envKeys && props.env && typeof props.env === 'object') {
+      const env = props.env;
+      envKeys.forEach(key => { if (env[key] !== undefined) props[key] = env[key]; });
+      delete props.env;
+    }
+    return {
+      id: String(n.nodeId ?? n.id),
+      type: COMPONENT_TYPE_TO_NODE_TYPE[n.componentType] || n.componentType,
+      name: n.nodeName,
+      x: n.positionX,
+      y: n.positionY,
+      settings: props
+    };
+  });
+
+  const fetchedEdges: any[] = Array.isArray(project?.edges) ? project.edges : [];
+  const edges: Edge[] = fetchedEdges.map(e => ({
+    id: e.edgeId || `edge-${e.id}`,
+    sourceId: e.sourceNodeId?.toString(),
+    targetId: e.targetNodeId?.toString()
+  }));
+
+  const fileMap = new Map<string, FileGroup>();
+  const targetIds = new Set<string>();
+  nodes.forEach(n => {
+    const props = n.settings || {};
+    if (!props.fileId) return;
+    const fileId = String(props.fileId);
+    if (!fileMap.has(fileId)) {
+      let generatedFiles: FileGroup['generatedFiles'] = [];
+      try { generatedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
+      fileMap.set(fileId, {
+        id: fileId,
+        name: props.fileName || '생성할 노드 목록',
+        isGenerated: String(props.fileIsGenerated) === 'true',
+        nodeIds: [],
+        isExpanded: true,
+        generatedFiles
+      });
+      if (props.fileIsTarget !== 'false') targetIds.add(fileId);
+    }
+    fileMap.get(fileId)!.nodeIds.push(n.id);
+  });
+  const files = Array.from(fileMap.values());
+
+  return { nodes, edges, files, targetFileIds: files.filter(f => targetIds.has(f.id)).map(f => f.id), globals };
+};
+
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj).filter(k => obj[k] !== undefined).sort().map(k => `${JSON.stringify(k)}:${stableStringify(obj[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+};
+
+const FILE_META_KEYS = ['fileName', 'fileIsGenerated', 'fileGeneratedCodes', 'fileIsTarget'];
+
+interface DescribedNode {
+  node: MappedNode;
+  own: string;
+  fileId: string | null;
+}
+
+const describeMappedGraph = (g: MappedGraph) => {
+  const nodes = new Map<string, DescribedNode>();
+  const files = new Map<string, string>();
+  const fileMeta = new Map<string, Record<string, any>>();
+  let globals: string | null = null;
+  let globalsRaw: Record<string, any> | null = null;
+  g.nodes.forEach(n => {
+    const props = n.properties || {};
+    const own: Record<string, any> = {};
+    Object.keys(props).forEach(k => { if (!k.startsWith('file') && !k.startsWith('global')) own[k] = props[k]; });
+    const fileId = props.fileId != null && props.fileId !== '' ? String(props.fileId) : null;
+    if (fileId && !files.has(fileId)) {
+      const meta: Record<string, any> = {};
+      FILE_META_KEYS.forEach(k => { if (props[k] !== undefined) meta[k] = props[k]; });
+      files.set(fileId, stableStringify(meta));
+      fileMeta.set(fileId, meta);
+    }
+    if (globalsRaw === null) {
+      const raw: Record<string, any> = {};
+      Object.keys(props).forEach(k => { if (k.startsWith('global')) raw[k] = props[k]; });
+      globalsRaw = raw;
+      globals = stableStringify(raw);
+    }
+    nodes.set(n.nodeId, { node: n, own: stableStringify({ t: n.componentType, p: own }), fileId });
+  });
+  const edges = new Map<string, MappedEdge>();
+  g.edges.forEach(e => {
+    const key = `${e.sourceNodeId}>${e.targetNodeId}`;
+    if (!edges.has(key)) edges.set(key, e);
+  });
+  return { nodes, files, fileMeta, globals, globalsRaw: globalsRaw as Record<string, any> | null, edges };
+};
+
+const pickThreeWay = <T,>(base: T, local: T, server: T) => {
+  if (local === base) return { from: 'server' as const, value: server, conflict: false };
+  if (server === base || server === local) return { from: 'local' as const, value: local, conflict: false };
+  return { from: 'server' as const, value: server, conflict: true };
+};
+
+interface MergeResult {
+  graph: MappedGraph;
+  localNodeIds: Set<string>;
+  localFileIds: Set<string>;
+  globalsFromLocal: boolean;
+  conflictNodeIds: string[];
+}
+
+const mergeMappedGraphs = (base: MappedGraph, local: MappedGraph, server: MappedGraph): MergeResult => {
+  const B = describeMappedGraph(base);
+  const L = describeMappedGraph(local);
+  const S = describeMappedGraph(server);
+
+  const conflictNodeIds: string[] = [];
+  const localNodeIds = new Set<string>();
+  const chosen: { entry: DescribedNode; fileId: string | null; position: MappedNode }[] = [];
+  const order = [...Array.from(L.nodes.keys()), ...Array.from(S.nodes.keys()).filter(id => !L.nodes.has(id))];
+
+  order.forEach(id => {
+    const b = B.nodes.get(id);
+    const l = L.nodes.get(id);
+    const s = S.nodes.get(id);
+    const own = pickThreeWay(b?.own ?? null, l?.own ?? null, s?.own ?? null);
+    if (own.conflict) conflictNodeIds.push(id);
+    if (own.value === null) return;
+    const entry = own.from === 'local' ? l! : s!;
+    const baseFile = b?.fileId ?? null;
+    const fileChoice = pickThreeWay(baseFile, l ? l.fileId : baseFile, s ? s.fileId : baseFile);
+    if (l && own.value === l.own && fileChoice.value === l.fileId) localNodeIds.add(id);
+    chosen.push({ entry, fileId: fileChoice.value, position: (l ?? s)!.node });
+  });
+
+  const localFileIds = new Set<string>();
+  const usedFiles = new Set(chosen.map(c => c.fileId).filter((f): f is string => Boolean(f)));
+  const fileMeta = new Map<string, Record<string, any>>();
+  usedFiles.forEach(fileId => {
+    const b = B.files.get(fileId) ?? null;
+    const l = L.files.has(fileId) ? L.files.get(fileId)! : b;
+    const s = S.files.has(fileId) ? S.files.get(fileId)! : b;
+    const pick = pickThreeWay(b, l, s);
+    const fromLocal = pick.from === 'local' ? L.fileMeta.has(fileId) : !S.fileMeta.has(fileId);
+    const meta = fromLocal ? (L.fileMeta.get(fileId) ?? S.fileMeta.get(fileId)) : (S.fileMeta.get(fileId) ?? L.fileMeta.get(fileId));
+    if (fromLocal && L.fileMeta.has(fileId)) localFileIds.add(fileId);
+    fileMeta.set(fileId, meta ?? {});
+  });
+
+  const baseGlobals = B.globals;
+  const localGlobals = L.globals ?? baseGlobals;
+  const serverGlobals = S.globals ?? baseGlobals;
+  const globalsPick = pickThreeWay(baseGlobals, localGlobals, serverGlobals);
+  const globalsFromLocal = globalsPick.from === 'local' ? Boolean(L.globalsRaw) : !S.globalsRaw;
+  const globalsRaw = (globalsFromLocal ? (L.globalsRaw ?? S.globalsRaw) : (S.globalsRaw ?? L.globalsRaw)) ?? {};
+
+  const nodes: MappedNode[] = chosen.map(({ entry, fileId, position }) => {
+    const props: Record<string, any> = {};
+    Object.keys(entry.node.properties || {}).forEach(k => {
+      if (!k.startsWith('file') && !k.startsWith('global')) props[k] = entry.node.properties[k];
+    });
+    if (fileId) Object.assign(props, { fileId, ...(fileMeta.get(fileId) || {}) });
+    Object.assign(props, globalsRaw);
+    return {
+      nodeId: entry.node.nodeId,
+      nodeName: position.nodeName,
+      componentType: entry.node.componentType,
+      positionX: position.positionX,
+      positionY: position.positionY,
+      properties: props
+    };
+  });
+
+  const nodeIds = new Set(nodes.map(n => n.nodeId));
+  const edgeKeys = [...Array.from(L.edges.keys()), ...Array.from(S.edges.keys()).filter(k => !L.edges.has(k))];
+  const seenPairs = new Set<string>();
+  const edges: MappedEdge[] = [];
+  edgeKeys.forEach(key => {
+    const pick = pickThreeWay(B.edges.has(key), L.edges.has(key), S.edges.has(key));
+    if (!pick.value) return;
+    const edge = (L.edges.get(key) ?? S.edges.get(key))!;
+    if (!nodeIds.has(edge.sourceNodeId) || !nodeIds.has(edge.targetNodeId)) return;
+    const pair = [edge.sourceNodeId, edge.targetNodeId].sort().join('|');
+    if (seenPairs.has(pair)) return;
+    seenPairs.add(pair);
+    edges.push(edge);
+  });
+
+  return { graph: { nodes, edges }, localNodeIds, localFileIds, globalsFromLocal, conflictNodeIds };
+};
 
 interface HistoryState {
   nodes: NodeData[];
@@ -441,7 +803,7 @@ const MainPage: React.FC = () => {
 
   const [userInfo, setUserInfo] = useState({ id: 0, nickname: '로딩중...', email: '로딩중...' });
 
-  const [myRole, setMyRole] = useState<'OWNER' | 'EDITOR' | 'VIEWER'>('VIEWER');
+  const [myRole, setMyRole] = useState<ProjectRole>('VIEWER');
 
   const [projectName, setProjectName] = useState('로딩중...');
   const [projectDescription, setProjectDescription] = useState('');
@@ -530,7 +892,18 @@ const MainPage: React.FC = () => {
   const autoSaveCallback = useRef<(() => void) | null>(null);
 
   const hasLoadedOnce = useRef(false);
-  const lastSelfWriteAt = useRef(0);
+  const baseGraphRef = useRef<MappedGraph | null>(null);
+  const ownWriteVersions = useRef<number[]>([]);
+  const writesInFlight = useRef(0);
+  const deferredResyncs = useRef<(number | null)[]>([]);
+  const projectNameRef = useRef(projectName);
+  const projectDescriptionRef = useRef(projectDescription);
+  projectNameRef.current = projectName;
+  projectDescriptionRef.current = projectDescription;
+  const roleCheckedAt = useRef(0);
+  const roleCheckInFlight = useRef(false);
+  const accessLost = useRef(false);
+  const refreshMyRoleRef = useRef<(options?: { announce?: boolean; fallbackMessage?: string }) => void>(() => {});
 
   const filesStructureDep = files.map(f => `${f.id}:${f.name}:${f.nodeIds.join(',')}`).join('|');
 
@@ -552,11 +925,12 @@ const MainPage: React.FC = () => {
   const syncPausedRef = useRef(true);
   const bufferedBroadcasts = useRef<any[]>([]);
   const syncChain = useRef<Promise<void>>(Promise.resolve());
-  const performSyncRef = useRef<(reason: ResyncReason) => Promise<void>>(async () => {});
+  const performSyncRef = useRef<(reason: ResyncReason, hintVersion: number | null) => Promise<GraphState | null>>(async () => null);
   const [isConflictSyncing, setIsConflictSyncing] = useState(false);
   const [unappliedOps, setUnappliedOps] = useState<PendingOp[]>([]);
 
   const lastTokenRefreshAt = useRef(0);
+  const connectedTokenRef = useRef<string | null>(null);
 
   const lastDragOpAt = useRef(0);
   const lastSentDragPositions = useRef(new Map<string, { x: number; y: number }>());
@@ -579,12 +953,7 @@ const MainPage: React.FC = () => {
   const liveSyncQuietTimer = useRef<number | null>(null);
   const lastRemoteOpAt = useRef(0);
   const runLiveSyncRef = useRef<() => void>(() => {});
-  const latestMappedRef = useRef<() => { mappedNodes: any[]; mappedEdges: any[] }>(() => ({ mappedNodes: [], mappedEdges: [] }));
-  const graphStateRef = useRef({ nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings });
-
-  const markSelfWrite = useCallback(() => {
-    lastSelfWriteAt.current = Date.now();
-  }, []);
+  const graphStateRef = useRef<GraphState>({ nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings });
 
   const bumpServerVersion = useCallback((version: unknown) => {
     if (typeof version !== 'number' || !Number.isFinite(version)) return;
@@ -598,109 +967,6 @@ const MainPage: React.FC = () => {
     serverVersionRef.current = version;
     setServerVersion(version);
   }, []);
-
-  const restoreFullProjectGraph = useCallback((resultProject: any) => {
-    isDataLoaded.current = false;
-    remoteMotions.current.clear();
-    lastRemoteMoveAt.current.clear();
-
-    setProjectName(resultProject.title);
-    setProjectDescription(resultProject.description || '');
-
-    const fetchedNodes = resultProject.nodes || [];
-    let loadedCloudProvider: CloudProvider = 'LOCAL';
-    let loadedIncludeLocal = true;
-    let loadedCloudSettings: CloudSettings = { ...DEFAULT_CLOUD_SETTINGS };
-
-    if (fetchedNodes.length > 0) {
-      const firstProps = fetchedNodes[0].properties || {};
-      if (firstProps.globalCloudProvider) loadedCloudProvider = firstProps.globalCloudProvider as CloudProvider;
-      if (firstProps.globalIncludeLocal !== undefined) loadedIncludeLocal = String(firstProps.globalIncludeLocal) === 'true';
-      if (firstProps.globalCloudSettings) {
-        try { 
-          const parsed = JSON.parse(firstProps.globalCloudSettings); 
-          loadedCloudSettings = { ...loadedCloudSettings, ...parsed }; 
-        } catch(e) {}
-      }
-      setCloudProvider(loadedCloudProvider);
-      setIncludeLocal(loadedIncludeLocal);
-      setCloudSettings(loadedCloudSettings);
-    } else {
-      if (initialProvider) {
-        setCloudProvider(initialProvider);
-        if (initialProvider === 'OCI') {
-          setCloudSettings(prev => ({
-            ...prev, region: 'ap-seoul-1', instanceType: 'VM.Standard.E2.1.Micro', amiId: '' 
-          }));
-        }
-      }
-    }
-
-    const loadedNodes: NodeData[] = fetchedNodes.map((n: any) => {
-      const props = n.properties || {};
-      const envKeys = ENV_KEYS_BY_COMPONENT[n.componentType];
-      if (envKeys && props.env && typeof props.env === 'object') {
-        envKeys.forEach(key => { if (props.env[key] !== undefined) props[key] = props.env[key]; });
-        delete props.env;
-      }
-      return {
-        id: n.nodeId || n.id.toString(), 
-        type: COMPONENT_TYPE_TO_NODE_TYPE[n.componentType] || n.componentType,
-        name: n.nodeName,
-        x: n.positionX,
-        y: n.positionY,
-        settings: props
-      };
-    });
-    setNodes(loadedNodes);
-
-    const fetchedEdges = resultProject.edges || [];
-    const loadedEdges: Edge[] = fetchedEdges.map((e: any) => ({
-      id: e.edgeId || `edge-${e.id}`,
-      sourceId: e.sourceNodeId?.toString(),
-      targetId: e.targetNodeId?.toString()
-    }));
-    setEdges(loadedEdges);
-
-    const reconstructedFiles: Record<string, any> = {};
-    loadedNodes.forEach((n: any) => {
-      const props = n.settings;
-      if (props && props.fileId) {
-        if (!reconstructedFiles[props.fileId]) {
-          let parsedFiles = [];
-          try { parsedFiles = props.fileGeneratedCodes ? JSON.parse(props.fileGeneratedCodes) : []; } catch (e) {}
-
-          reconstructedFiles[props.fileId] = {
-            id: props.fileId,
-            name: props.fileName || '생성할 노드 목록',
-            isGenerated: String(props.fileIsGenerated) === 'true',
-            nodeIds: [],
-            isExpanded: true,
-            generatedFiles: parsedFiles,
-            _isTarget: props.fileIsTarget !== 'false'
-          };
-        }
-        reconstructedFiles[props.fileId].nodeIds.push(n.id);
-      }
-    });
-
-    const loadedFiles = Object.values(reconstructedFiles).map((f: any) => {
-      if (f.isGenerated) {
-        f.lastHash = computeFileHash(f, loadedNodes, loadedEdges, loadedCloudProvider, loadedIncludeLocal, loadedCloudSettings);
-      }
-      return f as FileGroup;
-    });
-    setFiles(loadedFiles);
-
-    const loadedTargetFileIds = loadedFiles.filter((f: any) => f._isTarget).map(f => f.id);
-    setTargetFileIds(loadedTargetFileIds);
-
-    prevEdges.current = loadedEdges;
-    prevFiles.current = loadedFiles;
-    prevTargetFileIds.current = loadedTargetFileIds;
-    hasLoadedOnce.current = true;
-    setTimeout(() => { isDataLoaded.current = true; hasUnsavedChanges.current = false; }, 100);
-  }, [initialProvider]);
 
   const applyOperations = useCallback((ops: any[], options: { force?: boolean } = {}) => {
     const toApply = ops.filter(op => op && typeof op.operationId === 'string' && (options.force || !appliedOperations.current.has(op.operationId)));
@@ -803,77 +1069,226 @@ const MainPage: React.FC = () => {
     bumpServerVersion(op.serverVersion);
   }, [applyOperations, animateRemotePosition, isLocallyDragging, bumpServerVersion]);
 
-  const fetchCollaborationData = useCallback(async (afterVer: number = 0, mode: 'full' | 'light' | 'none' = 'full'): Promise<SnapshotResult | null> => {
+  const handleAccessLost = useCallback(() => {
+    if (accessLost.current) return;
+    accessLost.current = true;
+    myRoleRef.current = 'VIEWER';
+    setMyRole('VIEWER');
+    cursorSender.disable();
+    showToast(PROJECT_ACCESS_LOST_MESSAGE);
+  }, [cursorSender]);
+
+  const fetchSnapshot = useCallback(async (afterVersion: number, notifyError: boolean): Promise<SnapshotResult | null> => {
     if (!projectId) return null;
     try {
-      const url = `${BASE_URL}/projects/${projectId}/collaboration?afterVersion=${afterVer}`;
-      const res = await fetchWithAuth(url);
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok || !isApiSuccess(data)) {
-        if (mode === 'full') {
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: data?.message || '프로젝트를 불러오지 못했습니다.' }));
+      let from = afterVersion;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?afterVersion=${from}`, undefined, { silent: true });
+        const data = await res.json().catch(() => null);
+        if (res.ok && isApiSuccess(data)) {
+          const result = data.result || {};
+          const operations: any[] = Array.isArray(result.operations)
+            ? [...result.operations].sort((a, b) => (Number(a?.serverVersion) || 0) - (Number(b?.serverVersion) || 0))
+            : [];
+          return { project: result.project ?? null, operations, version: pickSnapshotVersion(result) };
         }
+        const code = String(data?.code || '');
+        if (code === 'COLLAB409_2' && from > 0) {
+          from = 0;
+          continue;
+        }
+        if (code === 'PROJECT403_1') {
+          handleAccessLost();
+          return null;
+        }
+        if (notifyError) showToast(data?.message || '프로젝트를 불러오지 못했습니다.');
         return null;
       }
-
-      const result = data.result || {};
-      const project = result.project ?? null;
-      const operations: any[] = Array.isArray(result.operations)
-        ? [...result.operations].sort((a, b) => (Number(a?.serverVersion) || 0) - (Number(b?.serverVersion) || 0))
-        : [];
-      const version = pickSnapshotVersion(result);
-
-      if (mode === 'none') return { project, operations, version };
-
-      if (project && mode === 'full') {
-        restoreFullProjectGraph(project);
-        operations.forEach(op => {
-          if (typeof op?.operationId !== 'string') return;
-          inFlightOps.current.delete(op.operationId);
-          const key = opKey(op);
-          if (latestOwnOpByKey.current.get(key) === op.operationId) latestOwnOpByKey.current.delete(key);
-        });
-        applyOperations(operations, { force: true });
-        if (version !== null) setServerVersionExact(version);
-      } else {
-        if (project) {
-          if (typeof project.title === 'string') setProjectName(project.title);
-          setProjectDescription(project.description || '');
-        }
-        operations.forEach(op => processIncomingOp(op));
-        bumpServerVersion(version);
-      }
-      return { project, operations, version };
+      return null;
     } catch (err) {
-      console.error("Collaboration sync failed", err);
+      console.error('Collaboration sync failed', err);
       return null;
     }
-  }, [projectId, fetchWithAuth, restoreFullProjectGraph, applyOperations, processIncomingOp, bumpServerVersion, setServerVersionExact]);
+  }, [projectId, fetchWithAuth, handleAccessLost]);
 
-  const syncServerVersion = useCallback(() => {
-    return fetchCollaborationData(serverVersionRef.current, 'light');
-  }, [fetchCollaborationData]);
+  const fallbackGlobals = (): GraphGlobals => {
+    const current = graphStateRef.current;
+    if (!hasLoadedOnce.current && initialProvider) {
+      return {
+        cloudProvider: initialProvider,
+        includeLocal: current.includeLocal,
+        cloudSettings: initialProvider === 'OCI'
+          ? { ...current.cloudSettings, region: 'ap-seoul-1', instanceType: 'VM.Standard.E2.1.Micro', amiId: '' }
+          : current.cloudSettings
+      };
+    }
+    return { cloudProvider: current.cloudProvider, includeLocal: current.includeLocal, cloudSettings: current.cloudSettings };
+  };
 
-  const sendVersionedWrite = useCallback(async (send: (baseVersion: number, isRetry: boolean) => Promise<Response>) => {
-    markSelfWrite();
-    let res = await send(serverVersionRef.current, false);
-    let data: any = await res.json().catch(() => ({}));
+  const applyServerSnapshot = (snapshot: SnapshotResult, mode: 'replace' | 'merge') => {
+    const project = snapshot.project;
+    const operations = snapshot.operations;
+    operations.forEach(op => {
+      if (typeof op?.operationId !== 'string') return;
+      inFlightOps.current.delete(op.operationId);
+      const key = opKey(op);
+      if (latestOwnOpByKey.current.get(key) === op.operationId) latestOwnOpByKey.current.delete(key);
+      appliedOperations.current.add(op.operationId);
+    });
 
-    for (let attempt = 0; attempt < VERSIONED_WRITE_RETRIES && isVersionConflict(res, data); attempt++) {
-      await syncServerVersion();
-      markSelfWrite();
-      res = await send(serverVersionRef.current, true);
-      data = await res.json().catch(() => ({}));
+    const parsed = parseProjectGraph(project);
+    const serverState: GraphState = {
+      nodes: operations.reduce<NodeData[]>((acc, op) => applyOpToNodes(acc, op), parsed.nodes),
+      edges: parsed.edges,
+      files: parsed.files,
+      targetFileIds: parsed.targetFileIds,
+      ...(parsed.globals ?? fallbackGlobals())
+    };
+    const serverMapped = mapGraphState(serverState);
+    const local = graphStateRef.current;
+    const conflictNames: string[] = [];
+    let next: GraphState;
+
+    if (mode === 'merge' && baseGraphRef.current) {
+      const merge = mergeMappedGraphs(baseGraphRef.current, mapGraphState(local, remoteMotions.current), serverMapped);
+      const merged = parseProjectGraph(merge.graph);
+      const localNodes = new Map(local.nodes.map(n => [n.id, n]));
+      const nodesOut = merged.nodes.map(n => {
+        const mine = localNodes.get(n.id);
+        if (!mine) return n;
+        if (merge.localNodeIds.has(n.id)) return mine;
+        return { ...n, name: mine.name, x: mine.x, y: mine.y };
+      });
+
+      const pairKey = (a: string, b: string) => [a, b].sort().join('|');
+      const localEdges = new Map(local.edges.map(e => [pairKey(e.sourceId, e.targetId), e]));
+      const edgesOut = merged.edges.map(e => localEdges.get(pairKey(e.sourceId, e.targetId)) ?? e);
+
+      const localFiles = new Map(local.files.map(f => [f.id, f]));
+      const mergedFiles = merged.files.map(f => {
+        const mine = localFiles.get(f.id);
+        if (!mine) return f;
+        const nodeIds = [...mine.nodeIds.filter(id => f.nodeIds.includes(id)), ...f.nodeIds.filter(id => !mine.nodeIds.includes(id))];
+        if (merge.localFileIds.has(f.id)) return { ...mine, nodeIds };
+        return { ...f, nodeIds, isExpanded: mine.isExpanded };
+      });
+      const keptEmpty = local.files.filter(f => f.nodeIds.length === 0 && !mergedFiles.some(m => m.id === f.id));
+      const byId = new Map([...mergedFiles, ...keptEmpty].map(f => [f.id, f]));
+      const localOrder = local.files.map(f => f.id);
+      const filesOut = [
+        ...localOrder.filter(id => byId.has(id)).map(id => byId.get(id)!),
+        ...mergedFiles.filter(f => !localOrder.includes(f.id))
+      ];
+      const targetFileIdsOut = filesOut
+        .filter(f => merged.files.some(m => m.id === f.id) ? merged.targetFileIds.includes(f.id) : local.targetFileIds.includes(f.id))
+        .map(f => f.id);
+
+      const globals: GraphGlobals = merge.globalsFromLocal || !merged.globals
+        ? { cloudProvider: local.cloudProvider, includeLocal: local.includeLocal, cloudSettings: local.cloudSettings }
+        : merged.globals;
+
+      merge.conflictNodeIds.forEach(id => {
+        const name = localNodes.get(id)?.name ?? serverState.nodes.find(n => n.id === id)?.name;
+        if (name) conflictNames.push(name);
+      });
+
+      next = { nodes: nodesOut, edges: edgesOut, files: filesOut, targetFileIds: targetFileIdsOut, ...globals };
+    } else {
+      remoteMotions.current.clear();
+      lastRemoteMoveAt.current.clear();
+      const localNodes = new Map(local.nodes.map(n => [n.id, n]));
+      next = {
+        ...serverState,
+        nodes: serverState.nodes.map(n => {
+          const mine = localNodes.get(n.id);
+          return mine && isLocallyDragging(n.id) ? { ...n, x: mine.x, y: mine.y } : n;
+        })
+      };
     }
 
-    const ok = res.ok && isApiSuccess(data);
-    if (ok) {
-      markSelfWrite();
-      await syncServerVersion();
+    const finalState = next;
+    finalState.files = finalState.files.map(f => (f.isGenerated && !f.lastHash)
+      ? { ...f, lastHash: computeFileHash(f, finalState.nodes, finalState.edges, finalState.cloudProvider, finalState.includeLocal, finalState.cloudSettings) }
+      : f);
+
+    isDataLoaded.current = false;
+    if (typeof project?.title === 'string') {
+      projectNameRef.current = project.title;
+      setProjectName(project.title);
     }
-    return { ok, data };
-  }, [markSelfWrite, syncServerVersion]);
+    projectDescriptionRef.current = project?.description || '';
+    setProjectDescription(project?.description || '');
+    setNodes(finalState.nodes);
+    setEdges(finalState.edges);
+    setFiles(finalState.files);
+    setTargetFileIds(finalState.targetFileIds);
+    setCloudProvider(finalState.cloudProvider);
+    setIncludeLocal(finalState.includeLocal);
+    setCloudSettings(finalState.cloudSettings);
+    nodesRef.current = finalState.nodes;
+    graphStateRef.current = finalState;
+    prevEdges.current = finalState.edges;
+    prevFiles.current = finalState.files;
+    prevTargetFileIds.current = finalState.targetFileIds;
+    baseGraphRef.current = serverMapped;
+    lastSyncedGraphSig.current = graphSignature(serverState);
+    latestGraphSigRef.current = graphSignature(finalState);
+    hasLoadedOnce.current = true;
+    if (typeof snapshot.version === 'number') {
+      if (snapshot.version < serverVersionRef.current) ownWriteVersions.current = [];
+      setServerVersionExact(snapshot.version);
+    }
+
+    const pending = latestGraphSigRef.current !== lastSyncedGraphSig.current;
+    window.setTimeout(() => {
+      isDataLoaded.current = true;
+      hasUnsavedChanges.current = pending;
+      runLiveSyncRef.current();
+    }, 100);
+
+    return { state: finalState, conflictNames };
+  };
+
+  const recordOwnWrite = useCallback((version: number) => {
+    const list = ownWriteVersions.current;
+    list.push(version);
+    if (list.length > OWN_WRITE_VERSIONS_KEPT) list.splice(0, list.length - OWN_WRITE_VERSIONS_KEPT);
+    bumpServerVersion(version);
+  }, [bumpServerVersion]);
+
+  const runSync = useCallback((reason: ResyncReason, hintVersion: number | null = null): Promise<GraphState | null> => {
+    const task = syncChain.current.then(() => performSyncRef.current(reason, hintVersion));
+    syncChain.current = task.then(() => undefined, err => { console.error('Collaboration sync failed', err); });
+    return task.catch(() => null);
+  }, []);
+
+  const sendVersionedWrite = useCallback(async (send: (baseVersion: number, rebased: GraphState | null) => Promise<Response>) => {
+    writesInFlight.current += 1;
+    let rebased: GraphState | null = null;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const baseVersion = serverVersionRef.current;
+        const res = await send(baseVersion, rebased);
+        const data: any = await res.json().catch(() => ({}));
+        if (res.ok && isApiSuccess(data)) {
+          recordOwnWrite(baseVersion + 1);
+          return { ok: true, data, rebased };
+        }
+        if (String(data?.code || '') === 'PROJECT403_1') refreshMyRoleRef.current({ announce: true });
+        if (!isVersionConflict(res, data) || attempt >= VERSIONED_WRITE_RETRIES) return { ok: false, data, rebased };
+        const next = await runSync('rebase');
+        if (!next) return { ok: false, data, rebased };
+        rebased = next;
+      }
+    } finally {
+      writesInFlight.current -= 1;
+      if (writesInFlight.current === 0 && deferredResyncs.current.length > 0) {
+        const versions = deferredResyncs.current;
+        deferredResyncs.current = [];
+        if (versions.some(v => v === null || !ownWriteVersions.current.includes(v))) runSync('resync');
+      }
+    }
+  }, [recordOwnWrite, runSync]);
 
   useEffect(() => {
     const handleGlobalToast = (e: any) => {
@@ -907,18 +1322,68 @@ const MainPage: React.FC = () => {
         else setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' });
       })
       .catch(() => setUserInfo({ id: 0, nickname: '사용자', email: '알 수 없음' }));
-
-    fetchWithAuth(`${BASE_URL}/projects`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.isSuccess ?? data.is_success) {
-          const currentProject = (data.result.projectList || []).find((p: any) => p.projectId === Number(projectId));
-          const role = String(currentProject?.accessRole || currentProject?.role || 'VIEWER').toUpperCase();
-          setMyRole(role === 'OWNER' || role === 'EDITOR' ? role : 'VIEWER');
-        }
-      })
-      .catch(() => {});
   }, [projectId, fetchWithAuth, navigate]);
+
+  const refreshMyRole = useCallback(async (options: { announce?: boolean; fallbackMessage?: string } = {}) => {
+    if (!projectId || roleCheckInFlight.current) return;
+    if (options.announce && Date.now() - roleCheckedAt.current < ROLE_RECHECK_MIN_GAP_MS) return;
+    roleCheckInFlight.current = true;
+    roleCheckedAt.current = Date.now();
+    try {
+      const res = await fetchWithAuth(`${BASE_URL}/projects`, undefined, { silent: true });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !isApiSuccess(data)) {
+        if (options.fallbackMessage) showToast(options.fallbackMessage);
+        return;
+      }
+      const list = Array.isArray(data.result?.projectList) ? data.result.projectList : [];
+      const current = list.find((p: any) => Number(p.projectId) === Number(projectId));
+      if (!current) {
+        handleAccessLost();
+        return;
+      }
+      accessLost.current = false;
+      const role = toProjectRole(current.accessRole ?? current.role);
+      if (role === myRoleRef.current) {
+        if (options.fallbackMessage) showToast(options.fallbackMessage);
+        return;
+      }
+      myRoleRef.current = role;
+      setMyRole(role);
+      if (options.announce) showToast(ROLE_CHANGED_MESSAGES[role]);
+      if (role === 'VIEWER') {
+        heldOps.current = [];
+        runSync('resync');
+      }
+    } catch (e) {
+      if (options.fallbackMessage) showToast(options.fallbackMessage);
+    } finally {
+      roleCheckInFlight.current = false;
+    }
+  }, [projectId, fetchWithAuth, handleAccessLost, runSync]);
+
+  useEffect(() => { refreshMyRoleRef.current = options => { refreshMyRole(options); }; }, [refreshMyRole]);
+
+  useEffect(() => {
+    accessLost.current = false;
+    refreshMyRole();
+  }, [refreshMyRole]);
+
+  useEffect(() => {
+    const check = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (Date.now() - roleCheckedAt.current < ROLE_CHECK_GAP_MS) return;
+      refreshMyRoleRef.current({ announce: true });
+    };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    const timer = window.setInterval(check, ROLE_CHECK_INTERVAL_MS);
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const publishOp = useCallback((op: PendingOp) => {
     const client = stompClient.current;
@@ -1053,7 +1518,7 @@ const MainPage: React.FC = () => {
     const pending = Array.from(inFlightOps.current.values());
     if (pending.length === 0) return;
 
-    if (reason === 'resync') {
+    if (reason === 'resync' || reason === 'rebase') {
       if (restored) applyOperations(pending, { force: true });
       return;
     }
@@ -1080,31 +1545,43 @@ const MainPage: React.FC = () => {
     held.forEach(op => publishOp(op));
   };
 
-  const performSync = async (reason: ResyncReason) => {
+  const hasLocalGraphChanges = () => {
+    if (lastSyncedGraphSig.current === null) return false;
+    return graphSignature(graphStateRef.current) !== lastSyncedGraphSig.current;
+  };
+
+  const performSync = async (reason: ResyncReason, hintVersion: number | null): Promise<GraphState | null> => {
+    if (reason === 'resync') {
+      if (hintVersion !== null && ownWriteVersions.current.includes(hintVersion)) {
+        bumpServerVersion(hintVersion);
+        return null;
+      }
+      if (writesInFlight.current > 0) {
+        deferredResyncs.current.push(hintVersion);
+        return null;
+      }
+    }
+
     syncPausedRef.current = true;
     if (reason === 'conflict') setIsConflictSyncing(true);
 
     const firstLoad = !hasLoadedOnce.current;
-    const isSelfWrite = Date.now() - lastSelfWriteAt.current < SELF_WRITE_WINDOW_MS;
-    const keepLocalGraph = !firstLoad && myRole === 'OWNER' && (isSelfWrite || hasUnsavedChanges.current);
-
+    const canWrite = myRoleRef.current !== 'VIEWER';
     let snapshot: SnapshotResult | null = null;
+    let applied: GraphState | null = null;
     let restored = false;
     try {
-      if (firstLoad) {
-        snapshot = await fetchCollaborationData(0, 'full');
-        restored = Boolean(snapshot?.project);
-      } else if (keepLocalGraph) {
-        snapshot = await fetchCollaborationData(serverVersionRef.current, 'light');
-        if (reason === 'resync' && !isSelfWrite) {
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: '다른 곳에서 프로젝트가 변경되었습니다. 저장하지 않은 작업이 있어 캔버스는 그대로 유지했습니다.' }));
-        }
-      } else if (reason === 'resync') {
-        snapshot = await fetchCollaborationData(0, 'full');
-        restored = Boolean(snapshot?.project);
-      } else {
-        snapshot = await fetchCollaborationData(serverVersionRef.current, 'full');
-        restored = Boolean(snapshot?.project);
+      const fromVersion = firstLoad || reason === 'resync' || reason === 'rebase' ? 0 : serverVersionRef.current;
+      snapshot = await fetchSnapshot(fromVersion, firstLoad);
+      if (snapshot?.project) {
+        const mode = !firstLoad && canWrite && (reason === 'rebase' || hasLocalGraphChanges()) ? 'merge' : 'replace';
+        const result = applyServerSnapshot(snapshot, mode);
+        applied = result.state;
+        restored = true;
+        if (result.conflictNames.length > 0) showToast(mergeConflictMessage(result.conflictNames));
+      } else if (snapshot) {
+        snapshot.operations.forEach(op => processIncomingOp(op));
+        bumpServerVersion(snapshot.version);
       }
     } finally {
       const buffered = bufferedBroadcasts.current.sort((a, b) => (Number(a?.serverVersion) || 0) - (Number(b?.serverVersion) || 0));
@@ -1121,13 +1598,32 @@ const MainPage: React.FC = () => {
         cursorSender.connectionReady();
       }
     }
+    return applied;
   };
 
-  const runSync = useCallback((reason: ResyncReason) => {
-    syncChain.current = syncChain.current
-      .then(() => performSyncRef.current(reason))
-      .catch(err => console.error('Collaboration sync failed', err));
-  }, []);
+  const recoverRejectedOps = () => {
+    const suspects = Array.from(inFlightOps.current.keys());
+    if (suspects.length === 0) return;
+    window.setTimeout(async () => {
+      const stuck = suspects.map(id => inFlightOps.current.get(id)).filter((op): op is PendingOp => Boolean(op));
+      if (stuck.length === 0) return;
+      const latest: PendingOp[] = [];
+      stuck.forEach(op => {
+        inFlightOps.current.delete(op.operationId);
+        positionOpSentAt.current.delete(op.operationId);
+        const key = opKey(op);
+        if (latestOwnOpByKey.current.get(key) === op.operationId) {
+          latestOwnOpByKey.current.delete(key);
+          latest.push(op);
+        }
+      });
+      if (latest.length === 0) return;
+      const snapshot = await fetchSnapshot(0, false);
+      const serverNodes = snapshot?.project ? computeServerNodeStates(snapshot.project, snapshot.operations) : null;
+      const unapplied = serverNodes ? latest.filter(op => !isOpReflected(op, serverNodes)) : latest;
+      if (unapplied.length > 0) setUnappliedOps(prev => coalesceOps([...prev, ...unapplied]));
+    }, DRAG_OP_ACK_TIMEOUT_MS);
+  };
 
   const retryUnappliedOps = () => {
     const ops = unappliedOps;
@@ -1141,7 +1637,7 @@ const MainPage: React.FC = () => {
     const ops = unappliedOps;
     setUnappliedOps([]);
     if (ops.length === 0) return;
-    const snapshot = await fetchCollaborationData(0, 'none');
+    const snapshot = await fetchSnapshot(0, false);
     if (!snapshot?.project) {
       window.dispatchEvent(new CustomEvent('global-toast', { detail: '최신 내용을 불러오지 못했습니다. 새로고침해 주세요.' }));
       return;
@@ -1163,16 +1659,18 @@ const MainPage: React.FC = () => {
   };
 
   const collabHandlers = useRef({
-    runSync: (_reason: ResyncReason) => {},
+    runSync: (_reason: ResyncReason, _hintVersion?: number | null) => {},
     processIncomingOp: (_op: any) => {},
-    requestTokenRefresh: () => {}
+    requestTokenRefresh: () => {},
+    recoverRejectedOps: () => {}
   });
   useEffect(() => {
     performSyncRef.current = performSync;
     collabHandlers.current = {
-      runSync,
+      runSync: (reason, hintVersion) => { runSync(reason, hintVersion ?? null); },
       processIncomingOp,
-      requestTokenRefresh
+      requestTokenRefresh,
+      recoverRejectedOps
     };
   });
 
@@ -1187,7 +1685,9 @@ const MainPage: React.FC = () => {
       brokerURL: `${WS_BASE_URL}/ws/collaboration`,
       reconnectDelay: 3000,
       beforeConnect: () => {
-        client.connectHeaders = { Authorization: `Bearer ${accessTokenRef.current ?? ''}` };
+        const token = accessTokenRef.current ?? '';
+        connectedTokenRef.current = token;
+        client.connectHeaders = { Authorization: `Bearer ${token}` };
       },
       onConnect: () => {
         console.log('STOMP Collaboration Connected');
@@ -1204,8 +1704,11 @@ const MainPage: React.FC = () => {
           else collabHandlers.current.processIncomingOp(op);
         });
 
-        client.subscribe(`/topic/projects/${projectId}/resync`, () => {
-          collabHandlers.current.runSync('resync');
+        client.subscribe(`/topic/projects/${projectId}/resync`, (msg) => {
+          let body: any = null;
+          try { body = JSON.parse(msg.body); } catch (e) {}
+          const version = typeof body?.serverVersion === 'number' ? body.serverVersion : null;
+          collabHandlers.current.runSync('resync', version);
         });
 
         client.subscribe(`/topic/projects/${projectId}/cursors`, (msg) => {
@@ -1219,17 +1722,18 @@ const MainPage: React.FC = () => {
           try { result = JSON.parse(msg.body); } catch (e) {}
           const code = String(result?.code || '');
           if (code === 'COLLAB400_3') return;
-          if (code === 'PROJECT403_1' && Date.now() - lastOperationSentAt.current > OPERATION_ERROR_WINDOW_MS) {
-            if (!cursorSender.isDisabled()) {
-              cursorSender.disable();
-              showToast(PROJECT_ACCESS_LOST_MESSAGE);
-            }
+          if (code === 'PROJECT403_1') {
+            const fromOperation = Date.now() - lastOperationSentAt.current <= OPERATION_ERROR_WINDOW_MS;
+            if (!fromOperation) cursorSender.disable();
+            refreshMyRoleRef.current({ announce: true, fallbackMessage: fromOperation ? NO_WRITE_PERMISSION_MESSAGE : undefined });
             return;
           }
-          if (code === 'COLLAB409_1' || code === 'COLLAB409_2') {
+          if (code === 'COLLAB409_2') {
             collabHandlers.current.runSync('conflict');
+          } else if (code === 'COLLAB409_1') {
+            collabHandlers.current.recoverRejectedOps();
           } else {
-            window.dispatchEvent(new CustomEvent('global-toast', { detail: OPERATION_ERROR_MESSAGES[code] || '변경 내용을 반영하지 못했습니다. 새로고침해 주세요.' }));
+            showToast(OPERATION_ERROR_MESSAGES[code] || '변경 내용을 반영하지 못했습니다. 새로고침해 주세요.');
           }
         });
 
@@ -1254,10 +1758,22 @@ const MainPage: React.FC = () => {
       cursorSender.hide();
       cursorReadyRef.current = false;
       cursorStore.clear();
+      connectedTokenRef.current = null;
       client.deactivate();
       if (stompClient.current === client) stompClient.current = null;
     };
   }, [projectId, userInfo.id, hasAccessToken, cursorSender, cursorStore]);
+
+  useEffect(() => {
+    const client = stompClient.current;
+    const usedToken = connectedTokenRef.current;
+    if (!client || !accessToken || !usedToken || usedToken === accessToken) return;
+    connectedTokenRef.current = null;
+    cursorSender.hide();
+    Promise.resolve(client.deactivate()).then(() => {
+      if (stompClient.current === client) client.activate();
+    });
+  }, [accessToken, cursorSender]);
 
   useEffect(() => {
     const isWindowActive = () => document.visibilityState !== 'hidden' && document.hasFocus();
@@ -1440,7 +1956,7 @@ const MainPage: React.FC = () => {
     const assigned = new Set(files.flatMap(f => f.nodeIds));
     const previous = prevAssignedNodeIds.current;
     prevAssignedNodeIds.current = assigned;
-    if (!previous || myRole !== 'OWNER' || !isDataLoaded.current || isUndoRedo.current) return;
+    if (!previous || myRole === 'VIEWER' || !isDataLoaded.current || isUndoRedo.current) return;
 
     const nodeIdSet = new Set(nodes.map(n => n.id));
     const movedOut = new Set(Array.from(previous).filter(id => !assigned.has(id) && nodeIdSet.has(id)));
@@ -1768,116 +2284,44 @@ const MainPage: React.FC = () => {
     if (isDataLoaded.current && !isUndoRedo.current) hasUnsavedChanges.current = true;
   }, [projectName, projectDescription, nodes, includeLocal, cloudProvider, cloudSettings]);
 
-  const processProperties = (n: NodeData, rawProperties: any) => {
-    const finalProperties: Record<string, any> = {};
-    for (const key in rawProperties) {
-      if (rawProperties[key] !== undefined && rawProperties[key] !== null && rawProperties[key] !== '') {
-        if (typeof rawProperties[key] === 'object') finalProperties[key] = rawProperties[key];
-        else if (key === 'port') finalProperties[key] = Number(rawProperties[key]);
-        else if (key === 'fileGeneratedCodes' || key.startsWith('global')) finalProperties[key] = rawProperties[key];
-        else finalProperties[key] = String(rawProperties[key]).trim();
-      }
-    }
-
-    const envKeys = ENV_KEYS_BY_COMPONENT[toComponentType(n.type)];
-    if (envKeys) {
-      const envObj: Record<string, string> = {};
-      envKeys.forEach(k => {
-        if (finalProperties[k]) {
-          envObj[k] = String(finalProperties[k]).trim();
-          delete finalProperties[k];
-        }
-      });
-      finalProperties.env = envObj;
-    }
-
-    return finalProperties;
-  };
-
-  const getMappedCanvasData = (currentFiles: FileGroup[] = files) => {
-    const mappedNodes = nodes.map(n => {
-      const file = currentFiles.find(f => f.nodeIds.includes(n.id));
-      const rawProperties: any = { ...(n as any).settings };
-
-      rawProperties.globalCloudProvider = cloudProvider;
-      rawProperties.globalIncludeLocal = String(includeLocal);
-      rawProperties.globalCloudSettings = JSON.stringify(cloudSettings);
-
-      if (file) {
-        rawProperties.fileId = file.id;
-        rawProperties.fileName = file.name;
-        rawProperties.fileIsGenerated = String(file.isGenerated);
-        rawProperties.fileGeneratedCodes = JSON.stringify(file.generatedFiles || []);
-        rawProperties.fileIsTarget = String(targetFileIds.includes(file.id));
-      } else {
-        delete rawProperties.fileId; delete rawProperties.fileName; delete rawProperties.fileIsGenerated;
-        delete rawProperties.fileGeneratedCodes; delete rawProperties.fileIsTarget;
-      }
-
-      const motion = remoteMotions.current.get(n.id);
-      return {
-        nodeId: n.id,
-        nodeName: String(n.name || '').trim() ? n.name : n.type,
-        componentType: toComponentType(n.type),
-        positionX: Math.round(motion ? motion.toX : n.x),
-        positionY: Math.round(motion ? motion.toY : n.y),
-        properties: processProperties(n, rawProperties)
-      };
-    });
-
-    const mappedEdges = edges.map(e => {
-      let sNode = nodes.find(n => n.id === e.sourceId);
-      let tNode = nodes.find(n => n.id === e.targetId);
-      if (isAppType(sNode?.type) && isDependencyType(tNode?.type)) {
-        const temp = sNode; sNode = tNode; tNode = temp;
-      }
-      return {
-        edgeId: e.id, 
-        sourceNodeId: sNode?.id || '', 
-        targetNodeId: tNode?.id || '', 
-        sourceNodeName: sNode?.name || '',
-        targetNodeName: tNode?.name || ''
-      };
-    }).filter(e => e.sourceNodeId && e.targetNodeId);
-
-    return { mappedNodes, mappedEdges };
-  };
-
-  const putProjectGraph = (currentFiles?: FileGroup[]) => {
-    const firstFiles = currentFiles ?? files;
-    const firstMapped = getMappedCanvasData(firstFiles);
-    let sentSig = buildGraphSignature(nodes, edges, firstFiles, targetFileIds, cloudProvider, includeLocal, cloudSettings);
-
-    return sendVersionedWrite(async (baseVersion, isRetry) => {
-      let mapped = firstMapped;
-      if (isRetry) {
-        await new Promise(resolve => setTimeout(resolve, 60));
-        mapped = latestMappedRef.current();
-        const g = graphStateRef.current;
-        sentSig = buildGraphSignature(g.nodes, g.edges, g.files, g.targetFileIds, g.cloudProvider, g.includeLocal, g.cloudSettings);
-      }
+  const putProjectGraph = async (overrideFiles?: FileGroup[]) => {
+    const initial: GraphState = { nodes, edges, files: overrideFiles ?? files, targetFileIds, cloudProvider, includeLocal, cloudSettings };
+    let sent: GraphState = initial;
+    let sentMapped: MappedGraph = { nodes: [], edges: [] };
+    const result = await sendVersionedWrite((baseVersion, rebased) => {
+      sent = rebased ?? initial;
+      sentMapped = mapGraphState(sent, remoteMotions.current);
       return fetchWithAuth(`${BASE_URL}/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: projectName,
-          description: projectDescription,
-          nodes: mapped.mappedNodes,
-          edges: mapped.mappedEdges,
+          title: projectNameRef.current,
+          description: projectDescriptionRef.current,
+          nodes: sentMapped.nodes,
+          edges: sentMapped.edges,
           baseVersion
         })
-      });
-    }).then(result => {
-      if (result.ok) {
-        lastSyncedGraphSig.current = sentSig;
-        liveSyncFailedNotified.current = false;
-      }
-      return result;
+      }, { silent: true });
     });
+    if (result.ok) {
+      const saved = result.data?.result;
+      if (Array.isArray(saved?.nodes)) {
+        const parsed = parseProjectGraph(saved);
+        baseGraphRef.current = mapGraphState({
+          nodes: parsed.nodes, edges: parsed.edges, files: parsed.files, targetFileIds: parsed.targetFileIds,
+          ...(parsed.globals ?? { cloudProvider: sent.cloudProvider, includeLocal: sent.includeLocal, cloudSettings: sent.cloudSettings })
+        });
+      } else {
+        baseGraphRef.current = sentMapped;
+      }
+      lastSyncedGraphSig.current = graphSignature(sent);
+      liveSyncFailedNotified.current = false;
+    }
+    return result;
   };
 
   const runLiveSync = async () => {
-    if (myRole !== 'OWNER' || appMode !== 'editor' || !projectId || !hasLoadedOnce.current) return;
+    if (myRoleRef.current === 'VIEWER' || appMode !== 'editor' || !projectId || !hasLoadedOnce.current) return;
     const quietFor = Date.now() - lastRemoteOpAt.current;
     if (quietFor < LIVE_SYNC_QUIET_MS) {
       if (liveSyncQuietTimer.current === null) {
@@ -1892,22 +2336,31 @@ const MainPage: React.FC = () => {
       liveSyncAgain.current = true;
       return;
     }
+    if (writesInFlight.current > 0) {
+      if (liveSyncQuietTimer.current === null) {
+        liveSyncQuietTimer.current = window.setTimeout(() => {
+          liveSyncQuietTimer.current = null;
+          runLiveSyncRef.current();
+        }, LIVE_SYNC_DEBOUNCE_MS);
+      }
+      return;
+    }
     const targetSig = latestGraphSigRef.current;
     if (targetSig === null || targetSig === lastSyncedGraphSig.current) return;
 
     liveSyncInFlight.current = true;
     try {
-      const { ok } = await putProjectGraph();
+      const { ok, data } = await putProjectGraph();
       if (ok) {
         if (latestGraphSigRef.current === lastSyncedGraphSig.current) hasUnsavedChanges.current = false;
-      } else if (!liveSyncFailedNotified.current) {
+      } else if (!liveSyncFailedNotified.current && String(data?.code || '') !== 'PROJECT403_1') {
         liveSyncFailedNotified.current = true;
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '변경 사항을 실시간으로 저장하지 못했습니다. 상단 저장 버튼으로 다시 저장해 주세요.' }));
+        showToast(LIVE_SYNC_FAIL_MESSAGE);
       }
     } catch (err) {
       if (!liveSyncFailedNotified.current) {
         liveSyncFailedNotified.current = true;
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '변경 사항을 실시간으로 저장하지 못했습니다. 상단 저장 버튼으로 다시 저장해 주세요.' }));
+        showToast(LIVE_SYNC_FAIL_MESSAGE);
       }
     } finally {
       liveSyncInFlight.current = false;
@@ -1920,7 +2373,6 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     runLiveSyncRef.current = () => { runLiveSync(); };
-    latestMappedRef.current = () => getMappedCanvasData();
     graphStateRef.current = { nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings };
   });
 
@@ -1929,17 +2381,18 @@ const MainPage: React.FC = () => {
       if (liveSyncTimer.current) window.clearTimeout(liveSyncTimer.current.timer);
       liveSyncTimer.current = null;
     };
-    if (myRole !== 'OWNER' || appMode !== 'editor') {
+    if (myRole === 'VIEWER' || appMode !== 'editor') {
       clearLiveSyncTimer();
       return;
     }
     const sig = buildGraphSignature(nodes, edges, files, targetFileIds, cloudProvider, includeLocal, cloudSettings);
     latestGraphSigRef.current = sig;
 
-    if (!isDataLoaded.current || lastSyncedGraphSig.current === null) {
+    if (lastSyncedGraphSig.current === null) {
       lastSyncedGraphSig.current = sig;
       return;
     }
+    if (!isDataLoaded.current) return;
     if (sig === lastSyncedGraphSig.current) {
       clearLiveSyncTimer();
       hasUnsavedChanges.current = false;
@@ -1963,8 +2416,8 @@ const MainPage: React.FC = () => {
 
   const handleSaveCanvas = async (isAutoSave: boolean = false) => {
     if (appMode !== 'editor') return;
-    if (myRole === 'VIEWER' || myRole === 'EDITOR') {
-      if (!isAutoSave) showToast(saveNotAllowedMessage(myRole));
+    if (myRole === 'VIEWER') {
+      if (!isAutoSave) showToast(VIEWER_SAVE_MESSAGE);
       return;
     }
 
@@ -2001,14 +2454,14 @@ const MainPage: React.FC = () => {
 
   useEffect(() => { 
     autoSaveCallback.current = () => { 
-      if (appMode === 'editor' && (hasUnsavedChanges.current || activityLog.length > 0) && myRole === 'OWNER') {
+      if (appMode === 'editor' && (hasUnsavedChanges.current || activityLog.length > 0) && myRole !== 'VIEWER') {
         handleSaveCanvas(true); 
       }
     }; 
   }); 
 
   useEffect(() => {
-    if (!isAutoSaveEnabled || !projectId || myRole !== 'OWNER') return;
+    if (!isAutoSaveEnabled || !projectId || myRole === 'VIEWER') return;
     const tick = () => { if (autoSaveCallback.current) autoSaveCallback.current(); };
     const timerId = setInterval(tick, 10 * 60 * 1000); 
     return () => clearInterval(timerId);
@@ -2016,7 +2469,7 @@ const MainPage: React.FC = () => {
 
   const handleUpdateProjectName = async (newName: string) => {
     if (myRole !== 'OWNER') {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 이름은 방장(OWNER)만 수정할 수 있습니다.' }));
+      showToast(PROJECT_NAME_OWNER_ONLY_MESSAGE);
       return;
     }
     if (!newName.trim() || newName === projectName || !projectId) return;
@@ -2031,7 +2484,7 @@ const MainPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           title: newName, 
-          description: projectDescription, 
+          description: projectDescriptionRef.current, 
           baseVersion 
         })
       }));
@@ -2040,6 +2493,8 @@ const MainPage: React.FC = () => {
         showToast(writeFailMessage(data, '프로젝트 이름 저장에 실패했습니다.'));
         setProjectName(previousName);
       } else {
+        projectNameRef.current = newName;
+        setProjectName(newName);
         hasUnsavedChanges.current = hadUnsavedChanges;
       }
     } catch (err) {
@@ -2076,8 +2531,8 @@ const MainPage: React.FC = () => {
   const markFilesAsModified = useCallback(() => {}, []);
 
   const handleGenerateClick = () => {
-    if (myRole === 'VIEWER' || myRole === 'EDITOR') {
-      showToast(GENERATE_OWNER_ONLY_MESSAGE);
+    if (myRole === 'VIEWER') {
+      showToast(VIEWER_GENERATE_MESSAGE);
       return;
     }
     if (validationErrors.length > 0) setIsErrorModalOpen(true);
@@ -2280,7 +2735,7 @@ const MainPage: React.FC = () => {
   }, [validationErrors, showRightSidebar]);
 
   const undo = useCallback(() => {
-    if (myRole !== 'OWNER' || history.length === 0) return;
+    if (myRole === 'VIEWER' || history.length === 0) return;
     isUndoRedo.current = true; 
     const previousState = history[history.length - 1];
     setRedoStack((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
@@ -2290,7 +2745,7 @@ const MainPage: React.FC = () => {
   }, [history, nodes, edges, selectedNodeIds, selection, files, targetFileIds, myRole]);
 
   const redo = () => {
-    if (myRole !== 'OWNER' || redoStack.length === 0) return;
+    if (myRole === 'VIEWER' || redoStack.length === 0) return;
     isUndoRedo.current = true; 
     const nextState = redoStack[redoStack.length - 1];
     setHistory((prev) => [...prev, { nodes: [...nodes], edges: [...edges], selectedNodeIds: [...selectedNodeIds], selection: { ...selection }, files: JSON.parse(JSON.stringify(files)), targetFileIds: [...targetFileIds] }]);
@@ -2304,10 +2759,7 @@ const MainPage: React.FC = () => {
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.1, 0.5));
 
   const addNode = (type: string, baseName: string, x: number, y: number) => {
-    if (myRole !== 'OWNER') {
-      if (myRole === 'EDITOR') window.dispatchEvent(new CustomEvent('global-toast', { detail: EDITOR_STRUCTURE_MESSAGE }));
-      return;
-    }
+    if (myRole === 'VIEWER') return;
     saveHistory();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
@@ -2350,11 +2802,7 @@ const MainPage: React.FC = () => {
   };
 
   const deleteSelected = useCallback(() => {
-    if (selectedNodeIds.length === 0) return;
-    if (myRole !== 'OWNER') {
-      if (myRole === 'EDITOR') window.dispatchEvent(new CustomEvent('global-toast', { detail: EDITOR_STRUCTURE_MESSAGE }));
-      return;
-    }
+    if (selectedNodeIds.length === 0 || myRole === 'VIEWER') return;
     saveHistory();
     const deletedNodes = nodes.filter(n => selectedNodeIds.includes(n.id)).map(n => n.name);
     if (deletedNodes.length > 0) logActivity(`[삭제] 캔버스에서 ${deletedNodes.map(n => `'${n}'`).join(', ')} 노드를 삭제했습니다.`);
@@ -2370,7 +2818,7 @@ const MainPage: React.FC = () => {
   };
 
   const deleteRightPanelItems = (fileIdsToDelete: string[], nodeIdsToDelete: string[]) => {
-    if (myRole !== 'OWNER' || (fileIdsToDelete.length === 0 && nodeIdsToDelete.length === 0)) return;
+    if (myRole === 'VIEWER' || (fileIdsToDelete.length === 0 && nodeIdsToDelete.length === 0)) return;
     saveHistory();
     if (selectedFileId && fileIdsToDelete.includes(selectedFileId)) setSelectedFileId(null);
     const deletedFiles = files.filter(f => fileIdsToDelete.includes(f.id)).map(f => f.name);
@@ -2391,17 +2839,6 @@ const MainPage: React.FC = () => {
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
       if (myRole === 'VIEWER' || isConflictSyncing) return;
-
-      const pressedKey = e.key.toLowerCase();
-      const isModifier = e.ctrlKey || e.metaKey;
-      const wantsStructureChange =
-        (isModifier && (pressedKey === 'z' || pressedKey === 'x' || pressedKey === 'v')) ||
-        ((e.key === 'Delete' || e.key === 'Backspace') && selectedNodeIds.length > 0);
-      if (wantsStructureChange && myRole !== 'OWNER') {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: EDITOR_STRUCTURE_MESSAGE }));
-        return;
-      }
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault(); undo();
@@ -2486,10 +2923,10 @@ const MainPage: React.FC = () => {
     }
   });
 
-  const isOwner = myRole === 'OWNER';
-  const canMoveNodes = myRole !== 'VIEWER' && !isConflictSyncing;
-  const canEditStructure = isOwner && !isConflictSyncing;
-  const canRenameNodes = myRole !== 'VIEWER' && !isConflictSyncing;
+  const canWrite = myRole !== 'VIEWER';
+  const canMoveNodes = canWrite && !isConflictSyncing;
+  const canEditStructure = canWrite && !isConflictSyncing;
+  const canRenameNodes = canWrite && !isConflictSyncing;
 
   return (
     <div className={`app-container ${myRole === 'VIEWER' ? 'viewer-mode' : ''}`}>
@@ -2502,7 +2939,7 @@ const MainPage: React.FC = () => {
             filter: saturate(30%) !important;
           }
         `).join('\n')}
-        {myRole !== 'OWNER' && `
+        {!canWrite && `
           .react-flow__connection-line { display: none !important; }
           .left-panel [draggable="true"] {
             opacity: 0.5 !important;
@@ -2512,10 +2949,10 @@ const MainPage: React.FC = () => {
       </style>
 
      <Header 
-      onGenerate={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(GENERATE_OWNER_ONLY_MESSAGE) : handleGenerateClick} 
+      onGenerate={canWrite ? handleGenerateClick : () => showToast(VIEWER_GENERATE_MESSAGE)} 
       isGenerateMode={appMode === 'generating'} 
       onResetUI={handleResetUI} 
-      onSaveCanvas={myRole === 'VIEWER' || myRole === 'EDITOR' ? () => showToast(saveNotAllowedMessage(myRole)) : () => handleSaveCanvas(false)}
+      onSaveCanvas={canWrite ? () => handleSaveCanvas(false) : () => showToast(VIEWER_SAVE_MESSAGE)}
       onOpenTutorial={() => { dismissTutorialHint(); setShowTutorial(true); }}
       showTutorialHint={showTutorialHint}
       onDismissTutorialHint={dismissTutorialHint}
@@ -2532,7 +2969,7 @@ const MainPage: React.FC = () => {
             onZoomIn={handleZoomIn} onZoomOut={handleZoomOut}
             onSelectMode={() => { if(myRole !== 'VIEWER') { saveHistory(); setIsSelectMode(true); } }}
             onCancelSelection={onCancelSelection} onDelete={deleteSelected}
-            onUndo={undo} onRedo={redo} canUndo={isOwner && history.length > 0} canRedo={isOwner && redoStack.length > 0}
+            onUndo={undo} onRedo={redo} canUndo={canWrite && history.length > 0} canRedo={canWrite && redoStack.length > 0}
             isSelectMode={isSelectMode} resetTrigger={uiResetTrigger} userInfo={userInfo}
             onGoHome={handleGoHome} cloudProvider={cloudProvider} setCloudProvider={setCloudProvider}
             width={leftWidth}
@@ -2558,6 +2995,7 @@ const MainPage: React.FC = () => {
             setActiveTab={setLeftActiveTab} setShowRightSidebar={setShowRightSidebar}
             canMoveNodes={canMoveNodes}
             canEditStructure={canEditStructure}
+            isSyncing={isConflictSyncing}
             onNodesDragMove={handleNodesDragMove}
             onNodesDragEnd={handleNodesDragEnd}
             focusEdgeId={focusEdgeId}

@@ -4,6 +4,14 @@ import type { ViewportState } from '../MainPage';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
+const ENV_FORBIDDEN_CHARS = /["\\$\r\n\0]/;
+const ENV_FORBIDDEN_LIST = ['"', '\\', '$', '\r', '\n', '\0'];
+const ENV_BLOCKED_MESSAGE = '큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 사용할 수 없습니다.';
+const ENV_EXISTING_MESSAGE = '쓸 수 없는 문자가 들어 있습니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈을 지워 주세요.';
+const ENV_ERROR_SHOW_MS = 4000;
+const addsForbiddenChar = (previous: string, next: string) =>
+  ENV_FORBIDDEN_LIST.some(ch => next.split(ch).length > previous.split(ch).length);
+
 interface RightSideBarProps {
   projectName: string;
   nodes: NodeData[];
@@ -62,6 +70,13 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
   const [highlightedFields, setHighlightedFields] = useState<string[]>([]);
   const nameBeforeEdit = useRef<{ id: string; name: string } | null>(null);
   const [collapsedErrorGroups, setCollapsedErrorGroups] = useState<string[]>([]);
+  const [envInputError, setEnvInputError] = useState<{ nodeId: string; key: string; at: number } | null>(null);
+
+  useEffect(() => {
+    if (!envInputError) return;
+    const timer = window.setTimeout(() => setEnvInputError(null), ENV_ERROR_SHOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [envInputError]);
 
   const clearCanvasSelectionArea = () => {
     setSelection({ x: 0, y: 0, width: 0, height: 0, active: false });
@@ -816,11 +831,44 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
                 const updateEnvSetting = (key: string, value: string) => {
                   if (isViewer) return;
-                  if (/["\\$\r\n\0]/.test(value)) {
-                    window.dispatchEvent(new CustomEvent('global-toast', { detail: '큰따옴표("), 백슬래시(\\), 달러 기호($)는 입력할 수 없습니다.' }));
+                  const previous = typeof settings[key] === 'string' ? settings[key] : '';
+                  if (addsForbiddenChar(previous, value)) {
+                    setEnvInputError({ nodeId: selectedNode.id, key, at: Date.now() });
                     return;
                   }
+                  if (envInputError?.nodeId === selectedNode.id && envInputError.key === key) setEnvInputError(null);
                   updateSetting(key, value);
+                };
+
+                const pasteEnvSetting = (key: string) => (e: React.ClipboardEvent<HTMLInputElement>) => {
+                  if (isViewer) return;
+                  const text = e.clipboardData.getData('text');
+                  if (!ENV_FORBIDDEN_CHARS.test(text)) return;
+                  e.preventDefault();
+                  const core = text.replace(/^[\r\n]+|[\r\n]+$/g, '');
+                  if (ENV_FORBIDDEN_CHARS.test(core)) {
+                    setEnvInputError({ nodeId: selectedNode.id, key, at: Date.now() });
+                    return;
+                  }
+                  const input = e.currentTarget;
+                  const start = input.selectionStart ?? input.value.length;
+                  const end = input.selectionEnd ?? input.value.length;
+                  updateEnvSetting(key, input.value.slice(0, start) + core + input.value.slice(end));
+                  const caret = start + core.length;
+                  requestAnimationFrame(() => {
+                    try { input.setSelectionRange(caret, caret); } catch (err) {}
+                  });
+                };
+
+                const envHint = (key: string, text: string) => {
+                  const value = settings[key];
+                  if (typeof value === 'string' && ENV_FORBIDDEN_CHARS.test(value)) {
+                    return <span className="env-char-error" style={{ ...hintStyle, color: '#e53e3e' }}>{ENV_EXISTING_MESSAGE}</span>;
+                  }
+                  if (envInputError?.nodeId === selectedNode.id && envInputError.key === key) {
+                    return <span className="env-char-error" style={{ ...hintStyle, color: '#e53e3e' }}>{ENV_BLOCKED_MESSAGE}</span>;
+                  }
+                  return <span style={hintStyle}>{text}</span>;
                 };
 
                 return (
@@ -902,23 +950,23 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateEnvSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
                           <span style={hintStyle}>영문, 숫자, 언더바(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="dbuser" onChange={(e) => updateEnvSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>MySQL에 새로 만들어지는 사용자 계정입니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있고, root는 관리자 계정 이름이라 쓸 수 없습니다.</span>
+                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="dbuser" onChange={(e) => updateEnvSetting('username', e.target.value)} onPaste={pasteEnvSetting('username')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('username', 'MySQL에 새로 만들어지는 사용자 계정입니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있고, root는 관리자 계정 이름이라 쓸 수 없습니다.')}
                         </div>
                         <div className="setting-row">
                           <label>사용자 비밀번호 (userPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-userPassword" type="password" className={`custom-input ${highlightedFields.includes('userPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateEnvSetting('userPassword', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>위 사용자 계정의 비밀번호입니다. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-userPassword" type="password" className={`custom-input ${highlightedFields.includes('userPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateEnvSetting('userPassword', e.target.value)} onPaste={pasteEnvSetting('userPassword')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('userPassword', '위 사용자 계정의 비밀번호입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                         <div className="setting-row">
                           <label>루트 비밀번호 (rootPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-rootPassword" type="password" className={`custom-input ${highlightedFields.includes('rootPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateEnvSetting('rootPassword', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>MySQL 관리자(root) 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-rootPassword" type="password" className={`custom-input ${highlightedFields.includes('rootPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateEnvSetting('rootPassword', e.target.value)} onPaste={pasteEnvSetting('rootPassword')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('rootPassword', 'MySQL 관리자(root) 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
                     ) : selectedNode.type === 'Redis' ? (
@@ -954,8 +1002,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateEnvSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>Redis 접속 비밀번호입니다. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('password', 'Redis 접속 비밀번호입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
                     ) : selectedNode.type === 'PostgreSQL' ? (
@@ -1000,18 +1048,18 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateEnvSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
                           <span style={hintStyle}>영문, 숫자, 언더바(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateEnvSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>PostgreSQL에서는 이 계정이 관리자 계정입니다. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateEnvSetting('username', e.target.value)} onPaste={pasteEnvSetting('username')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('username', 'PostgreSQL에서는 이 계정이 관리자 계정입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('password', '위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
                     ) : selectedNode.type === 'MongoDB' ? (
@@ -1051,18 +1099,18 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>데이터베이스 이름 (databaseName) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateEnvSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <input id="field-databaseName" type="text" className={`custom-input ${highlightedFields.includes('databaseName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.databaseName || ''} placeholder="appdb" onChange={(e) => updateSetting('databaseName', e.target.value)} style={inputStyle} readOnly={isViewer} />
                           <span style={hintStyle}>앱이 접속할 DB 이름입니다. 영문, 숫자, 언더바(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>사용자 이름 (username) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateEnvSetting('username', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>앱이 MongoDB에 접속할 때 쓰는 계정입니다. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-username" type="text" className={`custom-input ${highlightedFields.includes('username') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.username || ''} placeholder="appuser" onChange={(e) => updateEnvSetting('username', e.target.value)} onPaste={pasteEnvSetting('username')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('username', '앱이 MongoDB에 접속할 때 쓰는 계정입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\), 달러 기호($)는 쓸 수 없습니다.</span>
+                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          {envHint('password', '위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
                     ) : selectedNode.type === 'Spring Boot' ? (
