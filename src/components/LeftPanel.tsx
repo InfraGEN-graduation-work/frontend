@@ -6,6 +6,11 @@ import redisIcon from '../assets/redis.png';
 import postgresqlIcon from '../assets/postgresql.png';
 import nodejsIcon from '../assets/nodejs.png';
 import mongodbIcon from '../assets/mongodb.png';
+import nginxIcon from '../assets/nginx.png';
+import caddyIcon from '../assets/caddy.png';
+
+const CLOUD_ONLY_NODE_TYPES = ['Caddy'];
+const CLOUD_ONLY_MESSAGE = 'Caddy는 클라우드 배포(AWS·OCI)에서만 쓸 수 있습니다. 왼쪽 위 배포 환경을 AWS나 OCI로 바꾼 뒤 추가해 주세요.';
 
 interface LeftPanelProps {
   projectName: string;
@@ -63,7 +68,8 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
 
   const nodeTemplates: Record<string, string[]> = {
     Server: ['Spring Boot', 'Node.js'],
-    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'] 
+    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'],
+    'Web Server': ['Nginx', 'Caddy']
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;
@@ -110,15 +116,23 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
     if (type === 'PostgreSQL') return postgresqlIcon;
     if (type === 'Node.js') return nodejsIcon;
     if (type === 'MongoDB') return mongodbIcon;
+    if (type === 'Nginx') return nginxIcon;
+    if (type === 'Caddy') return caddyIcon;
     return '';
   };
 
   const canWrite = myRole !== 'VIEWER';
+  const isCloudOnlyBlocked = (nodeName: string) => cloudProvider === 'LOCAL' && CLOUD_ONLY_NODE_TYPES.includes(nodeName);
 
   const handleDragStart = (e: React.DragEvent, nodeName: string) => {
     if (!canWrite) {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent('global-toast', { detail: 'VIEWER는 노드를 추가할 수 없습니다.' }));
+      return;
+    }
+    if (isCloudOnlyBlocked(nodeName)) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('global-toast', { detail: CLOUD_ONLY_MESSAGE }));
       return;
     }
     e.dataTransfer.setData('nodeType', nodeName);
@@ -256,13 +270,22 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
             {filteredItems.map((node) => {
               const count = getNodeCount(node);
               const iconSrc = getNodeIconSrc(node);
+              const cloudOnlyBlocked = isCloudOnlyBlocked(node);
               return (
-                <div key={node} className="draggable-node-item" draggable onDragStart={(e) => handleDragStart(e, node)}>
+                <div
+                  key={node}
+                  className="draggable-node-item"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, node)}
+                  title={cloudOnlyBlocked ? CLOUD_ONLY_MESSAGE : undefined}
+                  style={cloudOnlyBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
                     <div className="node-icon-small" style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
                       {iconSrc ? <img src={iconSrc} alt={node} style={{ width: '80%', height: '80%', objectFit: 'contain' }} /> : <span style={{fontSize:'10px', fontWeight:'bold'}}>{node.charAt(0)}</span>}
                     </div>
                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{node}</span>
+                    {cloudOnlyBlocked && <span style={{ fontSize: '10px', color: '#a0aec0', flexShrink: 0, whiteSpace: 'nowrap' }}>클라우드 전용</span>}
                   </div>
                   {count > 0 && <span className="badge">{count}</span>}
                 </div>

@@ -12,6 +12,37 @@ const ENV_ERROR_SHOW_MS = 4000;
 const addsForbiddenChar = (previous: string, next: string) =>
   ENV_FORBIDDEN_LIST.some(ch => next.split(ch).length > previous.split(ch).length);
 
+const PasswordInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ style, ...inputProps }) => {
+  const [isShown, setIsShown] = useState(false);
+  const label = isShown ? '비밀번호 숨기기' : '비밀번호 보기';
+
+  return (
+    <div className="password-input-wrapper" style={{ position: 'relative', width: '100%' }}>
+      <input {...inputProps} type={isShown ? 'text' : 'password'} style={{ ...style, paddingRight: '34px' }} />
+      <button
+        type="button"
+        className="password-toggle-btn"
+        aria-label={label}
+        title={label}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setIsShown(prev => !prev)}
+      >
+        {isShown ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        )}
+      </button>
+    </div>
+  );
+};
+
 interface RightSideBarProps {
   projectName: string;
   nodes: NodeData[];
@@ -501,6 +532,33 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
           color: #718096 !important;
           cursor: not-allowed !important;
         }
+
+        .password-input-wrapper input::-ms-reveal,
+        .password-input-wrapper input::-ms-clear {
+          display: none;
+        }
+        .password-toggle-btn {
+          position: absolute;
+          top: 50%;
+          right: 6px;
+          transform: translateY(-50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 24px;
+          height: 24px;
+          padding: 0;
+          border: none;
+          border-radius: 4px;
+          background: transparent;
+          color: #a0aec0;
+          cursor: pointer;
+          transition: 0.2s;
+        }
+        .password-toggle-btn:hover {
+          color: #4a5568;
+          background: #edf2f7;
+        }
       `}</style>
       <div className="minimap-area" onClick={(e) => e.stopPropagation()}>
         <div className="minimap-window">
@@ -960,12 +1018,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>사용자 비밀번호 (userPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-userPassword" type="password" className={`custom-input ${highlightedFields.includes('userPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateEnvSetting('userPassword', e.target.value)} onPaste={pasteEnvSetting('userPassword')} style={inputStyle} readOnly={isViewer} />
+                          <PasswordInput key={`${selectedNode.id}-userPassword`} id="field-userPassword" className={`custom-input ${highlightedFields.includes('userPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.userPassword || ''} placeholder="user password" onChange={(e) => updateEnvSetting('userPassword', e.target.value)} onPaste={pasteEnvSetting('userPassword')} style={inputStyle} readOnly={isViewer} />
                           {envHint('userPassword', '위 사용자 계정의 비밀번호입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                         <div className="setting-row">
                           <label>루트 비밀번호 (rootPassword) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-rootPassword" type="password" className={`custom-input ${highlightedFields.includes('rootPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateEnvSetting('rootPassword', e.target.value)} onPaste={pasteEnvSetting('rootPassword')} style={inputStyle} readOnly={isViewer} />
+                          <PasswordInput key={`${selectedNode.id}-rootPassword`} id="field-rootPassword" className={`custom-input ${highlightedFields.includes('rootPassword') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.rootPassword || ''} placeholder="root password" onChange={(e) => updateEnvSetting('rootPassword', e.target.value)} onPaste={pasteEnvSetting('rootPassword')} style={inputStyle} readOnly={isViewer} />
                           {envHint('rootPassword', 'MySQL 관리자(root) 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
@@ -1002,17 +1060,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          <PasswordInput key={`${selectedNode.id}-password`} id="field-password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="redis password" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
                           {envHint('password', 'Redis 접속 비밀번호입니다. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
                     ) : selectedNode.type === 'PostgreSQL' ? (
                       <>
-                        <div className="setting-row">
-                          <label>서비스 이름 (name) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-name" type="text" className={`custom-input ${highlightedFields.includes('name') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.name || ''} placeholder="postgres_service" onChange={(e) => updateSetting('name', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
-                        </div>
                         <div className="setting-row">
                           <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
                           <select id="field-imageVersion" className={`custom-input ${highlightedFields.includes('imageVersion') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} style={inputStyle} disabled={isViewer}>
@@ -1025,8 +1078,8 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>컨테이너 이름 (containerName)</label>
-                          <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="비우면 서비스 이름으로 생성" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
-                          <span style={hintStyle}>비우면 서비스 이름으로 만들어집니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="비우면 기본 이름으로 생성" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>비우면 기본 이름으로 만들어집니다. 영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.</span>
                         </div>
                         <div className="setting-row">
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
@@ -1058,7 +1111,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          <PasswordInput key={`${selectedNode.id}-password`} id="field-password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
                           {envHint('password', '위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
@@ -1109,7 +1162,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         </div>
                         <div className="setting-row">
                           <label>비밀번호 (password) <span style={{color:'red'}}>*</span></label>
-                          <input id="field-password" type="password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
+                          <PasswordInput key={`${selectedNode.id}-password`} id="field-password" className={`custom-input ${highlightedFields.includes('password') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.password || ''} placeholder="8자 이상" onChange={(e) => updateEnvSetting('password', e.target.value)} onPaste={pasteEnvSetting('password')} style={inputStyle} readOnly={isViewer} />
                           {envHint('password', '위 사용자 계정의 비밀번호입니다. 8자 이상 입력해 주세요. 큰따옴표("), 백슬래시(\\), 달러 기호($)와 줄바꿈은 쓸 수 없습니다.')}
                         </div>
                       </>
@@ -1166,6 +1219,53 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                           <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
                           <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 3000" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
                           <span style={hintStyle}>Node.js 앱이 사용할 포트입니다. 다른 노드와 같은 번호는 쓸 수 없습니다.</span>
+                        </div>
+                      </>
+                    ) : selectedNode.type === 'Nginx' ? (
+                      <>
+                        <div className="setting-row">
+                          <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
+                          <select id="field-imageVersion" className={`custom-input ${highlightedFields.includes('imageVersion') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} style={inputStyle} disabled={isViewer}>
+                            <option value="" disabled>버전을 선택하세요</option>
+                            <option value="nginx:1.27">nginx : 1.27</option>
+                            <option value="nginx:stable">nginx : stable</option>
+                            <option value="nginx:latest">nginx : latest</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <label>컨테이너 이름 (containerName)</label>
+                          <input id="field-containerName" type="text" className={`custom-input ${highlightedFields.includes('containerName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.containerName || ''} placeholder="비우면 nginx로 생성" onChange={(e) => updateSetting('containerName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>비우면 nginx라는 이름으로 만들어집니다. 영문이나 숫자로 시작하고, 영문, 숫자, 점(.), 하이픈(-), 언더스코어(_)만 쓸 수 있습니다. 다른 노드의 컨테이너 이름과 겹치면 안 됩니다.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>포트 번호 (port) <span style={{color:'red'}}>*</span></label>
+                          <input id="field-port" type="text" className={`custom-input ${highlightedFields.includes('port') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.port !== undefined ? settings.port : ''} placeholder="기본값: 80" onChange={(e) => updateSetting('port', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>밖에서 접속할 때 쓰는 포트입니다. 1부터 65535까지 쓸 수 있고, 다른 노드와 같은 번호는 쓸 수 없습니다. 내 PC에서 80번을 이미 쓰고 있으면 8000처럼 다른 번호로 바꿔 주세요.</span>
+                        </div>
+                      </>
+                    ) : selectedNode.type === 'Caddy' ? (
+                      <>
+                        <div className="setting-row">
+                          <span style={{ ...hintStyle, marginTop: 0 }}>Caddy는 클라우드 배포(AWS·OCI)에서만 쓸 수 있고, 80번과 443번 포트를 그대로 씁니다.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>도커 이미지 버전 <span style={{color:'red'}}>*</span></label>
+                          <select id="field-imageVersion" className={`custom-input ${highlightedFields.includes('imageVersion') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.imageVersion || ''} onChange={(e) => updateSetting('imageVersion', e.target.value)} style={inputStyle} disabled={isViewer}>
+                            <option value="" disabled>버전을 선택하세요</option>
+                            <option value="caddy:2">caddy : 2</option>
+                            <option value="caddy:2.8">caddy : 2.8</option>
+                            <option value="caddy:latest">caddy : latest</option>
+                          </select>
+                        </div>
+                        <div className="setting-row">
+                          <label>도메인 (domain)</label>
+                          <input id="field-domain" type="text" className={`custom-input ${highlightedFields.includes('domain') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.domain || ''} placeholder="example.com (선택)" onChange={(e) => updateSetting('domain', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>비우면 HTTP(80번)로만 접속됩니다. 넣으면 HTTPS 인증서가 자동으로 발급됩니다. example.com처럼 점이 들어간 주소만 쓸 수 있고, https://, IP 주소, localhost는 쓸 수 없습니다.</span>
+                        </div>
+                        <div className="setting-row">
+                          <label>볼륨 이름 (volumeName) {String(settings.domain || '').trim() && <span style={{color:'red'}}>*</span>}</label>
+                          <input id="field-volumeName" type="text" className={`custom-input ${highlightedFields.includes('volumeName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={settings.volumeName || ''} placeholder="caddy_data" onChange={(e) => updateSetting('volumeName', e.target.value)} style={inputStyle} readOnly={isViewer} />
+                          <span style={hintStyle}>HTTPS 인증서를 보관하는 곳의 이름입니다. 도메인을 넣었다면 꼭 입력해야 합니다. 영문이나 숫자로 시작하고, 영문, 숫자, 점(.), 하이픈(-), 언더스코어(_)만 쓸 수 있습니다.</span>
                         </div>
                       </>
                     ) : null}

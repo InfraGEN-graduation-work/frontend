@@ -23,6 +23,31 @@ const maskEnvSecrets = (content: string) => content.split(/\r?\n/).map(line => {
   return `${match[1]}${match[2]}${match[3]}********`;
 }).join('\n');
 
+const BUSY_RETRY_LIMIT = 2;
+const BUSY_RETRY_DELAY_MS = 500;
+const VERSION_RETRY_LIMIT = 3;
+const NETWORK_MESSAGE = '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.';
+const BUSY_MESSAGE = '다른 작업과 겹쳐서 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const CONFLICT_SAVE_MESSAGE = '다른 사람이 편집 중이라 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+const INVALID_INPUT_MESSAGE = '입력한 내용 중 올바르지 않은 항목이 있습니다. 다시 확인해 주세요.';
+const SAME_KIND_ONLY_MESSAGE = '일반 회원은 일반 회원끼리, 게스트는 게스트끼리만 함께할 수 있습니다.';
+const CANCELLED_INVITE_MESSAGE = '더 이상 응답할 수 없는 초대입니다. 취소되었거나 기한이 지났을 수 있습니다. 목록을 새로 불러왔습니다.';
+const SELF_INVITE_MESSAGE = '본인은 초대할 수 없습니다.';
+const ALREADY_LEFT_MESSAGE = '이미 참여하고 있지 않은 프로젝트입니다. 목록을 새로 불러왔습니다.';
+const OWNER_CANNOT_LEAVE_MESSAGE = '내가 방장인 프로젝트는 나갈 수 없습니다. 다른 참여자에게 소유권을 위임하거나 프로젝트를 삭제해 주세요.';
+
+const showToast = (message: string) => window.dispatchEvent(new CustomEvent('global-toast', { detail: message }));
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const pickMessage = (data: any, fallback: string, byCode: Record<string, string> = {}, useServerMessage = true) => {
+  const code = String(data?.code || '');
+  if (byCode[code]) return byCode[code];
+  if (code === 'COMMON409_2') return BUSY_MESSAGE;
+  if (code === 'COMMON400_1') return INVALID_INPUT_MESSAGE;
+  if (useServerMessage && typeof data?.message === 'string' && data.message) return data.message;
+  return fallback;
+};
+
 interface Project {
   projectId: number;
   title: string;
@@ -71,6 +96,7 @@ export default function Home() {
   const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
 
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
+  const isSavingMetadataRef = useRef(false);
 
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -108,6 +134,12 @@ export default function Home() {
   const [isWithdrawConfirmOpen, setIsWithdrawConfirmOpen] = useState(false);
   const [withdrawalPreview, setWithdrawalPreview] = useState<any[]>([]);
   const [isWithdrawalLoading, setIsWithdrawalLoading] = useState(false);
+  const [withdrawalLoadFailed, setWithdrawalLoadFailed] = useState(false);
+  const [withdrawalChangedNotice, setWithdrawalChangedNotice] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const withdrawalLoadSeqRef = useRef(0);
+
+  const [blockedInvitationIds, setBlockedInvitationIds] = useState<number[]>([]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -143,6 +175,19 @@ export default function Home() {
     window.addEventListener('global-toast', handleGlobalToast);
     return () => window.removeEventListener('global-toast', handleGlobalToast);
   }, []);
+
+  const requestWithRetry = async (url: string, options: RequestInit = {}) => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetchWithAuth(url, options, { silent: true });
+      const data: any = await res.json().catch(() => ({}));
+      if (res.status === 409 && data?.code === 'COMMON409_2' && attempt < BUSY_RETRY_LIMIT) {
+        await wait(BUSY_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      const ok = res.ok && Boolean(data?.isSuccess ?? data?.is_success ?? true);
+      return { res, data, ok };
+    }
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -340,76 +385,101 @@ export default function Home() {
     }
 
     if (inviteCode.trim() === String(userInfo.inviteCode)) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '본인은 초대할 수 없습니다.' }));
+      showToast(SELF_INVITE_MESSAGE);
       return;
     }
 
     try {
       const payload = { inviteeCode: inviteCode.trim(), role: inviteRole };
 
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/invitations`, {
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${collabProjectId}/collaborators/invitations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
-
-      if (isSuccess) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자에게 초대를 성공적으로 보냈습니다.' }));
+      if (ok) {
+        showToast('참여자에게 초대를 성공적으로 보냈습니다.');
         setInviteCode('');
         setCollabTab('list');
-        fetchCollaborators(collabProjectId); 
+        fetchCollaborators(collabProjectId);
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '참여자 초대에 실패했습니다.' }));
+        const code = String(data?.code || '');
+        showToast(pickMessage(data, '참여자 초대에 실패했습니다.', {
+          PROJECT400_7: `이 회원은 초대할 수 없습니다. ${SAME_KIND_ONLY_MESSAGE}`,
+          PROJECT400_6: SELF_INVITE_MESSAGE,
+          PROJECT409_2: '이미 이 프로젝트에 참여하고 있는 회원입니다.',
+          PROJECT409_3: '이미 초대를 보낸 회원입니다. 상대방이 수락하거나 거절할 때까지 기다려 주세요.',
+          PROJECT404_1: '방장만 참여자를 초대할 수 있습니다. 목록을 새로 불러왔습니다.'
+        }));
+        if (code === 'PROJECT409_2' || code === 'PROJECT409_3') {
+          setInviteCode('');
+          setCollabTab('list');
+          fetchCollaborators(collabProjectId);
+        } else if (code === 'PROJECT404_1') {
+          setCollabTab('list');
+          fetchProjects();
+          fetchCollaborators(collabProjectId, false);
+        }
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     }
   };
 
   const handleAcceptInvite = async (invitationId: number) => {
+    if (blockedInvitationIds.includes(invitationId)) {
+      showToast(`이 초대는 수락할 수 없습니다. ${SAME_KIND_ONLY_MESSAGE} 거절해서 목록에서 지워 주세요.`);
+      return;
+    }
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/accept`, { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/project-collaborator-invitations/${invitationId}/accept`, { method: 'POST' });
 
-      if (isSuccess) {
+      if (ok) {
         invitationFetchSeqRef.current++;
         setIsInvitationsLoading(false);
         setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 초대를 수락했습니다.' }));
+        showToast('프로젝트 초대를 수락했습니다.');
         setIsInviteModalOpen(false);
         fetchProjects();
         fetchReceivedInvitations();
-      } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '초대 수락 처리 중 오류가 발생했습니다.' }));
-        fetchReceivedInvitations();
+        return;
       }
+
+      const code = String(data?.code || '');
+      if (code === 'PROJECT400_7') {
+        setBlockedInvitationIds(prev => prev.includes(invitationId) ? prev : [...prev, invitationId]);
+        showToast(`이 초대는 수락할 수 없습니다. ${SAME_KIND_ONLY_MESSAGE} 거절해서 목록에서 지워 주세요.`);
+        return;
+      }
+      showToast(pickMessage(data, '초대를 수락하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+        PROJECT404_3: CANCELLED_INVITE_MESSAGE
+      }));
+      fetchReceivedInvitations();
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     }
   };
 
   const handleRejectInvite = async (invitationId: number) => {
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/project-collaborator-invitations/${invitationId}/decline`, { method: 'POST' });
 
-      if (isSuccess) {
+      if (ok) {
         invitationFetchSeqRef.current++;
         setIsInvitationsLoading(false);
         setInvitations(prev => prev.filter(inv => inv.invitationId !== invitationId));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '초대를 거절했습니다.' }));
+        setBlockedInvitationIds(prev => prev.filter(id => id !== invitationId));
+        showToast('초대를 거절했습니다.');
         if (invitations.length <= 1) setIsInviteModalOpen(false);
       } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '거절 처리 중 오류가 발생했습니다.' }));
+        showToast(pickMessage(data, '초대를 거절하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+          PROJECT404_3: CANCELLED_INVITE_MESSAGE
+        }));
         fetchReceivedInvitations();
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     }
   };
 
@@ -428,22 +498,18 @@ export default function Home() {
     if (!collabProjectId || collaboratorToRemove === null) return;
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, { method: 'DELETE' });
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${collabProjectId}/collaborators/${collaboratorToRemove}`, { method: 'DELETE' });
 
-      if (res.ok) {
+      if (ok) {
         setCollaborators(prev => prev.filter(c => c.memberId !== collaboratorToRemove));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '참여자를 프로젝트에서 퇴출했습니다.' }));
+        showToast('참여자를 프로젝트에서 퇴출했습니다.');
       } else {
-        const text = await res.text();
-        let msg = '처리 중 오류가 발생했습니다.';
-        try {
-          const data = JSON.parse(text);
-          if (data.message) msg = data.message;
-        } catch(e) {}
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+        showToast(pickMessage(data, '참여자를 퇴출하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+          PROJECT403_1: manageForbiddenMessage
+        }));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     } finally {
       setCollaboratorToRemove(null);
     }
@@ -458,19 +524,22 @@ export default function Home() {
     }
 
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${collabProjectId}/collaborators/${memberId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole })
       });
-      if (res.ok) {
+      if (ok) {
         setCollaborators(prev => prev.map(c => c.memberId === memberId ? { ...c, role: newRole as 'EDITOR' | 'VIEWER' } : c));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '권한이 변경되었습니다.' }));
+        showToast('권한이 변경되었습니다.');
       } else {
-        const data = await res.json().catch(() => ({}));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '권한 변경에 실패했습니다.' }));
+        showToast(pickMessage(data, '권한 변경에 실패했습니다.', {
+          PROJECT403_1: manageForbiddenMessage
+        }));
       }
-    } catch (err) {}
+    } catch (err) {
+      showToast(NETWORK_MESSAGE);
+    }
   };
 
   const handleRequestTransfer = (memberId: number | string, nickname: string) => {
@@ -489,20 +558,9 @@ export default function Home() {
     setIsTransferring(true);
 
     try {
-      const send = () => fetchWithAuth(`${BASE_URL}/projects/${projectId}/ownership-transfer/${target.memberId}`, { method: 'POST' });
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${projectId}/ownership-transfer/${target.memberId}`, { method: 'POST' });
 
-      let res = await send();
-      let data: any = await res.json().catch(() => ({}));
-
-      if (res.status === 409 && data.code === 'COMMON409_2') {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        res = await send();
-        data = await res.json().catch(() => ({}));
-      }
-
-      const isSuccess = res.ok && (data.isSuccess ?? data.is_success ?? true);
-
-      if (isSuccess) {
+      if (ok) {
         setTransferTarget(null);
         setIsCollabEditMode(false);
         setOpenRoleDropdownId(null);
@@ -510,27 +568,27 @@ export default function Home() {
 
         setProjects(prev => prev.map(p => p.projectId === projectId ? { ...p, myRole: 'EDITOR' } : p));
         setCollaborators(prev => prev.filter(c => String(c.memberId) !== String(target.memberId)));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${target.nickname}님에게 소유권을 위임했습니다. 이제 EDITOR로 참여합니다.` }));
+        showToast(`${target.nickname}님에게 소유권을 위임했습니다. 이제 EDITOR로 참여합니다.`);
 
         fetchCollaborators(projectId, false);
         fetchDashboardData();
         return;
       }
 
-      let msg = data.message || '소유권 위임에 실패했습니다.';
-      if (data.code === 'PROJECT404_4') {
-        msg = '위임할 수 없는 참여자입니다. 같은 계정 유형(일반 회원↔일반 회원, 게스트↔게스트)의 활성 참여자에게만 위임할 수 있습니다.';
-      } else if (data.code === 'PROJECT404_1') {
-        msg = '프로젝트를 찾을 수 없거나 소유권을 위임할 권한이 없습니다.';
+      const code = String(data?.code || '');
+      showToast(pickMessage(data, '소유권을 위임하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+        PROJECT404_4: '이 참여자에게는 소유권을 위임할 수 없습니다. 일반 회원은 일반 회원에게, 게스트는 게스트에게만 위임할 수 있고, 이미 프로젝트를 나간 참여자에게도 위임할 수 없습니다.',
+        PROJECT404_1: '지금은 이 프로젝트의 방장이 아니어서 위임할 수 없습니다. 목록을 새로 불러왔습니다.'
+      }, false));
+      setTransferTarget(null);
+      if (code === 'PROJECT404_4') {
+        fetchCollaborators(projectId);
+      } else if (code === 'PROJECT404_1') {
         fetchCollaborators(projectId, false);
         fetchDashboardData();
-      } else if (data.code === 'COMMON409_2') {
-        msg = '다른 작업과 겹쳐 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
       }
-      setTransferTarget(null);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     } finally {
       setIsTransferring(false);
     }
@@ -561,42 +619,69 @@ export default function Home() {
       } catch (err) {}
     } 
     else if (modalMode === 'edit' && editTargetId !== null) {
+      if (isSavingMetadataRef.current) return;
+      isSavingMetadataRef.current = true;
+      const projectId = editTargetId;
+      const title = newTitle;
+      const description = newDesc;
+
       try {
-        let currentVersion = 0;
-        try {
-          const collabRes = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}/collaboration`);
-          if (collabRes.ok) {
-            const collabData = await collabRes.json();
-            currentVersion = collabData.result?.graphVersion ?? 0;
+        let lastData: any = null;
+        for (let attempt = 0; attempt < VERSION_RETRY_LIMIT; attempt++) {
+          const baseVersion = await fetchServerVersion(projectId);
+          if (baseVersion === null) {
+            showToast('프로젝트 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            return;
           }
-        } catch (e) {}
 
-        const res = await fetchWithAuth(`${BASE_URL}/projects/${editTargetId}/metadata`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: newTitle,
-            description: newDesc,
-            baseVersion: currentVersion 
-          }),
-        });
+          const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${projectId}/metadata`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description, baseVersion }),
+          });
 
-        const data = await res.json();
-        if (res.ok && (data.isSuccess ?? data.is_success)) {
+          if (ok) {
+            setModalMode(null);
+            setProjects(prev => prev.map(p =>
+              p.projectId === projectId
+                ? { ...p, title, description }
+                : p
+            ));
+            showToast('프로젝트 정보가 수정되었습니다.');
+            return;
+          }
+
+          lastData = data;
+          if (String(data?.code || '') !== 'COLLAB409_2') break;
+        }
+
+        const code = String(lastData?.code || '');
+        showToast(pickMessage(lastData, '프로젝트 정보를 수정하지 못했습니다. 잠시 후 다시 시도해 주세요.', {
+          COLLAB409_2: CONFLICT_SAVE_MESSAGE,
+          PROJECT404_1: '방장만 프로젝트 이름과 설명을 수정할 수 있습니다. 목록을 새로 불러왔습니다.'
+        }));
+        if (code === 'PROJECT404_1') {
           setModalMode(null);
-          setProjects(prev => prev.map(p => 
-            p.projectId === editTargetId 
-              ? { ...p, title: newTitle, description: newDesc } 
-              : p
-          ));
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트 정보가 수정되었습니다.' }));
-        } else {
-          window.dispatchEvent(new CustomEvent('global-toast', { detail: data.message || '수정에 실패했습니다.' }));
+          fetchProjects();
         }
       } catch (err) {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
+        showToast(NETWORK_MESSAGE);
+      } finally {
+        isSavingMetadataRef.current = false;
       }
     }
+  };
+
+  const fetchServerVersion = async (projectId: number): Promise<number | null> => {
+    const res = await fetchWithAuth(`${BASE_URL}/projects/${projectId}/collaboration?afterVersion=0`, undefined, { silent: true });
+    const data: any = await res.json().catch(() => null);
+    if (!res.ok || !(data?.isSuccess ?? data?.is_success)) return null;
+    const result = data.result || {};
+    if (typeof result.serverVersion === 'number') return result.serverVersion;
+    const operations = Array.isArray(result.operations) ? result.operations : [];
+    const lastVersion = operations.reduce((max: number, op: any) => typeof op?.serverVersion === 'number' && op.serverVersion > max ? op.serverVersion : max, -1);
+    if (lastVersion >= 0) return lastVersion;
+    return typeof result.graphVersion === 'number' ? result.graphVersion : null;
   };
 
   const handleOpenEdit = async (e: React.MouseEvent, proj: Project) => {
@@ -649,22 +734,16 @@ export default function Home() {
   const confirmDeleteSingle = async () => {
     if (!projectToDelete) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToDelete}`, { method: 'DELETE' });
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${projectToDelete}`, { method: 'DELETE' });
 
-      if (res.ok) {
+      if (ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToDelete));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트가 삭제되었습니다.' }));
+        showToast('프로젝트가 삭제되었습니다.');
       } else {
-        const text = await res.text();
-        let msg = '프로젝트 삭제에 실패했습니다.';
-        try {
-          const data = JSON.parse(text);
-          if (data.message) msg = data.message;
-        } catch(e) {}
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+        showToast(pickMessage(data, '프로젝트 삭제에 실패했습니다.'));
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }));
+      showToast(NETWORK_MESSAGE);
     } finally {
       setProjectToDelete(null);
     }
@@ -679,22 +758,24 @@ export default function Home() {
   const confirmLeaveSingle = async () => {
     if (!projectToLeave) return;
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/projects/${projectToLeave}/collaborators/me`, { method: 'DELETE' });
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/projects/${projectToLeave}/collaborators/me`, { method: 'DELETE' });
 
-      if (res.ok) {
+      const code = String(data?.code || '');
+      if (ok) {
         setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '프로젝트에서 나갔습니다.' }));
+        showToast('프로젝트에서 나갔습니다.');
+      } else if (code === 'PROJECT404_2') {
+        setProjects(prev => prev.filter((p) => p.projectId !== projectToLeave));
+        showToast(ALREADY_LEFT_MESSAGE);
+        fetchProjects();
       } else {
-        const text = await res.text();
-        let msg = '프로젝트 나가기에 실패했습니다.';
-        try {
-          const data = JSON.parse(text);
-          if (data.message) msg = data.message;
-        } catch(e) {}
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: msg }));
+        showToast(pickMessage(data, '프로젝트 나가기에 실패했습니다.', {
+          PROJECT403_2: OWNER_CANNOT_LEAVE_MESSAGE
+        }));
+        if (code === 'PROJECT403_2') fetchProjects();
       }
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다.' }));
+      showToast(NETWORK_MESSAGE);
     } finally {
       setProjectToLeave(null);
     }
@@ -707,26 +788,34 @@ export default function Home() {
           try {
             const proj = projects.find(p => p.projectId === id);
             const isOwner = proj?.myRole === 'OWNER';
-            const endpoint = isOwner 
+            const endpoint = isOwner
               ? `${BASE_URL}/projects/${id}`
               : `${BASE_URL}/projects/${id}/collaborators/me`;
 
-            const res = await fetchWithAuth(endpoint, { method: 'DELETE' });
-            return { id, isSuccess: res.ok };
-          } catch(e) { return { id, isSuccess: false }; }
+            const { ok, data } = await requestWithRetry(endpoint, { method: 'DELETE' });
+            const code = String(data?.code || '');
+            return { id, isSuccess: ok || (!isOwner && code === 'PROJECT404_2'), code };
+          } catch(e) { return { id, isSuccess: false, code: '' }; }
         })
       );
 
       const successIds = results.filter(r => r.isSuccess).map(r => r.id);
+      const failedCount = results.length - successIds.length;
+      const becameOwner = results.some(r => r.code === 'PROJECT403_2');
 
       if (successIds.length > 0) {
         setProjects(prev => prev.filter(p => !successIds.includes(p.projectId)));
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: `${successIds.length}개의 프로젝트가 정리되었습니다.` }));
-      } else {
-        window.dispatchEvent(new CustomEvent('global-toast', { detail: '선택한 프로젝트 정리에 실패했습니다.' }));
       }
+      if (failedCount === 0) {
+        showToast(`${successIds.length}개의 프로젝트가 정리되었습니다.`);
+      } else if (successIds.length > 0) {
+        showToast(`${successIds.length}개는 정리했지만 ${failedCount}개는 정리하지 못했습니다. 잠시 후 다시 시도해 주세요.`);
+      } else {
+        showToast(becameOwner ? OWNER_CANNOT_LEAVE_MESSAGE : '선택한 프로젝트를 정리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+      if (becameOwner) fetchProjects();
     } catch (err) {
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.' }));
+      showToast(NETWORK_MESSAGE);
     } finally {
       setSelectedIds([]);
       setIsSelectMode(false);
@@ -743,6 +832,10 @@ export default function Home() {
 
   const isGuestUser = userInfo.role === 'ROLE_GUEST';
   const canChangePassword = userInfo.provider !== 'KAKAO' && !isGuestUser;
+  const manageForbiddenMessage = isGuestUser
+    ? '게스트 방장은 게스트 참여자만 관리할 수 있습니다.'
+    : '이 참여자를 관리할 수 없습니다. 방장만 참여자를 관리할 수 있습니다.';
+  const leaveActionName = isGuestUser ? '이용 종료' : '탈퇴';
 
   const hasProfileChanges = 
     editProfileForm.nickname !== userInfo.nickname || 
@@ -790,46 +883,94 @@ export default function Home() {
     }
   };
 
-  const handleOpenWithdrawConfirm = async () => {
-    setIsWithdrawConfirmOpen(true);
+  const loadWithdrawalPreview = async () => {
+    const seq = ++withdrawalLoadSeqRef.current;
     setIsWithdrawalLoading(true);
+    setWithdrawalLoadFailed(false);
     try {
-      const res = await fetchWithAuth(`${BASE_URL}/members/me/withdrawal-preview`);
-      const data = await res.json();
-      if (res.ok && (data.isSuccess ?? data.is_success)) {
-        setWithdrawalPreview(data.result.ownedProjects || []);
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/members/me/withdrawal-preview`);
+      if (seq !== withdrawalLoadSeqRef.current) return;
+      if (ok) {
+        const owned = data?.result?.ownedProjects;
+        setWithdrawalPreview(Array.isArray(owned) ? owned : []);
+      } else {
+        setWithdrawalPreview([]);
+        setWithdrawalLoadFailed(true);
       }
     } catch (e) {
-      console.error(e);
+      if (seq !== withdrawalLoadSeqRef.current) return;
+      setWithdrawalPreview([]);
+      setWithdrawalLoadFailed(true);
     } finally {
-      setIsWithdrawalLoading(false);
+      if (seq === withdrawalLoadSeqRef.current) setIsWithdrawalLoading(false);
     }
   };
 
+  const handleOpenWithdrawConfirm = () => {
+    setIsProfileMenuOpen(false);
+    setWithdrawalPreview([]);
+    setWithdrawalChangedNotice(false);
+    setIsWithdrawConfirmOpen(true);
+    loadWithdrawalPreview();
+  };
+
+  const closeWithdrawConfirm = () => {
+    if (isWithdrawing) return;
+    withdrawalLoadSeqRef.current++;
+    setIsWithdrawalLoading(false);
+    setIsWithdrawConfirmOpen(false);
+  };
+
+  const leaveAfterWithdraw = (message: string) => {
+    setIsWithdrawConfirmOpen(false);
+    setIsUserInfoModalOpen(false);
+    showToast(message);
+    setTimeout(() => {
+      setAccessToken(null);
+      navigate('/login');
+    }, 1500);
+  };
+
   const executeWithdraw = async () => {
+    if (isWithdrawing || isWithdrawalLoading || withdrawalLoadFailed) return;
+    setIsWithdrawing(true);
+    let leaving = false;
+
     try {
       const deletionIds = withdrawalPreview
         .filter(p => p.outcome === 'DELETION')
         .map(p => p.projectId);
-      
+
       const queryStr = deletionIds.length > 0 ? `?confirmedDeletionProjectIds=${deletionIds.join(',')}` : '';
 
-      const res = await fetchWithAuth(`${BASE_URL}/members/me${queryStr}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      const isSuccess = data.isSuccess ?? data.is_success ?? res.ok;
+      const { ok, data } = await requestWithRetry(`${BASE_URL}/members/me${queryStr}`, { method: 'DELETE' });
 
-      if (!res.ok || !isSuccess) throw new Error(data.message || '탈퇴 처리 실패');
+      if (ok) {
+        leaving = true;
+        leaveAfterWithdraw(isGuestUser
+          ? '이용이 종료되었습니다. 그동안 이용해 주셔서 감사합니다.'
+          : '탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.');
+        return;
+      }
 
-      setIsWithdrawConfirmOpen(false);
-      setIsUserInfoModalOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: '이용 종료(탈퇴) 처리가 완료되었습니다.' }));
-      setTimeout(() => {
-        setAccessToken(null);
-        navigate('/login');
-      }, 1500);
-    } catch (err: any) {
-      setIsWithdrawConfirmOpen(false);
-      window.dispatchEvent(new CustomEvent('global-toast', { detail: err instanceof TypeError ? '연결에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.' : (err.message || '오류가 발생했습니다.') }));
+      const code = String(data?.code || '');
+      if (code === 'MEMBER409_3') {
+        setWithdrawalChangedNotice(true);
+        await loadWithdrawalPreview();
+        return;
+      }
+      if (code === 'MEMBER404_1') {
+        leaving = true;
+        leaveAfterWithdraw(isGuestUser
+          ? '이미 이용이 끝난 계정입니다. 처음 화면으로 이동합니다.'
+          : '이미 탈퇴한 계정입니다. 처음 화면으로 이동합니다.');
+        return;
+      }
+      showToast(pickMessage(data, `${leaveActionName}를 하지 못했습니다. 잠시 후 다시 시도해 주세요.`, {}, false));
+    } catch (err) {
+      showToast(NETWORK_MESSAGE);
+    } finally {
+      if (!leaving) setIsWithdrawing(false);
     }
   };
 
@@ -1357,11 +1498,11 @@ export default function Home() {
                 <>
                   <InputGroup>
                     <label>새 비밀번호</label>
-                    <Input type="password" placeholder="변경할 비밀번호 (선택사항, 8자 이상)" maxLength={100} value={editProfileForm.password} onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })} />
+                    <PasswordInput placeholder="변경할 비밀번호 (선택사항, 8자 이상)" maxLength={100} value={editProfileForm.password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditProfileForm({ ...editProfileForm, password: e.target.value })} />
                   </InputGroup>
                   <InputGroup style={{ opacity: editProfileForm.password ? 1 : 0.4, transition: '0.2s' }}>
                     <label>새 비밀번호 확인</label>
-                    <Input type="password" placeholder="비밀번호 재입력" maxLength={100} value={editProfileForm.passwordConfirm} onChange={(e) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })} disabled={!editProfileForm.password} />
+                    <PasswordInput placeholder="비밀번호 재입력" maxLength={100} value={editProfileForm.passwordConfirm} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditProfileForm({ ...editProfileForm, passwordConfirm: e.target.value })} disabled={!editProfileForm.password} />
                   </InputGroup>
                 </>
               )}
@@ -1386,18 +1527,24 @@ export default function Home() {
               {invitations.length === 0 ? (
                 <EmptyState style={{ padding: '40px 0', border: 'none', background: '#f8f9fa' }}>{isInvitationsLoading ? '초대 목록을 불러오는 중입니다...' : '새로운 초대가 없습니다.'}</EmptyState>
               ) : (
-                invitations.map(inv => (
-                  <InviteItem key={inv.invitationId}>
-                    <div className="info">
-                      <div className="proj-title">{inv.projectTitle}</div>
-                      <div className="inviter">초대자: {inv.inviterNickname}</div>
-                    </div>
-                    <div className="actions">
-                      <button className="accept" onClick={() => handleAcceptInvite(inv.invitationId)}>수락</button>
-                      <button className="reject" onClick={() => handleRejectInvite(inv.invitationId)}>거절</button>
-                    </div>
-                  </InviteItem>
-                ))
+                invitations.map(inv => {
+                  const isBlocked = blockedInvitationIds.includes(inv.invitationId);
+                  return (
+                    <InviteItem key={inv.invitationId}>
+                      <div className="info">
+                        <div className="proj-title">{inv.projectTitle}</div>
+                        <div className="inviter">초대자: {inv.inviterNickname}</div>
+                        {isBlocked && (
+                          <div className="blocked-hint">{SAME_KIND_ONLY_MESSAGE} 거절해서 목록에서 지워 주세요.</div>
+                        )}
+                      </div>
+                      <div className="actions">
+                        <button className="accept" disabled={isBlocked} onClick={() => handleAcceptInvite(inv.invitationId)}>수락</button>
+                        <button className="reject" onClick={() => handleRejectInvite(inv.invitationId)}>거절</button>
+                      </div>
+                    </InviteItem>
+                  );
+                })
               )}
             </div>
             <ModalActions style={{ justifyContent: 'flex-end', marginTop: '20px' }}>
@@ -1611,10 +1758,11 @@ export default function Home() {
               <strong style={{ color: '#2d3748' }}>{transferTarget.nickname}</strong>님에게 이 프로젝트의 소유권(OWNER)을 위임하시겠습니까?
             </p>
             <TransferNotice>
-              <li>수락 절차 없이 <strong>즉시</strong> 적용됩니다.</li>
-              <li>{transferTarget.nickname}님이 OWNER가 되고, 나는 <strong>EDITOR</strong>로 남습니다.</li>
-              <li>이름·설명 수정, 참여자 관리, 프로젝트 삭제, 코드 생성은 더 이상 할 수 없습니다.</li>
-              <li>캔버스, 생성 이력, 파일은 그대로 유지됩니다.</li>
+              <li>상대방이 수락하지 않아도 <strong>바로</strong> 적용됩니다.</li>
+              <li>{transferTarget.nickname}님이 방장(OWNER)이 되고, 나는 <strong>EDITOR</strong>로 남습니다.</li>
+              <li>프로젝트 이름·설명 수정, 참여자 관리, 프로젝트 삭제는 더 이상 할 수 없습니다. 캔버스 편집과 코드 생성은 계속할 수 있습니다.</li>
+              <li>되돌리려면 새 방장이 다시 위임해 주어야 합니다.</li>
+              <li>캔버스, 활동 기록, 생성된 코드는 그대로 남습니다.</li>
             </TransferNotice>
             <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
               <CancelBtn type="button" disabled={isTransferring} onClick={() => setTransferTarget(null)}>취소</CancelBtn>
@@ -1626,48 +1774,92 @@ export default function Home() {
         </ModalOverlay>
       )}
 
-      {isWithdrawConfirmOpen && (
-        <ModalOverlay onClick={() => setIsWithdrawConfirmOpen(false)} style={{ zIndex: 1100 }}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
-            <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
-              {userInfo.role === 'ROLE_GUEST' ? '이용 종료' : '회원 탈퇴를 진행하시겠습니까?'}
-            </ModalTitle>
-            
-            {isWithdrawalLoading ? (
-              <p style={{ color: '#4a5568', fontSize: '14px', margin: '0 0 24px 0' }}>탈퇴 전에 확인할 내용을 불러오는 중입니다...</p>
-            ) : (
-              <>
-                <p style={{ color: '#4a5568', fontSize: '14px', lineHeight: '1.6', margin: '0 0 16px 0' }}>
-                  탈퇴 시 내 정보 및 관련된 프로젝트 권한이 완전히 정리됩니다.
-                </p>
-                {withdrawalPreview.length > 0 && (
-                  <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '24px', maxHeight: '150px', overflowY: 'auto' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>소유한 프로젝트 처리 안내</div>
-                    {withdrawalPreview.map(p => (
-                      <div key={p.projectId} style={{ fontSize: '12px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: '#4a5568', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{p.title}</span>
-                        <span style={{ fontWeight: 'bold', color: p.outcome === 'DELETION' ? '#e53e3e' : '#28b4ad' }}>
-                          {p.outcome === 'DELETION' ? '영구 삭제' : '소유권 승계'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {withdrawalPreview.some(p => p.outcome === 'DELETION') && (
-                  <p style={{ color: '#e53e3e', fontSize: '13px', fontWeight: 'bold', marginBottom: '24px' }}>
-                    * 영구 삭제되는 프로젝트는 다시 복구할 수 없습니다.
-                  </p>
-                )}
-              </>
-            )}
+      {isWithdrawConfirmOpen && (() => {
+        const hasSuccession = withdrawalPreview.some(p => p.outcome === 'SUCCESSION');
+        const hasDeletion = withdrawalPreview.some(p => p.outcome === 'DELETION');
+        const canConfirm = !isWithdrawalLoading && !withdrawalLoadFailed && !isWithdrawing;
 
-            <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: 0 }}>
-              <CancelBtn type="button" onClick={() => setIsWithdrawConfirmOpen(false)}>취소</CancelBtn>
-              <SubmitBtn type="button" style={{ background: '#e53e3e' }} onClick={executeWithdraw} disabled={isWithdrawalLoading}>확인</SubmitBtn>
-            </ModalActions>
-          </ModalContent>
-        </ModalOverlay>
-      )}
+        return (
+          <ModalOverlay onClick={closeWithdrawConfirm} style={{ zIndex: 1100 }}>
+            <ModalContent onClick={(e) => e.stopPropagation()}>
+              <ModalTitle style={{ color: '#e53e3e', fontSize: '18px' }}>
+                {isGuestUser ? '이용을 종료하시겠습니까?' : '회원 탈퇴를 진행하시겠습니까?'}
+              </ModalTitle>
+
+              {withdrawalChangedNotice && (
+                <WithdrawNotice $tone="warning">
+                  확인하는 사이에 프로젝트 상황이 바뀌었습니다. 아래 내용을 다시 확인한 뒤 진행해 주세요.
+                </WithdrawNotice>
+              )}
+
+              {isWithdrawalLoading ? (
+                <p style={{ color: '#4a5568', fontSize: '14px', margin: '0 0 24px 0' }}>
+                  {leaveActionName} 전에 확인할 내용을 불러오는 중입니다...
+                </p>
+              ) : withdrawalLoadFailed ? (
+                <WithdrawNotice $tone="error">
+                  <div>확인할 내용을 불러오지 못했습니다. 다시 불러온 뒤 진행해 주세요.</div>
+                  <button type="button" className="retry-btn" onClick={loadWithdrawalPreview}>다시 불러오기</button>
+                </WithdrawNotice>
+              ) : (
+                <>
+                  <WithdrawInfoList>
+                    <li>
+                      {isGuestUser
+                        ? '이용을 종료하면 게스트 계정이 정리되고, 참여 중인 다른 사람의 프로젝트에서도 빠지게 됩니다.'
+                        : '탈퇴하면 계정이 정리되고, 참여 중인 다른 사람의 프로젝트에서도 빠지게 됩니다.'}
+                    </li>
+                    <li>아직 답하지 않은 초대는 보낸 것과 받은 것 모두 취소됩니다.</li>
+                  </WithdrawInfoList>
+
+                  {isGuestUser && (
+                    <WithdrawNotice $tone="warning">
+                      다시 게스트로 시작하면 <strong>새 계정</strong>으로 시작하게 되어, 지금 쓰던 프로젝트에는 다시 들어올 수 없습니다.
+                    </WithdrawNotice>
+                  )}
+
+                  {withdrawalPreview.length > 0 && (
+                    <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '8px', marginBottom: '12px', maxHeight: '150px', overflowY: 'auto' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '8px' }}>내가 방장인 프로젝트</div>
+                      {withdrawalPreview.map(p => (
+                        <div key={p.projectId} style={{ fontSize: '12px', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                          <span style={{ color: '#4a5568', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.title}</span>
+                          <span style={{ fontWeight: 'bold', flexShrink: 0, color: p.outcome === 'DELETION' ? '#e53e3e' : '#28b4ad' }}>
+                            {p.outcome === 'DELETION' ? '영구 삭제' : '다른 참여자에게 넘어감'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(hasSuccession || hasDeletion) && (
+                    <WithdrawInfoList>
+                      {hasSuccession && (
+                        <li>다른 참여자에게 넘어가는 프로젝트는 참여자 중 한 명이 새 방장이 되어 그대로 남습니다.</li>
+                      )}
+                      {hasDeletion && (
+                        <li className="danger">함께하는 참여자가 없는 프로젝트는 캔버스, 활동 기록, 생성된 코드까지 모두 삭제되며 되돌릴 수 없습니다.</li>
+                      )}
+                    </WithdrawInfoList>
+                  )}
+                </>
+              )}
+
+              <ModalActions style={{ justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+                <CancelBtn type="button" onClick={closeWithdrawConfirm} disabled={isWithdrawing}>취소</CancelBtn>
+                <SubmitBtn
+                  type="button"
+                  style={{ background: '#e53e3e', opacity: canConfirm ? 1 : 0.6, cursor: canConfirm ? 'pointer' : 'not-allowed' }}
+                  onClick={executeWithdraw}
+                  disabled={!canConfirm}
+                >
+                  {isWithdrawing ? '처리 중...' : (isGuestUser ? '이용 종료하기' : '탈퇴하기')}
+                </SubmitBtn>
+              </ModalActions>
+            </ModalContent>
+          </ModalOverlay>
+        );
+      })()}
 
       {isHistoryModalOpen && (
         <ModalOverlay onClick={() => setIsHistoryModalOpen(false)}>
@@ -2393,6 +2585,76 @@ const Input = styled.input`
   &:disabled { background: #f8f9fa; cursor: not-allowed; }
 `;
 
+const PasswordInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ style, disabled, ...inputProps }) => {
+  const [isShown, setIsShown] = useState(false);
+  const label = isShown ? '비밀번호 숨기기' : '비밀번호 보기';
+
+  return (
+    <PasswordWrap>
+      <Input {...inputProps} disabled={disabled} type={isShown ? 'text' : 'password'} style={{ ...style, paddingRight: 44 }} />
+      <PasswordToggle
+        type="button"
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+        onClick={() => setIsShown(prev => !prev)}
+      >
+        {isShown ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        )}
+      </PasswordToggle>
+    </PasswordWrap>
+  );
+};
+
+const PasswordWrap = styled.div`
+  position: relative;
+  width: 100%;
+
+  & input::-ms-reveal,
+  & input::-ms-clear {
+    display: none;
+  }
+`;
+
+const PasswordToggle = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #a0aec0;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+
+  &:hover:not(:disabled) {
+    color: #4a5568;
+    background: #edf2f7;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+`;
+
 const TextArea = styled.textarea`
   width: 100%;
   padding: 12px;
@@ -2643,6 +2905,46 @@ const TransferNotice = styled.ul`
   strong { color: #c05621; }
 `;
 
+const WithdrawNotice = styled.div<{ $tone: 'warning' | 'error' }>`
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: keep-all;
+  background: ${({ $tone }) => $tone === 'error' ? '#fff5f5' : '#fffaf0'};
+  border: 1px solid ${({ $tone }) => $tone === 'error' ? '#fed7d7' : '#fbd38d'};
+  color: ${({ $tone }) => $tone === 'error' ? '#c53030' : '#744210'};
+
+  strong { color: ${({ $tone }) => $tone === 'error' ? '#c53030' : '#c05621'}; }
+
+  .retry-btn {
+    margin-top: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4a5568;
+    background: white;
+    border: 1px solid #cbd5e0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .retry-btn:hover { background: #f8f9fa; }
+`;
+
+const WithdrawInfoList = styled.ul`
+  margin: 0 0 12px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #4a5568;
+  word-break: keep-all;
+
+  li + li { margin-top: 4px; }
+  li.danger { color: #e53e3e; font-weight: 600; }
+`;
+
 const InviteItem = styled.div`
   display: flex;
   justify-content: space-between;
@@ -2672,6 +2974,12 @@ const InviteItem = styled.div`
     font-size: 12px;
     color: #a0aec0;
   }
+  .blocked-hint {
+    font-size: 11px;
+    color: #e53e3e;
+    line-height: 1.5;
+    word-break: keep-all;
+  }
   .actions {
     display: flex;
     gap: 6px;
@@ -2691,6 +2999,7 @@ const InviteItem = styled.div`
     color: white;
   }
   button.accept:hover { background: #219992; }
+  button.accept:disabled { background: #cbd5e0; cursor: not-allowed; }
   button.reject {
     background: #edf2f7;
     color: #4a5568;

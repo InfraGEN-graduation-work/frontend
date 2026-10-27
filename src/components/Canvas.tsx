@@ -7,9 +7,12 @@ import redisIcon from '../assets/redis.png';
 import postgresqlIcon from '../assets/postgresql.png';
 import nodejsIcon from '../assets/nodejs.png';
 import mongodbIcon from '../assets/mongodb.png';
+import nginxIcon from '../assets/nginx.png';
+import caddyIcon from '../assets/caddy.png';
 
 const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
 const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
+const WEB_SERVER_NODE_TYPES = ['Nginx', 'Caddy'];
 const SYNCING_MESSAGE = '다른 사람의 편집 내용과 맞추는 중입니다. 잠시 후 다시 시도해 주세요.';
 
 export interface DraggedNodePosition {
@@ -214,6 +217,21 @@ const Canvas: React.FC<CanvasProps> = ({
     if (unassignedNodeIds.includes(a.id) || unassignedNodeIds.includes(b.id)) {
       return '낱개로 배치된 노드는 생성에 포함되지 않아 연결할 수 없습니다. 먼저 [생성할 노드 목록]으로 옮겨 주세요.';
     }
+    const web = WEB_SERVER_NODE_TYPES.includes(a.type) ? a : WEB_SERVER_NODE_TYPES.includes(b.type) ? b : null;
+    if (web) {
+      const other = web === a ? b : a;
+      if (!APP_NODE_TYPES.includes(other.type)) {
+        return '웹 서버(Nginx·Caddy)는 애플리케이션(Spring Boot·Node.js)에만 연결할 수 있습니다.';
+      }
+      const webHasOtherApp = edges.some(edge => {
+        const otherId = edge.sourceId === web.id ? edge.targetId : edge.targetId === web.id ? edge.sourceId : null;
+        if (!otherId || otherId === other.id || unassignedNodeIds.includes(otherId)) return false;
+        return APP_NODE_TYPES.includes(nodes.find(n => n.id === otherId)?.type || '');
+      });
+      return webHasOtherApp
+        ? `'${web.name}'에는 이미 애플리케이션이 연결되어 있습니다. 웹 서버에는 애플리케이션 하나만 연결할 수 있습니다.`
+        : null;
+    }
     const app = APP_NODE_TYPES.includes(a.type) ? a : APP_NODE_TYPES.includes(b.type) ? b : null;
     const dependency = app === a ? b : a;
     if (!app || !DEPENDENCY_NODE_TYPES.includes(dependency.type)) return null;
@@ -226,6 +244,13 @@ const Canvas: React.FC<CanvasProps> = ({
     return alreadyConnected
       ? `'${app.name}'에는 이미 ${dependency.type} 노드가 연결되어 있습니다. 같은 종류의 DB는 하나만 연결할 수 있습니다.`
       : null;
+  };
+
+  const orientEdge = (fromId: string, toId: string) => {
+    const from = nodes.find(n => n.id === fromId);
+    return from && WEB_SERVER_NODE_TYPES.includes(from.type)
+      ? { sourceId: toId, targetId: fromId }
+      : { sourceId: fromId, targetId: toId };
   };
 
   const checkEdgeScroll = (clientX: number, clientY: number) => {
@@ -488,7 +513,7 @@ const Canvas: React.FC<CanvasProps> = ({
         } else if (!exists) {
           saveHistory();
           markFilesAsModified();
-          setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
+          setEdges(prev => [...prev, { id: `edge-${Date.now()}`, ...orientEdge(drawingEdgeSource, targetNode.id) }]);
         }
       }
       setDrawingEdgeSource(null);
@@ -536,7 +561,7 @@ const Canvas: React.FC<CanvasProps> = ({
         } else if (!exists) {
           saveHistory();
           markFilesAsModified();
-          setEdges(prev => [...prev, { id: `edge-${Date.now()}`, sourceId: drawingEdgeSource, targetId: targetNode.id }]);
+          setEdges(prev => [...prev, { id: `edge-${Date.now()}`, ...orientEdge(drawingEdgeSource, targetNode.id) }]);
         }
       }
       setDrawingEdgeSource(null);
@@ -582,6 +607,8 @@ const Canvas: React.FC<CanvasProps> = ({
     if (type === 'PostgreSQL') return postgresqlIcon;
     if (type === 'Node.js') return nodejsIcon;
     if (type === 'MongoDB') return mongodbIcon;
+    if (type === 'Nginx') return nginxIcon;
+    if (type === 'Caddy') return caddyIcon;
     return null;
   };
 

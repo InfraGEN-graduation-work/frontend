@@ -37,7 +37,9 @@ const COMPONENT_TYPE_TO_NODE_TYPE: Record<string, string> = {
   MYSQL: 'MySQL',
   POSTGRESQL: 'PostgreSQL',
   MONGODB: 'MongoDB',
-  REDIS: 'Redis'
+  REDIS: 'Redis',
+  NGINX: 'Nginx',
+  CADDY: 'Caddy'
 };
 const NODE_TYPE_TO_COMPONENT_TYPE: Record<string, string> = Object.fromEntries(
   Object.entries(COMPONENT_TYPE_TO_NODE_TYPE).map(([componentType, nodeType]) => [nodeType, componentType])
@@ -45,12 +47,32 @@ const NODE_TYPE_TO_COMPONENT_TYPE: Record<string, string> = Object.fromEntries(
 const toComponentType = (nodeType: string) => NODE_TYPE_TO_COMPONENT_TYPE[nodeType] || nodeType.toUpperCase().replace(/ /g, '_');
 
 const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
-const NODES_WITHOUT_SERVICE_NAME = ['MongoDB'];
-const NODES_WITH_OPTIONAL_CONTAINER = ['PostgreSQL', 'Node.js', 'MongoDB'];
+const NODES_WITHOUT_SERVICE_NAME = ['MongoDB', 'PostgreSQL', 'Nginx', 'Caddy'];
+const NODES_WITH_OPTIONAL_CONTAINER = ['PostgreSQL', 'Node.js', 'MongoDB', 'Nginx', 'Caddy'];
 const isDependencyType = (type?: string) => Boolean(type && DEPENDENCY_NODE_TYPES.includes(type));
 const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
 const isAppType = (type?: string) => Boolean(type && APP_NODE_TYPES.includes(type));
+const WEB_SERVER_NODE_TYPES = ['Nginx', 'Caddy'];
+const isWebServerType = (type?: string) => Boolean(type && WEB_SERVER_NODE_TYPES.includes(type));
+const LOCAL_UNSUPPORTED_NODE_TYPES = ['Caddy'];
+const NODES_WITHOUT_PORT = ['Caddy'];
+const minPortFor = (type: string) => type === 'Nginx' ? 1 : 1024;
+const shouldFlipEdge = (sourceType?: string, targetType?: string) =>
+  (isAppType(sourceType) && isDependencyType(targetType)) || (isWebServerType(sourceType) && isAppType(targetType));
 const NODE_VERSION_REGEX = /^[0-9]+$/;
+const DOCKER_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+const NGINX_IMAGE_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/;
+const IMAGE_NAME_PART = '[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*';
+const CADDY_IMAGE_REGEX = new RegExp(
+  `^(?:[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*(?::[0-9]+)?/)?${IMAGE_NAME_PART}(?:/${IMAGE_NAME_PART})*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[a-f0-9]{64})?$`
+);
+const DOMAIN_REGEX = /^(?=.{1,253}$)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+const IP_LIKE_REGEX = /^[0-9.]+$/;
+const DEFAULT_CONTAINER_NAMES: Record<string, string> = { Nginx: 'nginx', PostgreSQL: 'postgres', MongoDB: 'mongo' };
+const WEB_SERVER_PROPERTY_KEYS: Record<string, string[]> = {
+  Nginx: ['imageVersion', 'containerName', 'port'],
+  Caddy: ['imageVersion', 'domain', 'volumeName']
+};
 
 const ENV_FORBIDDEN_CHARS = /["\\$\r\n\0]/;
 const ENV_VALUE_FIELDS: Record<string, { key: string; label: string }[]> = {
@@ -87,7 +109,18 @@ const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   PARSING400_5: '포트 번호는 1024~65535 사이여야 합니다.',
   PARSING400_4: '여러 노드가 같은 포트 번호를 쓰고 있습니다.',
   PARSING400_25: '하나의 애플리케이션(Spring Boot·Node.js)에 같은 종류의 DB(MySQL·PostgreSQL·MongoDB·Redis)가 2개 이상 연결되어 있습니다. 하나만 남겨 주세요.',
-  PARSING400_10: '연결 방향이 잘못되었습니다. Database에서 애플리케이션(Spring Boot·Node.js) 방향으로 연결해 주세요.',
+  PARSING400_10: '연결 방향이 잘못되었습니다. Database → 애플리케이션(Spring Boot·Node.js) → 웹 서버(Nginx·Caddy) 방향으로 연결해 주세요.',
+  PARSING400_34: 'Nginx 노드의 [도커 이미지 버전]이나 [컨테이너 이름]이 올바르지 않거나, 다른 노드와 컨테이너 이름이 겹칩니다.',
+  PARSING400_35: 'Nginx는 애플리케이션(Spring Boot·Node.js)이 하나뿐일 때, 그 애플리케이션 하나와만 연결할 수 있습니다.',
+  PARSING400_36: 'Nginx 포트 번호는 1~65535 사이의 숫자여야 합니다.',
+  PARSING400_37: 'Caddy 노드의 [도커 이미지 버전]이 비어 있습니다.',
+  PARSING400_38: 'Caddy 도메인은 example.com처럼 점이 들어간 주소여야 합니다.',
+  PARSING400_39: 'Caddy에 도메인을 넣었다면 [볼륨 이름]도 입력해야 합니다.',
+  PARSING400_40: '웹 서버(Nginx·Caddy)는 하나만 둘 수 있습니다.',
+  PARSING400_41: '웹 서버에는 애플리케이션(Spring Boot·Node.js) 하나만 연결해야 합니다.',
+  PARSING400_42: 'Caddy 노드의 [도커 이미지 버전] 형식이 올바르지 않습니다. 예: caddy:2.8',
+  PARSING400_43: 'Caddy 볼륨 이름은 영문이나 숫자로 시작하고, 영문·숫자·언더바(_)·점(.)·하이픈(-)만 쓸 수 있습니다.',
+  GENERATION400_15: 'Caddy는 클라우드 배포(AWS·OCI)에서만 쓸 수 있습니다. 배포 환경을 바꾸거나 Nginx를 써 주세요.',
   PARSING400_30: 'Node.js 노드의 [서비스 이름]이 비어 있습니다.',
   PARSING400_31: 'Node.js 노드의 [Node.js 버전]이 비어 있습니다.',
   PARSING400_32: 'Node.js 버전은 숫자로만 입력해야 합니다. (예: 22)',
@@ -105,7 +138,9 @@ const GENERATE_ERROR_MESSAGES: Record<string, string> = {
   COMMON400_1: '입력값 중 형식이 올바르지 않은 항목이 있습니다. 노드 설정과 클라우드 설정을 다시 확인해 주세요.'
 };
 const GENERATE_SETTINGS_ERROR_CODES = ['GENERATION400_4', 'GENERATION400_5', 'GENERATION400_6', 'GENERATION400_7', 'GENERATION400_8'];
-const GENERATE_VALIDATION_ERROR_CODES = ['GENERATION400_9', 'GENERATION400_10', 'GENERATION400_13', 'GENERATION400_14', 'COMMON400_1'];
+const GENERATE_VALIDATION_ERROR_CODES = ['GENERATION400_9', 'GENERATION400_10', 'GENERATION400_13', 'GENERATION400_14', 'GENERATION400_15', 'COMMON400_1'];
+const WEB_SERVER_ONLY_ONE_MESSAGE = '웹 서버(Nginx·Caddy)는 하나만 둘 수 있습니다.';
+const CADDY_LOCAL_ONLY_MESSAGE = 'Caddy는 클라우드 배포(AWS·OCI)에서만 쓸 수 있습니다. 왼쪽 위 배포 환경을 AWS나 OCI로 바꾼 뒤 추가해 주세요.';
 
 const SECRET_ENV_KEY = /(PASSWORD|SECRET|TOKEN|PRIVATE_KEY|CREDENTIAL)/i;
 const ENV_ASSIGNMENT = /^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*)(.*)$/;
@@ -324,7 +359,7 @@ const buildGraphSignature = (
       return [n.id, n.type, keys.map(k => [k, s[k]])];
     }).sort(byFirstItem),
     e: graphEdges.map(e => {
-      const swap = isAppType(typeById.get(e.sourceId)) && isDependencyType(typeById.get(e.targetId));
+      const swap = shouldFlipEdge(typeById.get(e.sourceId), typeById.get(e.targetId));
       return swap ? `${e.targetId}>${e.sourceId}` : `${e.sourceId}>${e.targetId}`;
     }).sort(),
     f: graphFiles.map(f => [
@@ -385,13 +420,21 @@ interface ParsedProject {
 const graphSignature = (g: GraphState) =>
   buildGraphSignature(g.nodes, g.edges, g.files, g.targetFileIds, g.cloudProvider, g.includeLocal, g.cloudSettings);
 
+const keepGenerateProperties = (type: string, properties: Record<string, any>) => {
+  const allowed = WEB_SERVER_PROPERTY_KEYS[type];
+  if (!allowed) return properties;
+  return Object.fromEntries(Object.entries(properties).filter(([key]) => allowed.includes(key)));
+};
+
 const processProperties = (n: NodeData, rawProperties: any) => {
   const finalProperties: Record<string, any> = {};
+  const keepSpacesKeys = new Set((ENV_VALUE_FIELDS[n.type] || []).map(field => field.key));
   for (const key in rawProperties) {
     if (rawProperties[key] !== undefined && rawProperties[key] !== null && rawProperties[key] !== '') {
       if (typeof rawProperties[key] === 'object') finalProperties[key] = rawProperties[key];
       else if (key === 'port') finalProperties[key] = Number(rawProperties[key]);
       else if (key === 'fileGeneratedCodes' || key.startsWith('global')) finalProperties[key] = rawProperties[key];
+      else if (keepSpacesKeys.has(key)) finalProperties[key] = String(rawProperties[key]);
       else finalProperties[key] = String(rawProperties[key]).trim();
     }
   }
@@ -401,7 +444,7 @@ const processProperties = (n: NodeData, rawProperties: any) => {
     const envObj: Record<string, string> = {};
     envKeys.forEach(k => {
       if (finalProperties[k]) {
-        envObj[k] = String(finalProperties[k]).trim();
+        envObj[k] = keepSpacesKeys.has(k) ? String(finalProperties[k]) : String(finalProperties[k]).trim();
         delete finalProperties[k];
       }
     });
@@ -445,7 +488,7 @@ const mapGraphState = (g: GraphState, motions?: Map<string, { toX: number; toY: 
   const edges: MappedEdge[] = g.edges.map(e => {
     let sNode = g.nodes.find(n => n.id === e.sourceId);
     let tNode = g.nodes.find(n => n.id === e.targetId);
-    if (isAppType(sNode?.type) && isDependencyType(tNode?.type)) {
+    if (shouldFlipEdge(sNode?.type, tNode?.type)) {
       const temp = sNode; sNode = tNode; tNode = temp;
     }
     return {
@@ -943,6 +986,8 @@ const MainPage: React.FC = () => {
   const lastRemoteMoveAt = useRef(new Map<string, { at: number; avgGap: number | null }>());
   const motionFrame = useRef<number | null>(null);
   const pendingNameEdits = useRef(new Map<string, { name: string; timer: number }>());
+  const rejectedOpsQueue = useRef<{ op: PendingOp; resend: boolean }[]>([]);
+  const rejectedOpsChecking = useRef(false);
 
   const lastSyncedGraphSig = useRef<string | null>(null);
   const latestGraphSigRef = useRef<string | null>(null);
@@ -1601,10 +1646,39 @@ const MainPage: React.FC = () => {
     return applied;
   };
 
-  const recoverRejectedOps = () => {
+  const stillMatchesLocal = (op: PendingOp) => {
+    if (latestOwnOpByKey.current.has(opKey(op))) return false;
+    const node = nodesRef.current.find(n => n.id === op.nodeId);
+    if (!node) return false;
+    if (op.type === 'UPDATE_NODE_NAME') return node.name === op.payload.value;
+    return Math.round(node.x) === Math.round(Number(op.payload.positionX))
+      && Math.round(node.y) === Math.round(Number(op.payload.positionY));
+  };
+
+  const checkRejectedOps = async () => {
+    if (rejectedOpsChecking.current) return;
+    rejectedOpsChecking.current = true;
+    try {
+      while (rejectedOpsQueue.current.length > 0) {
+        const batch = rejectedOpsQueue.current;
+        rejectedOpsQueue.current = [];
+        const snapshot = await fetchSnapshot(0, false);
+        const serverNodes = snapshot?.project ? computeServerNodeStates(snapshot.project, snapshot.operations) : null;
+        const unapplied = serverNodes ? batch.filter(item => !isOpReflected(item.op, serverNodes)) : batch;
+        const toResend = coalesceOps(unapplied.filter(item => item.resend && serverNodes).map(item => item.op));
+        const toAsk = coalesceOps(unapplied.filter(item => !(item.resend && serverNodes)).map(item => item.op));
+        toResend.filter(stillMatchesLocal).forEach(op => sendOperation(op.type, op.nodeId, op.payload));
+        if (toAsk.length > 0) setUnappliedOps(prev => coalesceOps([...prev, ...toAsk]));
+      }
+    } finally {
+      rejectedOpsChecking.current = false;
+    }
+  };
+
+  const recoverRejectedOps = (resend: boolean) => {
     const suspects = Array.from(inFlightOps.current.keys());
     if (suspects.length === 0) return;
-    window.setTimeout(async () => {
+    window.setTimeout(() => {
       const stuck = suspects.map(id => inFlightOps.current.get(id)).filter((op): op is PendingOp => Boolean(op));
       if (stuck.length === 0) return;
       const latest: PendingOp[] = [];
@@ -1618,10 +1692,8 @@ const MainPage: React.FC = () => {
         }
       });
       if (latest.length === 0) return;
-      const snapshot = await fetchSnapshot(0, false);
-      const serverNodes = snapshot?.project ? computeServerNodeStates(snapshot.project, snapshot.operations) : null;
-      const unapplied = serverNodes ? latest.filter(op => !isOpReflected(op, serverNodes)) : latest;
-      if (unapplied.length > 0) setUnappliedOps(prev => coalesceOps([...prev, ...unapplied]));
+      rejectedOpsQueue.current.push(...latest.map(op => ({ op, resend })));
+      checkRejectedOps();
     }, DRAG_OP_ACK_TIMEOUT_MS);
   };
 
@@ -1662,7 +1734,7 @@ const MainPage: React.FC = () => {
     runSync: (_reason: ResyncReason, _hintVersion?: number | null) => {},
     processIncomingOp: (_op: any) => {},
     requestTokenRefresh: () => {},
-    recoverRejectedOps: () => {}
+    recoverRejectedOps: (_resend: boolean) => {}
   });
   useEffect(() => {
     performSyncRef.current = performSync;
@@ -1731,7 +1803,9 @@ const MainPage: React.FC = () => {
           if (code === 'COLLAB409_2') {
             collabHandlers.current.runSync('conflict');
           } else if (code === 'COLLAB409_1') {
-            collabHandlers.current.recoverRejectedOps();
+            collabHandlers.current.recoverRejectedOps(false);
+          } else if (code === 'COLLAB404_1') {
+            collabHandlers.current.recoverRejectedOps(true);
           } else {
             showToast(OPERATION_ERROR_MESSAGES[code] || '변경 내용을 반영하지 못했습니다. 새로고침해 주세요.');
           }
@@ -2017,20 +2091,62 @@ const MainPage: React.FC = () => {
       }
     };
 
+    const checkDockerName = (val: string, label: string, fieldKey: string) => {
+      if (!DOCKER_NAME_REGEX.test(val)) {
+        validationErrors.push({
+          name: `${label} 형식 오류`,
+          desc: `'${node.name}' 노드의 [${label}]은 영문이나 숫자로 시작하고, 영문, 숫자, 점(.), 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.`,
+          targetNodeId: node.id, targetField: fieldKey
+        });
+      }
+    };
+
     if (!settings.containerName) {
       if (!NODES_WITH_OPTIONAL_CONTAINER.includes(node.type)) validationErrors.push({ name: '컨테이너 이름 누락', desc: `'${node.name}' 노드의 [컨테이너 이름]을 입력해주세요.`, targetNodeId: node.id, targetField: 'containerName' });
     }
-    else checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
+    else if (node.type === 'Nginx') checkDockerName(String(settings.containerName).trim(), '컨테이너 이름', 'containerName');
+    else if (node.type !== 'Caddy') checkNameFormat(settings.containerName, '컨테이너 이름', 'containerName');
 
-    if (!settings.port) {
-      validationErrors.push({ name: '포트 번호 누락', desc: `'${node.name}' 노드의 [포트 번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'port' });
-    } else {
-      const portNum = Number(settings.port);
-      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-        validationErrors.push({ name: '포트 번호 범위 초과', desc: `'${node.name}' 노드의 포트 번호는 1024부터 65535 사이의 숫자여야 합니다.`, targetNodeId: node.id, targetField: 'port' });
+    if (!NODES_WITHOUT_PORT.includes(node.type)) {
+      const minPort = minPortFor(node.type);
+      if (!settings.port) {
+        validationErrors.push({ name: '포트 번호 누락', desc: `'${node.name}' 노드의 [포트 번호]를 입력해주세요.`, targetNodeId: node.id, targetField: 'port' });
       } else {
-        if (!portMap.has(portNum)) portMap.set(portNum, []);
-        portMap.get(portNum)!.push({ id: node.id, name: node.name });
+        const portNum = Number(settings.port);
+        if (!Number.isInteger(portNum) || portNum < minPort || portNum > 65535) {
+          validationErrors.push({ name: '포트 번호 범위 초과', desc: `'${node.name}' 노드의 포트 번호는 ${minPort}부터 65535 사이의 숫자여야 합니다.`, targetNodeId: node.id, targetField: 'port' });
+        } else {
+          if (!portMap.has(portNum)) portMap.set(portNum, []);
+          portMap.get(portNum)!.push({ id: node.id, name: node.name });
+        }
+      }
+    }
+
+    if (node.type === 'Nginx') {
+      const image = String(settings.imageVersion || '').trim();
+      if (!image) validationErrors.push({ name: 'Nginx 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      else if (!NGINX_IMAGE_REGEX.test(image)) validationErrors.push({ name: '도커 이미지 버전 형식 오류', desc: `'${node.name}' 노드의 [도커 이미지 버전]은 nginx:1.27처럼 입력해야 합니다.`, targetNodeId: node.id, targetField: 'imageVersion' });
+    }
+
+    if (node.type === 'Caddy') {
+      const image = String(settings.imageVersion || '').trim();
+      if (!image) validationErrors.push({ name: 'Caddy 버전 누락', desc: `'${node.name}' 노드의 [도커 이미지 버전]을 선택해주세요.`, targetNodeId: node.id, targetField: 'imageVersion' });
+      else if (!CADDY_IMAGE_REGEX.test(image)) validationErrors.push({ name: '도커 이미지 버전 형식 오류', desc: `'${node.name}' 노드의 [도커 이미지 버전]은 caddy:2.8처럼 입력해야 합니다.`, targetNodeId: node.id, targetField: 'imageVersion' });
+
+      const domain = String(settings.domain || '').trim();
+      if (domain && (!DOMAIN_REGEX.test(domain) || IP_LIKE_REGEX.test(domain))) {
+        validationErrors.push({ name: '도메인 형식 오류', desc: `'${node.name}' 노드의 [도메인]은 example.com처럼 점이 들어간 주소여야 합니다. https://, IP 주소, localhost, 별표(*)는 쓸 수 없고, 한글 도메인은 xn--로 시작하는 영문 주소로 바꿔서 넣어 주세요.`, targetNodeId: node.id, targetField: 'domain' });
+      }
+
+      const volume = String(settings.volumeName || '').trim();
+      if (domain && !volume) {
+        validationErrors.push({ name: '볼륨 이름 누락', desc: `'${node.name}' 노드에 도메인을 넣었다면 HTTPS 인증서를 보관할 [볼륨 이름]도 입력해야 합니다.`, targetNodeId: node.id, targetField: 'volumeName' });
+      } else if (volume) {
+        checkDockerName(volume, '볼륨 이름', 'volumeName');
+      }
+
+      if (cloudProvider === 'LOCAL') {
+        validationErrors.push({ name: '클라우드 전용 노드', desc: `'${node.name}' 노드는 클라우드 배포(AWS·OCI)에서만 쓸 수 있습니다. 왼쪽 위 배포 환경을 AWS나 OCI로 바꾸거나, Caddy 대신 Nginx를 써 주세요.`, targetNodeId: node.id });
       }
     }
 
@@ -2100,22 +2216,32 @@ const MainPage: React.FC = () => {
     const sNode = activeNodes.find(n => n.id === edge.sourceId);
     const tNode = activeNodes.find(n => n.id === edge.targetId);
     if (sNode && tNode) {
-      const isSourceDb = isDependencyType(sNode.type);
-      const isTargetServer = isAppType(tNode.type);
-      if (!isSourceDb || !isTargetServer) {
+      const isDbToApp = isDependencyType(sNode.type) && isAppType(tNode.type);
+      const isAppToWeb = isAppType(sNode.type) && isWebServerType(tNode.type);
+      if (isDbToApp || isAppToWeb) return;
+      const webNode = isWebServerType(sNode.type) ? sNode : isWebServerType(tNode.type) ? tNode : null;
+      const otherNode = webNode === sNode ? tNode : sNode;
+      if (webNode && !isAppType(otherNode.type)) {
         validationErrors.push({
-          name: '잘못된 노드 연결 방향',
-          desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database에서 애플리케이션(Spring Boot·Node.js) 방향이어야 합니다.`,
-          targetNodeId: sNode.id,
+          name: '웹 서버 연결 오류',
+          desc: `'${webNode.name}' 노드가 '${otherNode.name}'(${otherNode.type})와 연결되어 있습니다. 웹 서버는 애플리케이션(Spring Boot·Node.js)에만 연결할 수 있습니다.`,
+          targetNodeId: webNode.id,
           edgeId: edge.id
         });
+        return;
       }
+      validationErrors.push({
+        name: '잘못된 노드 연결 방향',
+        desc: `'${sNode.name}'(${sNode.type})에서 '${tNode.name}'(${tNode.type})로 연결되었습니다. 연결은 Database → 애플리케이션(Spring Boot·Node.js) → 웹 서버(Nginx·Caddy) 방향이어야 합니다.`,
+        targetNodeId: sNode.id,
+        edgeId: edge.id
+      });
     }
   });
 
   const connectedNodeIds = new Set(activeEdges.flatMap(e => [e.sourceId, e.targetId]));
   activeNodes.forEach(node => {
-    if (connectedNodeIds.has(node.id)) return;
+    if (connectedNodeIds.has(node.id) || isWebServerType(node.type)) return;
     validationErrors.push({
       name: '연결되지 않은 노드',
       desc: `'${node.name}' 노드가 다른 노드와 연결되어 있지 않습니다. 다른 노드와 연결하거나, 생성에서 빼려면 [낱개로 배치된 Node]로 옮겨 주세요.`,
@@ -2125,6 +2251,7 @@ const MainPage: React.FC = () => {
   });
 
   const appNodes = activeNodes.filter(n => isAppType(n.type));
+  const webServerForGuide = activeNodes.find(n => isWebServerType(n.type));
   const mongoLinkedAppTypes = activeEdges.flatMap(edge => {
     const s = activeNodes.find(n => n.id === edge.sourceId);
     const t = activeNodes.find(n => n.id === edge.targetId);
@@ -2139,6 +2266,74 @@ const MainPage: React.FC = () => {
         desc: `클라우드 배포는 애플리케이션 노드(Spring Boot·Node.js)를 하나만 지원합니다. 지금 ${appNodes.length}개(${appNodes.map(n => n.name).join(', ')})가 있습니다. 하나만 남기거나 배포 환경을 LOCAL로 바꿔 주세요.`,
         targetNodeId: app.id
       });
+    });
+  }
+
+  const webServerNodes = activeNodes.filter(n => isWebServerType(n.type));
+  if (webServerNodes.length > 1) {
+    webServerNodes.forEach(web => {
+      validationErrors.push({
+        name: '웹 서버 개수 초과',
+        desc: `${WEB_SERVER_ONLY_ONE_MESSAGE} 지금 ${webServerNodes.length}개(${webServerNodes.map(n => n.name).join(', ')})가 있습니다. 하나만 남겨 주세요.`,
+        targetNodeId: web.id
+      });
+    });
+  }
+
+  webServerNodes.forEach(web => {
+    const linkedAppIds = new Set<string>();
+    activeEdges.forEach(edge => {
+      const otherId = edge.sourceId === web.id ? edge.targetId : edge.targetId === web.id ? edge.sourceId : null;
+      const other = otherId ? activeNodes.find(n => n.id === otherId) : undefined;
+      if (other && isAppType(other.type)) linkedAppIds.add(other.id);
+    });
+    if (linkedAppIds.size === 0) {
+      validationErrors.push({
+        name: '웹 서버 연결 없음',
+        desc: `'${web.name}' 노드를 애플리케이션(Spring Boot·Node.js) 하나와 연결해 주세요. 웹 서버는 애플리케이션 앞에서 접속을 받아 넘겨주는 역할이라 연결이 꼭 필요합니다.`,
+        targetNodeId: web.id
+      });
+    } else if (linkedAppIds.size > 1) {
+      validationErrors.push({
+        name: '웹 서버 연결 초과',
+        desc: `'${web.name}' 노드에 애플리케이션이 ${linkedAppIds.size}개 연결되어 있습니다. 웹 서버에는 애플리케이션 하나만 연결할 수 있습니다.`,
+        targetNodeId: web.id
+      });
+    }
+    if (web.type === 'Nginx' && appNodes.length !== 1) {
+      validationErrors.push({
+        name: 'Nginx 사용 조건',
+        desc: appNodes.length === 0
+          ? `'${web.name}' 노드를 쓰려면 애플리케이션(Spring Boot·Node.js)이 하나 있어야 합니다.`
+          : `Nginx는 애플리케이션이 하나뿐인 프로젝트에서만 쓸 수 있습니다. 지금 애플리케이션이 ${appNodes.length}개(${appNodes.map(n => n.name).join(', ')}) 있습니다.`,
+        targetNodeId: web.id
+      });
+    }
+  });
+
+  const nginxNode = activeNodes.find(n => n.type === 'Nginx');
+  if (nginxNode) {
+    const nginxContainer = String(nginxNode.settings?.containerName || '').trim() || DEFAULT_CONTAINER_NAMES.Nginx;
+    activeNodes.forEach(other => {
+      if (isWebServerType(other.type)) return;
+      const explicit = String(other.settings?.containerName || '').trim();
+      const effective = explicit || DEFAULT_CONTAINER_NAMES[other.type] || '';
+      if (!effective || (effective !== nginxContainer && effective !== DEFAULT_CONTAINER_NAMES.Nginx)) return;
+      if (explicit) {
+        validationErrors.push({
+          name: '컨테이너 이름 겹침',
+          desc: `'${other.name}' 노드의 [컨테이너 이름]('${effective}')이 Nginx와 겹칩니다. 다른 이름을 써 주세요.`,
+          targetNodeId: other.id,
+          targetField: 'containerName'
+        });
+      } else {
+        validationErrors.push({
+          name: '컨테이너 이름 겹침',
+          desc: `Nginx의 [컨테이너 이름]('${nginxContainer}')이 '${other.name}' 노드가 기본으로 쓰는 이름과 겹칩니다. 다른 이름을 써 주세요.`,
+          targetNodeId: nginxNode.id,
+          targetField: 'containerName'
+        });
+      }
     });
   }
 
@@ -2571,6 +2766,7 @@ const MainPage: React.FC = () => {
 
       const generateNodes = activeNodes.map(n => {
         const rawProperties: any = { ...(n as any).settings };
+        if (NODES_WITHOUT_SERVICE_NAME.includes(n.type)) delete rawProperties.name;
         rawProperties.fileId = files[0]?.id || 'default';
         rawProperties.fileName = files[0]?.name || '생성할 노드 목록';
         rawProperties.fileIsGenerated = String(files[0]?.isGenerated || false);
@@ -2581,7 +2777,7 @@ const MainPage: React.FC = () => {
           componentType: toComponentType(n.type),
           positionX: Math.round(n.x),
           positionY: Math.round(n.y),
-          properties: processProperties(n, rawProperties)
+          properties: keepGenerateProperties(n.type, processProperties(n, rawProperties))
         };
       });
 
@@ -2589,7 +2785,7 @@ const MainPage: React.FC = () => {
         const sourceNode = nodes.find(n => n.id === e.sourceId);
         const targetNode = nodes.find(n => n.id === e.targetId);
         let finalSourceId = e.sourceId; let finalTargetId = e.targetId;
-        if (isAppType(sourceNode?.type) && isDependencyType(targetNode?.type)) {
+        if (shouldFlipEdge(sourceNode?.type, targetNode?.type)) {
           finalSourceId = e.targetId; finalTargetId = e.sourceId;
         }
         return { edgeId: e.id, sourceNodeId: finalSourceId, targetNodeId: finalTargetId, connectionType: "DEFAULT" };
@@ -2760,6 +2956,17 @@ const MainPage: React.FC = () => {
 
   const addNode = (type: string, baseName: string, x: number, y: number) => {
     if (myRole === 'VIEWER') return;
+    if (isWebServerType(type)) {
+      const existingWebServer = nodes.find(n => isWebServerType(n.type));
+      if (existingWebServer) {
+        showToast(`${WEB_SERVER_ONLY_ONE_MESSAGE} '${existingWebServer.name}' 노드를 지운 뒤 추가해 주세요.`);
+        return;
+      }
+      if (cloudProvider === 'LOCAL' && LOCAL_UNSUPPORTED_NODE_TYPES.includes(type)) {
+        showToast(CADDY_LOCAL_ONLY_MESSAGE);
+        return;
+      }
+    }
     saveHistory();
     let finalName = baseName; let counter = 1;
     while (nodes.some(n => n.name === finalName)) { finalName = `${baseName}_${counter}`; counter++; }
@@ -2783,6 +2990,11 @@ const MainPage: React.FC = () => {
     } else if (type === 'MongoDB') {
       defaultSettings.imageVersion = 'mongo:8.0';
       defaultSettings.port = '27017';
+    } else if (type === 'Nginx') {
+      defaultSettings.imageVersion = 'nginx:1.27';
+      defaultSettings.port = '80';
+    } else if (type === 'Caddy') {
+      defaultSettings.imageVersion = 'caddy:2';
     }
 
     const newNode: NodeData = { id: `node-${Date.now()}`, type, name: finalName, x, y, settings: defaultSettings };
@@ -2866,12 +3078,27 @@ const MainPage: React.FC = () => {
       }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
         if (clipboard.length > 0) {
-          e.preventDefault(); saveHistory();
+          e.preventDefault();
+
+          let hasWebServer = nodes.some(node => isWebServerType(node.type));
+          let skippedWebServer = false;
+          const pastable = clipboard.filter(n => {
+            if (!isWebServerType(n.type)) return true;
+            if (hasWebServer) { skippedWebServer = true; return false; }
+            hasWebServer = true;
+            return true;
+          });
+          if (pastable.length === 0) {
+            showToast(WEB_SERVER_ONLY_ONE_MESSAGE);
+            return;
+          }
+          if (skippedWebServer) showToast(`${WEB_SERVER_ONLY_ONE_MESSAGE} 웹 서버 노드는 빼고 붙여넣었습니다.`);
+          saveHistory();
 
           const newSelectedIds: string[] = [];
           const newNodes: NodeData[] = [];
 
-          clipboard.forEach((n, idx) => {
+          pastable.forEach((n, idx) => {
             let baseName = n.name;
             if (/\d+$/.test(baseName)) baseName = baseName.replace(/_\d+$/, ''); 
             let finalName = baseName; let counter = 1;
@@ -3102,6 +3329,13 @@ const MainPage: React.FC = () => {
           genProgress={genProgress} targetFileIds={targetFileIds} files={files} projectName={projectName} onBack={() => { setAppMode('editor'); }}
           nodeJsGuide={activeNodes.some(n => n.type === 'Node.js') ? { local: cloudProvider === 'LOCAL' || includeLocal, cloud: cloudProvider !== 'LOCAL' } : null}
           mongoGuide={mongoLinkedAppTypes.length > 0 ? { nodeJs: mongoLinkedAppTypes.includes('Node.js'), cloud: cloudProvider !== 'LOCAL' } : null}
+          webServerGuide={webServerForGuide ? {
+            type: webServerForGuide.type === 'Caddy' ? 'Caddy' : 'Nginx',
+            port: String(webServerForGuide.settings?.port ?? ''),
+            hasDomain: Boolean(String(webServerForGuide.settings?.domain || '').trim()),
+            local: cloudProvider === 'LOCAL' || includeLocal,
+            cloud: cloudProvider !== 'LOCAL'
+          } : null}
           nodes={nodes}
         />
       )}

@@ -358,15 +358,13 @@ export default function LoginPage() {
                     }}
                   />
                   
-                  <InputField
-                    type="password"
+                  <PasswordInput
                     placeholder="새 비밀번호 (8자 이상)"
                     value={newPassword}
                     onChange={(e) => { setNewPassword(e.target.value); setFindError(""); }}
                   />
                   
-                  <InputField
-                    type="password"
+                  <PasswordInput
                     placeholder="새 비밀번호 확인"
                     value={newPasswordConfirm}
                     onChange={(e) => { setNewPasswordConfirm(e.target.value); setFindError(""); }}
@@ -426,8 +424,7 @@ export default function LoginPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
                   />
-                  <InputField
-                    type="password"
+                  <PasswordInput
                     placeholder="비밀번호"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -858,4 +855,87 @@ const ToastNotification = styled.div`
   word-break: break-all;
   text-align: center;
   max-width: 80vw;
+`;
+
+function PasswordInput({ style, disabled, ...inputProps }) {
+  const [isShown, setIsShown] = useState(false);
+  const label = isShown ? "비밀번호 숨기기" : "비밀번호 보기";
+
+  return (
+    <PasswordWrap>
+      <InputField
+        {...inputProps}
+        disabled={disabled}
+        type={isShown ? "text" : "password"}
+        style={{ ...style, paddingRight: 44 }}
+      />
+      <PasswordToggle
+        type="button"
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setIsShown((prev) => !prev)}
+      >
+        {isShown ? <EyeOffIcon /> : <EyeIcon />}
+      </PasswordToggle>
+    </PasswordWrap>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  );
+}
+
+const PasswordWrap = styled.div`
+  position: relative;
+  width: 100%;
+
+  & input::-ms-reveal,
+  & input::-ms-clear {
+    display: none;
+  }
+`;
+
+const PasswordToggle = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #b0b0b0;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover:not(:disabled) {
+    color: #555;
+    background: #f0f0f0;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 `;

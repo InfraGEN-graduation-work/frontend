@@ -12,6 +12,7 @@ interface GenerateProps {
   nodes: NodeData[];
   nodeJsGuide?: { local: boolean; cloud: boolean } | null;
   mongoGuide?: { nodeJs: boolean; cloud: boolean } | null;
+  webServerGuide?: { type: 'Nginx' | 'Caddy'; port: string; hasDomain: boolean; local: boolean; cloud: boolean } | null;
 }
 
 const guideBoxStyle: React.CSSProperties = { marginTop: '28px', width: '100%', maxWidth: '560px', textAlign: 'left', background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px 18px', fontSize: '13px', color: '#4a5568', lineHeight: 1.7, wordBreak: 'keep-all' };
@@ -26,7 +27,7 @@ const formatBytes = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, projectName, onBack, nodes, nodeJsGuide, mongoGuide }) => {
+const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, projectName, onBack, nodes, nodeJsGuide, mongoGuide, webServerGuide }) => {
   const targetNodes = targetFileIds.flatMap(fileId => {
     const file = files.find(f => f.id === fileId);
     return (file?.nodeIds || [])
@@ -176,6 +177,46 @@ const Generate: React.FC<GenerateProps> = ({ genProgress, targetFileIds, files, 
                     <ul style={guideListStyle}>
                       <li>서버의 .env 파일에 MONGO_DATABASE, MONGO_USER, MONGO_PASSWORD 세 값을 꼭 넣어 주세요. 하나라도 없으면 docker compose up이 시작하기 전에 실패합니다.</li>
                       <li>클라우드에는 앱에 연결된 MongoDB만 들어가고, 앱은 mongodb:27017로 접속합니다. 노드에 입력한 포트는 쓰이지 않습니다.</li>
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+            {webServerGuide && (
+              <div className="web-server-guide" style={guideBoxStyle}>
+                <div style={guideTitleStyle}>{webServerGuide.type} 웹 서버 안내</div>
+                {webServerGuide.local && webServerGuide.type === 'Nginx' && (
+                  <>
+                    <div style={guideSubTitleStyle}>내 PC에서 실행할 때</div>
+                    <ul style={guideListStyle}>
+                      <li>앱을 내 PC에서 먼저 실행해 두어야 Nginx가 앱으로 연결해 줄 수 있습니다.</li>
+                      <li>실행한 뒤 브라우저에서 아래 주소로 접속하세요.</li>
+                    </ul>
+                    <code style={guideCodeStyle}>{webServerGuide.port === '80' ? 'http://localhost' : `http://localhost:${webServerGuide.port}`}</code>
+                  </>
+                )}
+                {webServerGuide.local && webServerGuide.type === 'Caddy' && (
+                  <ul style={guideListStyle}>
+                    <li>Caddy는 클라우드용 파일에만 들어가고, 내 PC용 파일에서는 빠집니다.</li>
+                  </ul>
+                )}
+                {webServerGuide.cloud && (
+                  <>
+                    <div style={guideSubTitleStyle}>클라우드에 배포할 때</div>
+                    <ul style={guideListStyle}>
+                      <li>앱 포트는 밖으로 열리지 않고 {webServerGuide.type === 'Caddy' ? '80번과 443번' : `${webServerGuide.port}번`} 포트만 열립니다.</li>
+                      <li>밖에서 접속하려면 Settings의 [App CIDR]에 접속을 허용할 범위를 넣어 주세요. 누구나 접속하게 하려면 0.0.0.0/0을 넣으면 됩니다.</li>
+                      <li>앱에 직접 접속할 수 없어서, 앱이 잘 떠 있는지는 서버에서 docker compose 명령으로 확인해야 합니다.</li>
+                      {webServerGuide.type === 'Caddy' && (webServerGuide.hasDomain ? (
+                        <>
+                          <li>도메인 관리 화면에서 이 도메인이 서버의 공인 IP를 가리키도록 설정해야 HTTPS 인증서가 발급됩니다.</li>
+                          <li>인증서를 보관하는 볼륨을 지우면 인증서를 다시 발급받아야 하고, 자주 지우면 발급 횟수 제한에 걸릴 수 있습니다.</li>
+                        </>
+                      ) : (
+                        <li>도메인 없이 만들어서 HTTP(80번)로만 접속됩니다. HTTPS를 쓰려면 Caddy 노드에 도메인과 볼륨 이름을 넣고 다시 생성해 주세요.</li>
+                      ))}
+                      {webServerGuide.type === 'Caddy' && <li>자세한 내용은 함께 만들어진 CADDY_GUIDE.md를 확인해 주세요.</li>}
+                      <li>클라우드용 파일은 계획용입니다. 서버에 적용하기 전에 CLOUD_DEPLOY_WARNING.md를 먼저 읽어 주세요.</li>
                     </ul>
                   </>
                 )}
