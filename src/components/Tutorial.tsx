@@ -68,14 +68,6 @@ const STEPS: TutorialStepConfig[] = [
   {
     step: '5',
     title: '튜토리얼 5단계',
-    description: 'Settings 버튼을 클릭하세요',
-    targetSelector: '.tabs .tab:nth-child(2)',
-    tooltipPlacement: 'bottom',
-    advanceOn: { selector: '.tabs .tab:nth-child(2)', event: 'click' },
-  },
-  {
-    step: '6',
-    title: '튜토리얼 6단계',
     description: '노드를 설정하세요',
     subText: "설정을 입력한 후 '다음' 버튼을 누르세요",
     targetSelector: '.settings-panel',
@@ -84,24 +76,24 @@ const STEPS: TutorialStepConfig[] = [
     arrowDirection: 'down',
   },
   {
-    step: '7',
-    title: '튜토리얼 7단계',
+    step: '6',
+    title: '튜토리얼 6단계',
     description: 'Project 버튼을 클릭하세요',
     targetSelector: '.tabs .tab:nth-child(1)',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.tabs .tab:nth-child(1)', event: 'click' },
   },
   {
-    step: '8',
-    title: '튜토리얼 8단계',
+    step: '7',
+    title: '튜토리얼 7단계',
     description: '생성할 노드 목록을 확인해주세요',
     subText: '확인하였으면 다음 버튼을 눌러주세요',
     targetSelector: '#field-target-file-box',
     tooltipPlacement: 'left',
   },
   {
-    step: '9',
-    title: '튜토리얼 9단계',
+    step: '8',
+    title: '튜토리얼 8단계',
     description: '노드를 완성하셨으면\nGenerate 버튼을 클릭하세요',
     targetSelector: '.generate-btn',
     tooltipPlacement: 'bottom',
@@ -110,8 +102,8 @@ const STEPS: TutorialStepConfig[] = [
     advanceOn: { selector: '.generate-btn', event: 'click' },
   },
   {
-    step: '10',
-    title: '튜토리얼 10단계',
+    step: '9',
+    title: '튜토리얼 9단계',
     description: '오류가 있어 프로젝트를 생성할 수 없습니다.\n확인 버튼을 클릭하세요',
     targetSelector: '#error-modal-confirm-btn',
     tooltipPlacement: 'left',
@@ -119,8 +111,8 @@ const STEPS: TutorialStepConfig[] = [
     advanceOn: { selector: '#error-modal-confirm-btn', event: 'click' },
   },
   {
-    step: '11',
-    title: '튜토리얼 11단계',
+    step: '10',
+    title: '튜토리얼 10단계',
     description: '오류 항목을 클릭하면\n문제가 있는 위치로 이동합니다',
     subText: '오류 목록에서 항목을 하나 클릭해주세요',
     targetSelector: '.validation-panel',
@@ -128,8 +120,8 @@ const STEPS: TutorialStepConfig[] = [
     advanceOn: { selector: '.error-box', event: 'click' },
   },
   {
-    step: '12',
-    title: '튜토리얼 12단계',
+    step: '11',
+    title: '튜토리얼 11단계',
     description: '표시된 위치에서\n오류를 모두 수정해주세요',
     subText: "수정이 끝나면 '다음' 버튼을 눌러주세요",
     targetSelector: '.right-sidebar',
@@ -139,16 +131,16 @@ const STEPS: TutorialStepConfig[] = [
     // 아직 오류가 남아있으면 경고 문구만 띄우고 진행하지 않는다.
   },
   {
-    step: '13',
-    title: '튜토리얼 13단계',
+    step: '12',
+    title: '튜토리얼 12단계',
     description: '모든 준비가 끝났다면\nGenerate 버튼을 다시 클릭하세요',
     targetSelector: '.generate-btn',
     tooltipPlacement: 'bottom',
     advanceOn: { selector: '.generate-btn', event: 'click' },
   },
   {
-    step: '14',
-    title: '튜토리얼 14단계',
+    step: '13',
+    title: '튜토리얼 13단계',
     description: '생성 버튼을 클릭하세요',
     subText: '프로젝트 생성이 시작됩니다',
     targetSelector: '#generate-confirm-btn',
@@ -157,7 +149,7 @@ const STEPS: TutorialStepConfig[] = [
     advanceOn: { selector: '#generate-confirm-btn', event: 'click' },
   },
   {
-    step: '15',
+    step: '14',
     title: '튜토리얼 완료!',
     description: 'Generate까지 완료했습니다.\n이제 infraGEN을 자유롭게 사용해 보세요.',
     targetSelector: '',
@@ -205,7 +197,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
   const baseStep = STEPS[idx];
   // measure/useEffect 의존성이므로 useMemo로 참조를 고정한다(매 렌더 새 객체면 무한 루프).
   const step = useMemo<TutorialStepConfig>(
-    () => (noErrorFlow && baseStep.step === '10' ? { ...baseStep, ...NO_ERROR_STEP_10 } : baseStep),
+    () => (noErrorFlow && baseStep.step === '9' ? { ...baseStep, ...NO_ERROR_STEP_10 } : baseStep),
     [baseStep, noErrorFlow]
   );
   const isLast = idx === STEPS.length - 1;
@@ -213,7 +205,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
   // 진행 점(dots) 표시 위치.
   // 오류 없음 흐름의 10단계는 11~14단계를 건너뛰고 바로 완료로 가는 마지막 단계이므로
   // 14단계(생성 버튼 클릭)와 같은 마지막 점을 활성화한다.
-  const activeDotIdx = noErrorFlow && baseStep.step === '10' ? TOTAL_VISIBLE - 1 : idx;
+  const activeDotIdx = noErrorFlow && baseStep.step === '9' ? TOTAL_VISIBLE - 1 : idx;
 
   const measure = useCallback(() => {
     if (!step.targetSelector) { setHl(null); return; }
@@ -270,7 +262,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
       return;
     }
 
-    if (currentStep === '12' && hasErrors) {
+    if (currentStep === '11' && hasErrors) {
       if (onJumpToNextError) {
         // 경고를 띄우는 대신, 아직 설정이 안 된 다음 노드의 Settings로 바로 이동한다.
         // 12단계는 그대로 유지되고(advance하지 않음), 모든 오류가 사라지면
@@ -286,10 +278,10 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
 
     // 9단계: 오류 유무를 기록하고 10단계로 이동한다(아래 기본 +1 이동).
     // 오류가 없으면 10단계가 '생성 버튼 클릭' 안내로, 있으면 '오류 확인' 안내로 표시된다.
-    if (currentStep === '9') setNoErrorFlow(!hasErrors);
+    if (currentStep === '8') setNoErrorFlow(!hasErrors);
 
     // 10단계(오류 없음 흐름): 생성 버튼을 눌렀으므로 11~14단계를 건너뛰고 완료 화면으로 이동한다.
-    if (currentStep === '10' && noErrorFlow) {
+    if (currentStep === '9' && noErrorFlow) {
       const finaleIdx = STEPS.findIndex(s => s.isFinale);
       if (finaleIdx !== -1) {
         setVisible(false);
@@ -300,8 +292,8 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
 
     // 13단계(오류 흐름): Generate 재클릭 시 오류가 남아 있으면 다시 10단계(오류 확인),
     // 없으면 14단계(생성 확인)로 이동한다.
-    if (currentStep === '13') {
-      const targetStepId = hasErrors ? '10' : '14';
+    if (currentStep === '12') {
+      const targetStepId = hasErrors ? '9' : '13';
       const targetIdx = STEPS.findIndex(s => s.step === targetStepId);
       if (targetIdx !== -1) {
         setVisible(false);
@@ -386,6 +378,13 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
   }, [idx, measure]);
 
   useEffect(() => {
+    if (step.targetSelector !== '.settings-panel' || document.querySelector('.settings-panel')) return;
+    document.querySelector<HTMLElement>('.tabs .tab:nth-child(2)')?.click();
+    const t = setTimeout(measure, 120);
+    return () => clearTimeout(t);
+  }, [idx, step.targetSelector, measure]);
+
+  useEffect(() => {
     setVisible(false); setHl(null); setCanvasCenter(null); setDropTargetVisible(true); setShowNodeWarning(false);
     measure();
     window.addEventListener('resize', measure);
@@ -398,7 +397,7 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
     const { top, left, width, height } = hl;
     switch (step.tooltipPlacement) {
       case 'right':        return { top, left: left + width + TOOLTIP_GAP };
-      case 'left':         return { top: top + (step.step === '12' ? 260 : 0), right: window.innerWidth - left + TOOLTIP_GAP };
+      case 'left':         return { top: top + (step.step === '11' ? 260 : 0), right: window.innerWidth - left + TOOLTIP_GAP };
       case 'bottom':       return { top: top + height + TOOLTIP_GAP, left };
       case 'top':          return { bottom: window.innerHeight - top + TOOLTIP_GAP, left };
       case 'bottom-center':return { top: top + height + TOOLTIP_GAP, left: left + width / 2, transform: 'translateX(-50%)' };
@@ -505,8 +504,8 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
               <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={handleSkip}>
                 건너뛰기
               </button>
-              {step.step !== '5' && step.step !== '7' && step.step !== '9' &&
-               step.step !== '10' && step.step !== '11' && step.step !== '13' && step.step !== '14' && (
+              {step.step !== '6' && step.step !== '8' && step.step !== '9' &&
+               step.step !== '10' && step.step !== '12' && step.step !== '13' && (
                 <button type="button" className="tutorial-next-btn tutorial-next-inline" onClick={goNext}>
                   {isLast ? '완료' : '다음'}
                 </button>

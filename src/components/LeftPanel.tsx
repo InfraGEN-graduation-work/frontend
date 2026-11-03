@@ -67,8 +67,9 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
   }, [resetTrigger]);
 
   const nodeTemplates: Record<string, string[]> = {
-    Server: ['Spring Boot', 'Node.js', 'Nginx', 'Caddy'],
-    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis']
+    Application: ['Spring Boot', 'Node.js'],
+    Database: ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'],
+    'Web Server': ['Nginx', 'Caddy']
   };
 
   const getNodeCount = (type: string) => nodes.filter(node => node.type === type).length;

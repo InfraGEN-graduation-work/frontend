@@ -13,6 +13,13 @@ import caddyIcon from '../assets/caddy.png';
 const DEPENDENCY_NODE_TYPES = ['MySQL', 'PostgreSQL', 'MongoDB', 'Redis'];
 const APP_NODE_TYPES = ['Spring Boot', 'Node.js'];
 const WEB_SERVER_NODE_TYPES = ['Nginx', 'Caddy'];
+const nodeKindOf = (type: string) =>
+  APP_NODE_TYPES.includes(type) ? 'app' : DEPENDENCY_NODE_TYPES.includes(type) ? 'db' : WEB_SERVER_NODE_TYPES.includes(type) ? 'web' : null;
+const SAME_KIND_MESSAGES: Record<string, string> = {
+  db: 'Database 노드끼리는 연결할 수 없습니다. Database는 애플리케이션(Spring Boot·Node.js)에 연결해 주세요.',
+  app: '애플리케이션 노드끼리는 연결할 수 없습니다. 애플리케이션은 Database나 웹 서버(Nginx·Caddy)와 연결해 주세요.',
+  web: '웹 서버 노드끼리는 연결할 수 없습니다. 웹 서버는 애플리케이션(Spring Boot·Node.js)에 연결해 주세요.'
+};
 const SYNCING_MESSAGE = '다른 사람의 편집 내용과 맞추는 중입니다. 잠시 후 다시 시도해 주세요.';
 
 export interface DraggedNodePosition {
@@ -217,6 +224,8 @@ const Canvas: React.FC<CanvasProps> = ({
     if (unassignedNodeIds.includes(a.id) || unassignedNodeIds.includes(b.id)) {
       return '낱개로 배치된 노드는 생성에 포함되지 않아 연결할 수 없습니다. 먼저 [생성할 노드 목록]으로 옮겨 주세요.';
     }
+    const kind = nodeKindOf(a.type);
+    if (kind && kind === nodeKindOf(b.type)) return SAME_KIND_MESSAGES[kind];
     const web = WEB_SERVER_NODE_TYPES.includes(a.type) ? a : WEB_SERVER_NODE_TYPES.includes(b.type) ? b : null;
     if (web) {
       const other = web === a ? b : a;
@@ -247,8 +256,10 @@ const Canvas: React.FC<CanvasProps> = ({
   };
 
   const orientEdge = (fromId: string, toId: string) => {
-    const from = nodes.find(n => n.id === fromId);
-    return from && WEB_SERVER_NODE_TYPES.includes(from.type)
+    const fromKind = nodeKindOf(nodes.find(n => n.id === fromId)?.type || '');
+    const toKind = nodeKindOf(nodes.find(n => n.id === toId)?.type || '');
+    const isReversed = (fromKind === 'app' && toKind === 'db') || (fromKind === 'web' && toKind === 'app');
+    return isReversed
       ? { sourceId: toId, targetId: fromId }
       : { sourceId: fromId, targetId: toId };
   };

@@ -2219,6 +2219,17 @@ const MainPage: React.FC = () => {
       const isDbToApp = isDependencyType(sNode.type) && isAppType(tNode.type);
       const isAppToWeb = isAppType(sNode.type) && isWebServerType(tNode.type);
       if (isDbToApp || isAppToWeb) return;
+      const kindLabel = (type: string) => isAppType(type) ? '애플리케이션' : isDependencyType(type) ? 'Database' : isWebServerType(type) ? '웹 서버' : null;
+      const sourceKind = kindLabel(sNode.type);
+      if (sourceKind && sourceKind === kindLabel(tNode.type)) {
+        validationErrors.push({
+          name: '같은 종류 노드 연결',
+          desc: `'${sNode.name}' 노드와 '${tNode.name}' 노드는 둘 다 ${sourceKind} 노드라서 연결할 수 없습니다. 연결선을 지워 주세요.`,
+          targetNodeId: sNode.id,
+          edgeId: edge.id
+        });
+        return;
+      }
       const webNode = isWebServerType(sNode.type) ? sNode : isWebServerType(tNode.type) ? tNode : null;
       const otherNode = webNode === sNode ? tNode : sNode;
       if (webNode && !isAppType(otherNode.type)) {
