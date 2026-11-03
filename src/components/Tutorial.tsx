@@ -497,8 +497,8 @@ const Tutorial: React.FC<Props> = ({ onFinish, onSkip, nodes = [], selectedNodeI
             </div>
             <div className="tutorial-tooltip-actions">
               {idx > 0 && (
-                <button type="button" className="tutorial-back-btn" onClick={goBack} title="이전 단계" aria-label="이전 단계">
-                  ←
+                <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={goBack}>
+                  이전
                 </button>
               )}
               <button type="button" className="tutorial-skip-btn tutorial-skip-inline" onClick={handleSkip}>
