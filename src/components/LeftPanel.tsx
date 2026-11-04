@@ -9,6 +9,37 @@ import mongodbIcon from '../assets/mongodb.png';
 import nginxIcon from '../assets/nginx.png';
 import caddyIcon from '../assets/caddy.png';
 
+const CATEGORY_ICON_PATHS: Record<string, React.ReactNode> = {
+  Application: (
+    <>
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
+    </>
+  ),
+  Database: (
+    <>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+      <path d="M3 12a9 3 0 0 0 18 0" />
+    </>
+  ),
+  'Web Server': (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </>
+  )
+};
+
+const CategoryIcon: React.FC<{ category: string }> = ({ category }) => (
+  <span style={{ width: '26px', height: '26px', borderRadius: '7px', background: '#eef2fb', color: '#2d3748', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginRight: '10px' }}>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {CATEGORY_ICON_PATHS[category] ?? <circle cx="12" cy="12" r="4" />}
+    </svg>
+  </span>
+);
+
 const CLOUD_ONLY_NODE_TYPES = ['Caddy'];
 const CLOUD_ONLY_MESSAGE = 'Caddy는 클라우드 배포(AWS·OCI)에서만 쓸 수 있습니다. 왼쪽 위 배포 환경을 AWS나 OCI로 바꾼 뒤 추가해 주세요.';
 
@@ -300,7 +331,7 @@ const LeftPanel: React.FC<LeftPanelProps> = ({
               return (
                 <div key={cat} className="category-item" onClick={() => { setActiveCategory(cat); onSelectCategory(cat); setSearchTerm(''); }}>
                   <div className="item-info">
-                    <span className="box-icon" style={{ flexShrink: 0 }}>●</span>
+                    <CategoryIcon category={cat} />
                     <span className="item-name">{cat}</span>
                   </div>
                   {count > 0 && <span className="badge">{count}</span>}
