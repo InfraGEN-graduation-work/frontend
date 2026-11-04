@@ -61,18 +61,18 @@ const CLOUD_HINTS: Record<'AWS' | 'OCI', Record<string, string>> = {
     region: '서버를 둘 지역입니다. 바꾸면 AMI ID도 그 지역 것으로 바꿔야 합니다.',
     securityGroupName: `서버 접속을 막고 여는 규칙 묶음의 이름입니다. ${CLOUD_NAME_RULE}`,
     instanceType: '서버의 성능입니다. 비우면 t3.micro로 만들어집니다.',
-    amiId: '서버에 깔릴 운영체제입니다. 목록에 있는 값은 서울 지역용입니다.'
+    amiId: '서버에 깔릴 운영체제입니다. 목록에 있는 값은 서울 지역용입니다.\n찾는 법: AWS EC2 화면에서 지역을 고른 뒤 [인스턴스 시작]에서 운영체제를 고르면 ami-로 시작하는 ID가 보입니다.'
   },
   OCI: {
     ...CLOUD_COMMON_HINTS,
     region: '서버를 둘 지역입니다. 바꾸면 Image ID도 그 지역 것으로 바꿔야 합니다.',
-    compartmentId: 'OCI 화면의 구획 목록에서 복사한 ID를 넣으세요. (ocid1.로 시작)',
+    compartmentId: '자원을 나눠 담는 구획(폴더)의 ID입니다. 만들어질 서버와 전용 공간이 이 구획 안에 생깁니다. (ocid1.로 시작)\n찾는 법: OCI 화면 왼쪽 위 메뉴 → [Identity & Security] → [Compartments]에서 ID를 눌러 [Copy]. 맨 위 기본 구획은 오른쪽 위 프로필 → [Tenancy]에서 복사합니다.',
     securityGroupName: `서버 접속을 막고 여는 규칙 목록의 이름입니다. ${CLOUD_NAME_RULE}`,
     hostnameLabel: '서버를 부르는 짧은 이름입니다. 영문 소문자와 숫자로 써 주세요.',
     availabilityDomain: '서버가 놓일 데이터센터입니다. 서울·춘천은 1을 고르세요.',
     instanceType: '서버의 성능입니다. 비우면 VM.Standard.E2.1.Micro로 만들어집니다.',
-    amiId: '이미지 목록에서 복사한 ID를 넣으세요. (ocid1.image로 시작, 지역마다 다름)',
-    sshAuthorizedKeys: '내 PC의 .pub 파일 내용을 넣으세요. 비밀 키는 절대 넣지 마세요.'
+    amiId: '만들어질 서버에 설치될 운영체제의 ID입니다. (ocid1.image로 시작, 지역마다 다름)\n찾는 법: docs.oracle.com/iaas/images 에서 운영체제를 고른 뒤, [Image OCIDs] 표에서 내 지역 줄의 값을 복사하세요.',
+    sshAuthorizedKeys: '서버에 관리하러 들어갈 때 쓰는 열쇠 중 공개 키(.pub)입니다. 생성되는 클라우드 설정 파일에 들어가, 서버가 만들어지면 짝이 되는 비밀 키(id_rsa)로 접속하게 됩니다. 비밀 키는 절대 넣지 마세요.\n만드는 법: 터미널(윈도우는 PowerShell)에서 ssh-keygen -t rsa -b 2048 을 실행하고 엔터를 계속 누르세요. 그다음 cat ~/.ssh/id_rsa.pub 를 실행해 나온 한 줄(ssh-rsa로 시작)을 그대로 붙여 넣으면 됩니다.'
   }
 };
 
@@ -401,7 +401,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '8px', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '12px', color: '#2d3748', outline: 'none' };
   const hintStyle = { marginTop: '6px', fontSize: '11px', color: '#718096', lineHeight: 1.5, wordBreak: 'keep-all' as const };
-  const cloudHint = (key: string) => <span style={hintStyle}>{CLOUD_HINTS[cloudProvider === 'AWS' ? 'AWS' : 'OCI'][key]}</span>;
+  const cloudHint = (key: string) => <span style={{ ...hintStyle, whiteSpace: 'pre-line' }}>{CLOUD_HINTS[cloudProvider === 'AWS' ? 'AWS' : 'OCI'][key]}</span>;
 
   const renderComboInput = (key: keyof CloudSettings, options: {label: string, value: string}[], placeholder: string = '') => {
     const isOpen = openDropdownKey === key;
