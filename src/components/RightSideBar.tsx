@@ -43,43 +43,36 @@ const PasswordInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ 
   );
 };
 
-const CLOUD_NAME_RULE = '영문, 숫자, 하이픈(-), 언더스코어(_)만 쓸 수 있습니다.';
-const CLOUD_ACCESS_HINTS = {
-  adminCidr: '서버를 관리하러 접속할 수 있는 곳을 정합니다. 내 PC에서만 들어가려면 내 PC의 인터넷 주소 뒤에 /32를 붙여 넣으세요. (예: 203.0.113.5/32) 0.0.0.0/0을 넣으면 아무나 접속을 시도할 수 있으니 조심하세요.',
-  appCidr: '서비스에 접속할 수 있는 곳을 정합니다. 누구나 쓰게 하려면 0.0.0.0/0을 넣으세요. 웹 서버(Nginx·Caddy)가 있으면 웹 서버 포트만, 없으면 애플리케이션 포트만 열립니다.'
+const CLOUD_NAME_RULE = '영문, 숫자, 하이픈(-), 언더스코어(_)만 사용할 수 있습니다.';
+const CLOUD_COMMON_HINTS: Record<string, string> = {
+  vpcName: `내 서버만 쓰는 전용 공간의 이름입니다. ${CLOUD_NAME_RULE}`,
+  vpcCidr: '전용 공간의 주소 범위입니다. 비우면 10.0.0.0/16으로 만들어집니다.',
+  subnetName: `서버가 놓일 작은 구역의 이름입니다. ${CLOUD_NAME_RULE}`,
+  subnetCidr: '작은 구역의 주소 범위입니다. 비우면 10.0.1.0/24로 만들어집니다.',
+  internetGatewayName: `전용 공간과 인터넷을 잇는 출입구 이름입니다. ${CLOUD_NAME_RULE}`,
+  routeTableName: `서버가 오가는 길을 적은 표의 이름입니다. ${CLOUD_NAME_RULE}`,
+  instanceName: `만들어질 서버의 이름입니다. ${CLOUD_NAME_RULE}`,
+  adminCidr: '서버 관리 접속을 허용할 곳입니다. 내 PC만 허용하려면 내 PC 주소 뒤에 /32를 붙이세요.',
+  appCidr: '서비스 접속을 허용할 곳입니다. 누구나 쓰게 하려면 0.0.0.0/0을 넣으세요.'
 };
 const CLOUD_HINTS: Record<'AWS' | 'OCI', Record<string, string>> = {
   AWS: {
-    region: '서버를 둘 지역입니다. 국내에서 쓴다면 서울을 고르세요. 지역을 바꾸면 AMI ID도 그 지역 것으로 바꿔야 합니다.',
-    vpcName: `내 서버만 쓰는 전용 공간의 이름입니다. ${CLOUD_NAME_RULE}`,
-    vpcCidr: '전용 공간에서 쓸 주소 범위입니다. 잘 모르면 비워 두세요. 비우면 10.0.0.0/16으로 만들어집니다.',
-    subnetName: `전용 공간을 나눈 작은 구역의 이름입니다. 서버는 이 구역 안에 놓입니다. ${CLOUD_NAME_RULE}`,
-    subnetCidr: '작은 구역에서 쓸 주소 범위로, 전용 공간의 범위 안에 있어야 합니다. 잘 모르면 비워 두세요. 비우면 10.0.1.0/24로 만들어집니다.',
-    internetGatewayName: `전용 공간을 인터넷과 이어 주는 출입구의 이름입니다. ${CLOUD_NAME_RULE}`,
-    routeTableName: `서버가 밖으로 오가는 길을 적어 둔 표의 이름입니다. ${CLOUD_NAME_RULE}`,
-    securityGroupName: `서버에 들어올 수 있는 접속을 정하는 규칙 묶음의 이름입니다. 실제로 열리는 범위는 아래 Admin CIDR와 App CIDR로 정해집니다. ${CLOUD_NAME_RULE}`,
-    instanceName: `만들어질 서버의 이름입니다. ${CLOUD_NAME_RULE}`,
-    instanceType: '서버의 성능입니다. 성능이 높을수록 요금이 많이 나옵니다. 비우면 t3.micro로 만들어집니다.',
-    amiId: '서버에 처음 깔릴 운영체제입니다. 목록에 있는 값은 서울 지역용이라, 다른 지역을 골랐다면 AWS 화면에서 그 지역의 AMI ID(ami-로 시작)를 복사해 넣어 주세요.',
-    ...CLOUD_ACCESS_HINTS
+    ...CLOUD_COMMON_HINTS,
+    region: '서버를 둘 지역입니다. 바꾸면 AMI ID도 그 지역 것으로 바꿔야 합니다.',
+    securityGroupName: `서버 접속을 막고 여는 규칙 묶음의 이름입니다. ${CLOUD_NAME_RULE}`,
+    instanceType: '서버의 성능입니다. 비우면 t3.micro로 만들어집니다.',
+    amiId: '서버에 깔릴 운영체제입니다. 목록에 있는 값은 서울 지역용입니다.'
   },
   OCI: {
-    region: '서버를 둘 지역입니다. 국내에서 쓴다면 서울이나 춘천을 고르세요. 지역을 바꾸면 Image ID도 그 지역 것으로 바꿔야 합니다.',
-    compartmentId: 'OCI 안에서 자원을 나눠 담는 폴더(구획)의 ID입니다. OCI 화면의 구획 목록에서 복사해 넣어 주세요. 보통 ocid1.compartment로 시작하고, 맨 위 기본 구획을 쓰면 ocid1.tenancy로 시작합니다.',
-    vpcName: `내 서버만 쓰는 전용 공간의 이름입니다. ${CLOUD_NAME_RULE}`,
-    vpcCidr: '전용 공간에서 쓸 주소 범위입니다. 잘 모르면 비워 두세요. 비우면 10.0.0.0/16으로 만들어집니다.',
-    subnetName: `전용 공간을 나눈 작은 구역의 이름입니다. 서버는 이 구역 안에 놓입니다. ${CLOUD_NAME_RULE}`,
-    subnetCidr: '작은 구역에서 쓸 주소 범위로, 전용 공간의 범위 안에 있어야 합니다. 잘 모르면 비워 두세요. 비우면 10.0.1.0/24로 만들어집니다.',
-    internetGatewayName: `전용 공간을 인터넷과 이어 주는 출입구의 이름입니다. ${CLOUD_NAME_RULE}`,
-    routeTableName: `서버가 밖으로 오가는 길을 적어 둔 표의 이름입니다. ${CLOUD_NAME_RULE}`,
-    securityGroupName: `서버에 들어올 수 있는 접속을 정하는 규칙 목록의 이름입니다. 실제로 열리는 범위는 아래 Admin CIDR와 App CIDR로 정해집니다. ${CLOUD_NAME_RULE}`,
-    instanceName: `만들어질 서버의 이름입니다. ${CLOUD_NAME_RULE}`,
-    hostnameLabel: '전용 공간 안에서 서버를 부르는 짧은 이름입니다. 영문 소문자로 시작하고, 영문 소문자와 숫자로 짧게 써 주세요. (예: myhost)',
-    availabilityDomain: '서버가 놓일 데이터센터입니다. 서울·춘천처럼 데이터센터가 하나뿐인 지역은 가용성 도메인 1을 고르세요.',
-    instanceType: '서버의 성능입니다. 성능이 높을수록 요금이 많이 나옵니다. 비우면 VM.Standard.E2.1.Micro로 만들어집니다.',
-    amiId: '서버에 처음 깔릴 운영체제의 ID입니다. OCI 화면의 이미지 목록에서 복사해 넣어 주세요. ocid1.image로 시작하고, 지역마다 값이 다릅니다. Shape를 Ampere ARM으로 골랐다면 ARM용 이미지를 넣어야 합니다.',
-    ...CLOUD_ACCESS_HINTS,
-    sshAuthorizedKeys: '서버에 관리하러 들어갈 때 쓰는 열쇠 중 남에게 보여 줘도 되는 쪽(공개 키)입니다. 내 PC에서 만든 .pub 파일의 내용을 그대로 붙여 넣으세요. ssh-rsa나 ssh-ed25519로 시작합니다. .pub가 붙지 않은 비밀 키 파일은 절대 넣지 마세요.'
+    ...CLOUD_COMMON_HINTS,
+    region: '서버를 둘 지역입니다. 바꾸면 Image ID도 그 지역 것으로 바꿔야 합니다.',
+    compartmentId: 'OCI 화면의 구획 목록에서 복사한 ID를 넣으세요. (ocid1.로 시작)',
+    securityGroupName: `서버 접속을 막고 여는 규칙 목록의 이름입니다. ${CLOUD_NAME_RULE}`,
+    hostnameLabel: '서버를 부르는 짧은 이름입니다. 영문 소문자와 숫자로 써 주세요.',
+    availabilityDomain: '서버가 놓일 데이터센터입니다. 서울·춘천은 1을 고르세요.',
+    instanceType: '서버의 성능입니다. 비우면 VM.Standard.E2.1.Micro로 만들어집니다.',
+    amiId: '이미지 목록에서 복사한 ID를 넣으세요. (ocid1.image로 시작, 지역마다 다름)',
+    sshAuthorizedKeys: '내 PC의 .pub 파일 내용을 넣으세요. 비밀 키는 절대 넣지 마세요.'
   }
 };
 
@@ -771,7 +764,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         생성 안함
                       </label>
                     </div>
-                    <span style={hintStyle}>생성함을 고르면 내 PC에서 개발할 때 쓸 파일(local 폴더)도 함께 만들어집니다. Caddy는 클라우드 전용이라 이 파일에는 들어가지 않습니다.</span>
+                    <span style={hintStyle}>생성함을 고르면 내 PC용 파일(local 폴더)도 함께 만들어집니다.</span>
                   </div>
                 </div>
 
