@@ -43,6 +43,46 @@ const PasswordInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ 
   );
 };
 
+const CLOUD_NAME_RULE = '영문, 숫자, 하이픈(-), 언더스코어(_)만 쓸 수 있습니다.';
+const CLOUD_ACCESS_HINTS = {
+  adminCidr: '서버를 관리하러 접속할 수 있는 곳을 정합니다. 내 PC에서만 들어가려면 내 PC의 인터넷 주소 뒤에 /32를 붙여 넣으세요. (예: 203.0.113.5/32) 0.0.0.0/0을 넣으면 아무나 접속을 시도할 수 있으니 조심하세요.',
+  appCidr: '서비스에 접속할 수 있는 곳을 정합니다. 누구나 쓰게 하려면 0.0.0.0/0을 넣으세요. 웹 서버(Nginx·Caddy)가 있으면 웹 서버 포트만, 없으면 애플리케이션 포트만 열립니다.'
+};
+const CLOUD_HINTS: Record<'AWS' | 'OCI', Record<string, string>> = {
+  AWS: {
+    region: '서버를 둘 지역입니다. 국내에서 쓴다면 서울을 고르세요. 지역을 바꾸면 AMI ID도 그 지역 것으로 바꿔야 합니다.',
+    vpcName: `내 서버만 쓰는 전용 공간의 이름입니다. ${CLOUD_NAME_RULE}`,
+    vpcCidr: '전용 공간에서 쓸 주소 범위입니다. 잘 모르면 비워 두세요. 비우면 10.0.0.0/16으로 만들어집니다.',
+    subnetName: `전용 공간을 나눈 작은 구역의 이름입니다. 서버는 이 구역 안에 놓입니다. ${CLOUD_NAME_RULE}`,
+    subnetCidr: '작은 구역에서 쓸 주소 범위로, 전용 공간의 범위 안에 있어야 합니다. 잘 모르면 비워 두세요. 비우면 10.0.1.0/24로 만들어집니다.',
+    internetGatewayName: `전용 공간을 인터넷과 이어 주는 출입구의 이름입니다. ${CLOUD_NAME_RULE}`,
+    routeTableName: `서버가 밖으로 오가는 길을 적어 둔 표의 이름입니다. ${CLOUD_NAME_RULE}`,
+    securityGroupName: `서버에 들어올 수 있는 접속을 정하는 규칙 묶음의 이름입니다. 실제로 열리는 범위는 아래 Admin CIDR와 App CIDR로 정해집니다. ${CLOUD_NAME_RULE}`,
+    instanceName: `만들어질 서버의 이름입니다. ${CLOUD_NAME_RULE}`,
+    instanceType: '서버의 성능입니다. 성능이 높을수록 요금이 많이 나옵니다. 비우면 t3.micro로 만들어집니다.',
+    amiId: '서버에 처음 깔릴 운영체제입니다. 목록에 있는 값은 서울 지역용이라, 다른 지역을 골랐다면 AWS 화면에서 그 지역의 AMI ID(ami-로 시작)를 복사해 넣어 주세요.',
+    ...CLOUD_ACCESS_HINTS
+  },
+  OCI: {
+    region: '서버를 둘 지역입니다. 국내에서 쓴다면 서울이나 춘천을 고르세요. 지역을 바꾸면 Image ID도 그 지역 것으로 바꿔야 합니다.',
+    compartmentId: 'OCI 안에서 자원을 나눠 담는 폴더(구획)의 ID입니다. OCI 화면의 구획 목록에서 복사해 넣어 주세요. 보통 ocid1.compartment로 시작하고, 맨 위 기본 구획을 쓰면 ocid1.tenancy로 시작합니다.',
+    vpcName: `내 서버만 쓰는 전용 공간의 이름입니다. ${CLOUD_NAME_RULE}`,
+    vpcCidr: '전용 공간에서 쓸 주소 범위입니다. 잘 모르면 비워 두세요. 비우면 10.0.0.0/16으로 만들어집니다.',
+    subnetName: `전용 공간을 나눈 작은 구역의 이름입니다. 서버는 이 구역 안에 놓입니다. ${CLOUD_NAME_RULE}`,
+    subnetCidr: '작은 구역에서 쓸 주소 범위로, 전용 공간의 범위 안에 있어야 합니다. 잘 모르면 비워 두세요. 비우면 10.0.1.0/24로 만들어집니다.',
+    internetGatewayName: `전용 공간을 인터넷과 이어 주는 출입구의 이름입니다. ${CLOUD_NAME_RULE}`,
+    routeTableName: `서버가 밖으로 오가는 길을 적어 둔 표의 이름입니다. ${CLOUD_NAME_RULE}`,
+    securityGroupName: `서버에 들어올 수 있는 접속을 정하는 규칙 목록의 이름입니다. 실제로 열리는 범위는 아래 Admin CIDR와 App CIDR로 정해집니다. ${CLOUD_NAME_RULE}`,
+    instanceName: `만들어질 서버의 이름입니다. ${CLOUD_NAME_RULE}`,
+    hostnameLabel: '전용 공간 안에서 서버를 부르는 짧은 이름입니다. 영문 소문자로 시작하고, 영문 소문자와 숫자로 짧게 써 주세요. (예: myhost)',
+    availabilityDomain: '서버가 놓일 데이터센터입니다. 서울·춘천처럼 데이터센터가 하나뿐인 지역은 가용성 도메인 1을 고르세요.',
+    instanceType: '서버의 성능입니다. 성능이 높을수록 요금이 많이 나옵니다. 비우면 VM.Standard.E2.1.Micro로 만들어집니다.',
+    amiId: '서버에 처음 깔릴 운영체제의 ID입니다. OCI 화면의 이미지 목록에서 복사해 넣어 주세요. ocid1.image로 시작하고, 지역마다 값이 다릅니다. Shape를 Ampere ARM으로 골랐다면 ARM용 이미지를 넣어야 합니다.',
+    ...CLOUD_ACCESS_HINTS,
+    sshAuthorizedKeys: '서버에 관리하러 들어갈 때 쓰는 열쇠 중 남에게 보여 줘도 되는 쪽(공개 키)입니다. 내 PC에서 만든 .pub 파일의 내용을 그대로 붙여 넣으세요. ssh-rsa나 ssh-ed25519로 시작합니다. .pub가 붙지 않은 비밀 키 파일은 절대 넣지 마세요.'
+  }
+};
+
 interface RightSideBarProps {
   projectName: string;
   nodes: NodeData[];
@@ -368,6 +408,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
 
   const inputStyle = { width: '100%', boxSizing: 'border-box' as const, padding: '8px', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '12px', color: '#2d3748', outline: 'none' };
   const hintStyle = { marginTop: '6px', fontSize: '11px', color: '#718096', lineHeight: 1.5, wordBreak: 'keep-all' as const };
+  const cloudHint = (key: string) => <span style={hintStyle}>{CLOUD_HINTS[cloudProvider === 'AWS' ? 'AWS' : 'OCI'][key]}</span>;
 
   const renderComboInput = (key: keyof CloudSettings, options: {label: string, value: string}[], placeholder: string = '') => {
     const isOpen = openDropdownKey === key;
@@ -730,6 +771,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                         생성 안함
                       </label>
                     </div>
+                    <span style={hintStyle}>생성함을 고르면 내 PC에서 개발할 때 쓸 파일(local 폴더)도 함께 만들어집니다. Caddy는 클라우드 전용이라 이 파일에는 들어가지 않습니다.</span>
                   </div>
                 </div>
 
@@ -746,54 +788,67 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       <div className="setting-row">
                         <label>Region <span style={{color:'red'}}>*</span></label>
                         {renderComboInput('region', awsRegions, 'ap-northeast-2')}
+                        {cloudHint('region')}
                       </div>
                       <div className="setting-row">
                         <label>VPC Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-vpcName" type="text" className={`custom-input ${highlightedFields.includes('vpcName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcName} placeholder="my-vpc" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                        {cloudHint('vpcName')}
                       </div>
                       <div className="setting-row">
                         <label>VPC CIDR</label>
                         <input id="field-vpcCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                        {cloudHint('vpcCidr')}
                       </div>
                       <div className="setting-row">
                         <label>Subnet Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-subnetName" type="text" className={`custom-input ${highlightedFields.includes('subnetName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                        {cloudHint('subnetName')}
                       </div>
                       <div className="setting-row">
                         <label>Subnet CIDR</label>
                         <input id="field-subnetCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                        {cloudHint('subnetCidr')}
                       </div>
                       <div className="setting-row">
                         <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedFields.includes('internetGatewayName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                        {cloudHint('internetGatewayName')}
                       </div>
                       <div className="setting-row">
                         <label>Route Table Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-routeTableName" type="text" className={`custom-input ${highlightedFields.includes('routeTableName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                        {cloudHint('routeTableName')}
                       </div>
                       <div className="setting-row">
                         <label>Security Group Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedFields.includes('securityGroupName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sg" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                        {cloudHint('securityGroupName')}
                       </div>
                       <div className="setting-row">
                         <label>Instance Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-instanceName" type="text" className={`custom-input ${highlightedFields.includes('instanceName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                        {cloudHint('instanceName')}
                       </div>
                       <div className="setting-row">
                         <label>Instance Type</label>
                         {renderComboInput('instanceType', awsInstanceTypes, 't3.micro')}
+                        {cloudHint('instanceType')}
                       </div>
                       <div className="setting-row">
                         <label>AMI ID <span style={{color:'red'}}>*</span></label>
                         {renderComboInput('amiId', awsAmis, 'ami-084e92d3e117f7692')}
+                        {cloudHint('amiId')}
                       </div>
                       <div className="setting-row">
                         <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
                         <input id="field-adminCidr" type="text" className={`custom-input ${highlightedFields.includes('adminCidr') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                        {cloudHint('adminCidr')}
                       </div>
                       <div className="setting-row">
                         <label>App CIDR <span style={{color:'red'}}>*</span></label>
                         <input id="field-appCidr" type="text" className={`custom-input ${highlightedFields.includes('appCidr') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                        {cloudHint('appCidr')}
                       </div>
                     </>
                   ) : (
@@ -801,70 +856,87 @@ const RightSideBar: React.FC<RightSideBarProps> = ({
                       <div className="setting-row">
                         <label>Region <span style={{color:'red'}}>*</span></label>
                         {renderComboInput('region', ociRegions, 'ap-seoul-1')}
+                        {cloudHint('region')}
                       </div>
                       <div className="setting-row">
                         <label>Compartment ID <span style={{color:'red'}}>*</span></label>
                         <input id="field-compartmentId" type="text" className={`custom-input ${highlightedFields.includes('compartmentId') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.compartmentId || ''} placeholder="ocid1.compartment..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('compartmentId', e.target.value)} />
+                        {cloudHint('compartmentId')}
                       </div>
                       <div className="setting-row">
                         <label>VCN Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-vpcName" type="text" className={`custom-input ${highlightedFields.includes('vpcName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcName} placeholder="my-vcn" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcName', e.target.value)} />
+                        {cloudHint('vpcName')}
                       </div>
                       <div className="setting-row">
                         <label>VCN CIDR</label>
                         <input id="field-vpcCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.vpcCidr} placeholder="10.0.0.0/16" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('vpcCidr', e.target.value)} />
+                        {cloudHint('vpcCidr')}
                       </div>
                       <div className="setting-row">
                         <label>Subnet Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-subnetName" type="text" className={`custom-input ${highlightedFields.includes('subnetName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetName} placeholder="my-subnet" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetName', e.target.value)} />
+                        {cloudHint('subnetName')}
                       </div>
                       <div className="setting-row">
                         <label>Subnet CIDR</label>
                         <input id="field-subnetCidr" type="text" className={`custom-input ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.subnetCidr} placeholder="10.0.1.0/24" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('subnetCidr', e.target.value)} />
+                        {cloudHint('subnetCidr')}
                       </div>
                       <div className="setting-row">
                         <label>Internet Gateway Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-internetGatewayName" type="text" className={`custom-input ${highlightedFields.includes('internetGatewayName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.internetGatewayName} placeholder="my-igw" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('internetGatewayName', e.target.value)} />
+                        {cloudHint('internetGatewayName')}
                       </div>
                       <div className="setting-row">
                         <label>Route Table Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-routeTableName" type="text" className={`custom-input ${highlightedFields.includes('routeTableName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.routeTableName} placeholder="my-rt" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('routeTableName', e.target.value)} />
+                        {cloudHint('routeTableName')}
                       </div>
                       <div className="setting-row">
                         <label>Security List Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-securityGroupName" type="text" className={`custom-input ${highlightedFields.includes('securityGroupName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.securityGroupName} placeholder="my-sl" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('securityGroupName', e.target.value)} />
+                        {cloudHint('securityGroupName')}
                       </div>
                       <div className="setting-row">
                         <label>Instance Name <span style={{color:'red'}}>*</span></label>
                         <input id="field-instanceName" type="text" className={`custom-input ${highlightedFields.includes('instanceName') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.instanceName} placeholder="my-instance" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('instanceName', e.target.value)} />
+                        {cloudHint('instanceName')}
                       </div>
                       <div className="setting-row">
                         <label>Hostname Label <span style={{color:'red'}}>*</span></label>
                         <input id="field-hostnameLabel" type="text" className={`custom-input ${highlightedFields.includes('hostnameLabel') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.hostnameLabel || ''} placeholder="myhost" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('hostnameLabel', e.target.value)} />
+                        {cloudHint('hostnameLabel')}
                       </div>
                       <div className="setting-row">
                         <label>Availability Domain <span style={{color:'red'}}>*</span></label>
                         {renderComboInput('availabilityDomain', ociADs, 'AD-1')}
+                        {cloudHint('availabilityDomain')}
                       </div>
                       <div className="setting-row">
                         <label>Shape</label>
                         {renderComboInput('instanceType', ociShapes, 'VM.Standard.E2.1.Micro')}
+                        {cloudHint('instanceType')}
                       </div>
                       <div className="setting-row">
                         <label>Image ID <span style={{color:'red'}}>*</span></label>
                         <input id="field-amiId" type="text" className={`custom-input ${highlightedFields.includes('amiId') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.amiId} placeholder="ocid1.image..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('amiId', e.target.value)} />
+                        {cloudHint('amiId')}
                       </div>
                       <div className="setting-row">
                         <label>Admin CIDR <span style={{color:'red'}}>*</span></label>
                         <input id="field-adminCidr" type="text" className={`custom-input ${highlightedFields.includes('adminCidr') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.adminCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('adminCidr', e.target.value)} />
+                        {cloudHint('adminCidr')}
                       </div>
                       <div className="setting-row">
                         <label>App CIDR <span style={{color:'red'}}>*</span></label>
                         <input id="field-appCidr" type="text" className={`custom-input ${highlightedFields.includes('appCidr') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.appCidr} placeholder="0.0.0.0/0" style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('appCidr', e.target.value)} />
+                        {cloudHint('appCidr')}
                       </div>
                       <div className="setting-row">
                         <label>SSH Authorized Keys <span style={{color:'red'}}>*</span></label>
                         <input id="field-sshAuthorizedKeys" type="text" className={`custom-input ${highlightedFields.includes('sshAuthorizedKeys') ? 'highlight-flash' : ''} ${isViewer ? 'viewer-input' : ''}`} value={cloudSettings.sshAuthorizedKeys || ''} placeholder="ssh-rsa AAA..." style={inputStyle} readOnly={isViewer} onChange={e => updateGlobalSetting('sshAuthorizedKeys', e.target.value)} />
+                        {cloudHint('sshAuthorizedKeys')}
                       </div>
                     </>
                   )}
